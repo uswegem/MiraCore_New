@@ -17,6 +17,7 @@ const API_ENDPOINTS = {
     LOAN_CANCEL: '/v1/loans/',
     GET_LOAN_TEMPLATE: '/v1/loans/template',
     LOAN_TOP_UP: '/v1/loans/',
+    LOAN_PAYOFF: '/v1/loans/',
 
     LOAN_RESHEDULE: '/v1/rescheduleloans'
 }

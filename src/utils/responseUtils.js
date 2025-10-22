@@ -9,9 +9,9 @@ const builder = new xml2js.Builder({
 function createSignedResponse(responseCode, description, additionalData = {}) {
   const responseObj = {
     Header: {
-      Sender: 'ESS_UTUMISHI',
-      Receiver: 'FSPName',
-      FSPCode: '1001',
+      Sender: 'ZE DONE',
+      Receiver: 'ESS_UTUMISHI',
+      FSPCode: 'FL8090',
       MsgId: generateMessageId(),
       MessageType: 'RESPONSE'
     },

@@ -71,7 +71,10 @@ function validateMessageType(messageType, dataElement) {
     'LOAN_CHARGES_REQUEST': validateLoanChargesRequest,
     'LOAN_OFFER_REQUEST': validateLoanOfferRequest,
     'LOAN_RESTRUCTURE_REQUEST': validateLoanRestructureRequest,
-    'TAKEOVER_PAY_OFF_BALANCE_REQUEST': validateTakeoverBalanceRequest
+    'TAKEOVER_PAY_OFF_BALANCE_REQUEST': validateTakeoverBalanceRequest,
+    'TOP_UP_PAY_0FF_BALANCE_REQUEST': validateTopUpPayOffBalanceRequest,
+    'TOP_UP_OFFER_REQUEST': validateTopUpOfferRequest,
+    'LOAN_FINAL_APPROVAL_NOTIFICATION': validateLoanFinalApprovalNotification
     // Add more validators as needed
   };
 
@@ -305,6 +308,120 @@ function validateTakeoverBalanceRequest(parsedData) {
       isValid: false,
       description: `Takeover balance request validation failed: ${error.details[0].message}`
     };
+  }
+
+  return { isValid: true };
+}
+
+function validateTopUpPayOffBalanceRequest(parsedData) {
+  const schema = Joi.object({
+    CheckNumber: Joi.string().max(15).required(),
+    LoanNumber: Joi.string().max(25).required(),
+    FirstName: Joi.string().max(30).required(),
+    MiddleName: Joi.string().max(30).required(),
+    LastName: Joi.string().max(30).required(),
+    VoteCode: Joi.string().max(6).required(),
+    VoteName: Joi.string().max(255).required(),
+    DeductionAmount: Joi.number().precision(2).positive().required(),
+    DeductionCode: Joi.string().max(8).required(),
+    DeductionName: Joi.string().max(255).required(),
+    DeductionBalance: Joi.number().precision(2).positive().required(),
+    PaymentOption: Joi.string().max(50).required()
+  });
+
+  const { error } = schema.validate(parsedData.Document.Data.MessageDetails);
+  
+  if (error) {
+    return {
+      isValid: false,
+      description: `Top-up pay-off balance request validation failed: ${error.details[0].message}`
+    };
+  }
+
+  return { isValid: true };
+}
+
+function validateTopUpOfferRequest(parsedData) {
+  const schema = Joi.object({
+    CheckNumber: Joi.string().max(15).required(), // Mandatory field
+    ExistingLoanNumber: Joi.string().max(25).required(),
+    FirstName: Joi.string().max(30).required(),
+    MiddleName: Joi.string().max(30).optional(), // Handle missing gracefully
+    LastName: Joi.string().max(30).required(),
+    Sex: Joi.string().valid('M', 'F').required(), // Gender options now configured
+    EmploymentDate: Joi.string().isoDate().required(), // For datatable
+    MaritalStatus: Joi.string().max(10).optional(),
+    ConfirmationDate: Joi.string().isoDate().optional(),
+    BankAccountNumber: Joi.string().max(20).required(), // For datatable
+    NearestBranchName: Joi.string().max(50).optional(),
+    NearestBranchCode: Joi.string().max(50).optional(),
+    VoteCode: Joi.string().max(6).required(),
+    VoteName: Joi.string().max(255).required(),
+    NIN: Joi.string().max(22).required(), // Used as external ID
+    DesignationCode: Joi.string().max(8).required(),
+    DesignationName: Joi.string().max(255).required(),
+    BasicSalary: Joi.number().precision(2).positive().required(),
+    NetSalary: Joi.number().precision(2).positive().required(),
+    OneThirdAmount: Joi.number().precision(2).positive().required(),
+    TotalEmployeeDeduction: Joi.number().precision(2).positive().required(),
+    RetirementDate: Joi.number().integer().positive().required(),
+    TermsOfEmployment: Joi.string().max(30).required(),
+    RequestedTopUpAmount: Joi.number().precision(2).positive().required(),
+    ProductCode: Joi.string().max(10).required(),
+    InterestRate: Joi.number().precision(2).min(0).max(100).required(),
+    ProcessingFee: Joi.number().precision(2).min(0).required(),
+    Insurance: Joi.number().precision(2).min(0).required(),
+    Tenure: Joi.number().integer().positive().required(),
+    SwiftCode: Joi.string().max(20).optional(), // For datatable
+    MobileNo: Joi.string().max(15).optional() // For client creation with country code
+  });
+
+  const { error } = schema.validate(parsedData.Document.Data.MessageDetails);
+  
+  if (error) {
+    return {
+      isValid: false,
+      description: `Top-up offer request validation failed: ${error.details[0].message}`
+    };
+  }
+
+  return { isValid: true };
+}
+
+function validateLoanFinalApprovalNotification(dataElement) {
+  const messageDetails = dataElement.MessageDetails || dataElement.messagedetails;
+  
+  if (!messageDetails) {
+    return {
+      isValid: false,
+      description: 'MessageDetails element is missing'
+    };
+  }
+
+  // Validate required fields for loan final approval
+  const requiredFields = ['ApplicationNumber', 'FSPReferenceNumber', 'LoanNumber', 'Approval'];
+  
+  for (const field of requiredFields) {
+    if (!messageDetails[field] && !messageDetails[field.toLowerCase()]) {
+      return {
+        isValid: false,
+        description: `${field} is required for loan final approval notification`
+      };
+    }
+  }
+
+  // If NIN is provided, validate customer data is also present
+  const nin = messageDetails.NIN || messageDetails.nin;
+  if (nin) {
+    const customerFields = ['FirstName', 'LastName', 'MobileNo'];
+    for (const field of customerFields) {
+      if (!messageDetails[field] && !messageDetails[field.toLowerCase()]) {
+        return {
+          isValid: false,
+          description: `${field} is required when NIN is provided`
+        };
+      }
+    }
   }
 
   return { isValid: true };

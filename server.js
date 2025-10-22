@@ -17,6 +17,11 @@ const { auditMiddleware } = require('./src/middleware/authMiddleware');
 // Import database
 const connectDB = require('./src/config/database');
 
+console.log('=== SERVER STARTING AT', new Date().toISOString(), '===');
+
+// Clear require cache for development
+delete require.cache[require.resolve('./src/services/loanService')];
+
 
 
 const app = express();

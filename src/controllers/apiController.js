@@ -3,6 +3,10 @@ const { validateXML, validateMessageType } = require('../validations/xmlValidato
 const { forwardToThirdParty } = require('../services/thirdPartyService');
 const digitalSignature = require('../utils/signatureUtils');
 const { LoanCalculate } = require('../services/loanService');
+const cbsApi = require('../services/cbs.api');
+const { API_ENDPOINTS } = require('../services/cbs.endpoints');
+const { CreateTopUpLoanOffer } = require('../services/loanService');
+const LoanMappingService = require('../services/loanMappingService');
 
 const parser = new xml2js.Parser({
     explicitArray: false,
@@ -10,6 +14,8 @@ const parser = new xml2js.Parser({
     normalize: true,
     trim: true
 });
+
+// Database-backed loan mapping service replaces in-memory store
 
 const builder = new xml2js.Builder({
     rootName: 'Document',
@@ -32,7 +38,7 @@ async function processRequest(req, res) {
             console.log('🔄 Converting JSON to XML...');
 
             if (!req.body || typeof req.body !== 'object') {
-                return sendErrorResponse(res, '8001', 'Invalid JSON data', 'json');
+                return sendErrorResponse(res, '8001', 'Invalid JSON data', 'json', null);
             }
 
             // Convert JSON to XML format
@@ -46,7 +52,7 @@ async function processRequest(req, res) {
                 console.log('Generated XML parsed successfully');
             } catch (parseError) {
                 console.error('Failed to parse generated XML:', parseError.message);
-                return sendErrorResponse(res, '8001', 'Failed to convert JSON to XML: ' + parseError.message, 'json');
+                return sendErrorResponse(res, '8001', 'Failed to convert JSON to XML: ' + parseError.message, 'json', null);
             }
 
         }
@@ -56,11 +62,14 @@ async function processRequest(req, res) {
             xmlData = req.body;
 
             if (!xmlData) {
-                return sendErrorResponse(res, '8001', 'XML data is required', 'xml');
+                return sendErrorResponse(res, '8001', 'XML data is required', 'xml', parsedData);
             }
 
             try {
                 parsedData = await parser.parseStringPromise(xmlData);
+                // Debug log: print the parsed <Sender> value
+                const debugSender = parsedData?.Document?.Data?.Header?.Sender;
+                console.log('DEBUG: Parsed <Sender> from request:', debugSender);
                 const TypeMessage = parsedData?.Document?.Data.Header?.MessageType
                 switch (TypeMessage) {
                     case 'LOAN_CHARGES_REQUEST':
@@ -75,25 +84,31 @@ async function processRequest(req, res) {
                     case 'LOAN_CANCELLATION_NOTIFICATION':
                         return await handleLoanCancellation(parsedData, res);
 
+                    case 'TOP_UP_PAY_0FF_BALANCE_REQUEST':
+                        return await handleTopUpPayOffBalanceRequest(parsedData, res);
+
+                    case 'TOP_UP_OFFER_REQUEST':
+                        return await handleTopUpOfferRequest(parsedData, res);
+
                     default:
                         return await forwardToESS(parsedData, res, contentType);
                 }
             } catch (parseError) {
                 console.error('❌ XML parsing failed:', parseError.message);
-                return sendErrorResponse(res, '8001', 'Invalid XML format: ' + parseError.message, 'xml');
+                return sendErrorResponse(res, '8001', 'Invalid XML format: ' + parseError.message, 'xml', parsedData);
             }
 
         }
         // Unsupported content type
         else {
-            return sendErrorResponse(res, '8001', 'Unsupported Content-Type. Use application/json or application/xml', 'json');
+            return sendErrorResponse(res, '8001', 'Unsupported Content-Type. Use application/json or application/xml', 'json', null);
         }
 
 
     } catch (error) {
         console.error('Controller error:', error);
         const contentType = req.get('Content-Type');
-        return sendErrorResponse(res, '8011', 'Error processing request: ' + error.message, contentType.includes('json') ? 'json' : 'xml');
+    return sendErrorResponse(res, '8011', 'Error processing request: ' + error.message, contentType.includes('json') ? 'json' : 'xml', null);
     }
 }
 
@@ -172,10 +187,15 @@ async function convertXMLToJSON(xmlData) {
  */
 function sendErrorResponse(res, code, description, format = 'json') {
     if (format === 'xml') {
+        // For RESPONSE, set Receiver to original Sender if parsedData is provided
+        let receiver = 'ESS_UTUMISHI';
+        if (arguments.length > 4 && arguments[4] && arguments[4].Document && arguments[4].Document.Data && arguments[4].Document.Data.Header && arguments[4].Document.Data.Header.Sender) {
+            receiver = arguments[4].Document.Data.Header.Sender;
+        }
         const errorResponse = digitalSignature.createSignedXML({
             Header: {
                 Sender: process.env.FSP_NAME,
-                Receiver: 'FRONTEND',
+                Receiver: receiver,
                 FSPCode: process.env.FSP_CODE,
                 MsgId: `ERR${Date.now()}`,
                 MessageType: 'RESPONSE'
@@ -267,7 +287,7 @@ async function handleLoanChargesRequest(parsedData, res) {
 
     } catch (error) {
         console.error('Error processing loan charges request:', error);
-        return sendErrorResponse(res, '8012', 'Error calculating loan charges: ' + error.message, 'xml');
+    return sendErrorResponse(res, '8012', 'Error calculating loan charges: ' + error.message, 'xml', parsedData);
     }
 }
 
@@ -330,6 +350,9 @@ async function handleLoanOfferRequest(parsedData, res) {
         // const result = await processLoanOffer(loanOfferData);
 
         // For now, return immediate approval notification
+        const fspReferenceNumber = `FSPREF${Date.now()}`;
+        const loanNumberAlias = LoanMappingService.generateLoanNumberAlias();
+
         const responseData = {
             Data: {
                 Header: {
@@ -342,8 +365,8 @@ async function handleLoanOfferRequest(parsedData, res) {
                 MessageDetails: {
                     ApplicationNumber: loanOfferData.applicationNumber,
                     Reason: "Loan offer received successfully",
-                    FSPReferenceNumber: `FSPREF${Date.now()}`,
-                    LoanNumber: `LN${Date.now()}`,
+                    FSPReferenceNumber: fspReferenceNumber,
+                    LoanNumber: loanNumberAlias, // Use generated alias in YYYYMMDDHHMM + 3 digits format
                     TotalAmountToPay: "0.00", // Calculate based on your business logic
                     OtherCharges: "0.00",
                     Approval: "APPROVED" // or "REJECTED" based on your logic
@@ -351,13 +374,30 @@ async function handleLoanOfferRequest(parsedData, res) {
             }
         };
 
+        // Create initial loan mapping in database
+        try {
+            await LoanMappingService.createInitialMapping(
+                loanOfferData.applicationNumber,
+                loanOfferData.checkNumber,
+                fspReferenceNumber,
+                {
+                    productCode: loanOfferData.productCode,
+                    requestedAmount: loanOfferData.requestedAmount,
+                    tenure: loanOfferData.tenure
+                }
+            );
+        } catch (mappingError) {
+            console.error('❌ Error creating initial loan mapping:', mappingError);
+            // Continue with response even if mapping fails
+        }
+
         const signedResponse = digitalSignature.createSignedXML(responseData.Data);
         res.set('Content-Type', 'application/xml');
         res.send(signedResponse);
 
     } catch (error) {
         console.error('Error processing loan offer request:', error);
-        return sendErrorResponse(res, '8013', 'Error processing loan offer: ' + error.message, 'xml');
+    return sendErrorResponse(res, '8013', 'Error processing loan offer: ' + error.message, 'xml', parsedData);
     }
 }
 
@@ -369,51 +409,403 @@ async function handleLoanFinalApproval(parsedData, res) {
         console.log('Processing LOAN_FINAL_APPROVAL_NOTIFICATION...');
 
         const messageDetails = parsedData.Document.Data.MessageDetails;
+        console.log('Raw messageDetails:', JSON.stringify(messageDetails, null, 2));
 
-        // Process final approval
+        // Extract approval data and customer information
         const approvalData = {
             applicationNumber: messageDetails.ApplicationNumber,
             reason: messageDetails.Reason,
             fspReferenceNumber: messageDetails.FSPReferenceNumber,
             loanNumber: messageDetails.LoanNumber,
-            approval: messageDetails.Approval
+            approval: messageDetails.Approval,
+            // Customer data (assuming these fields are in the message)
+            nin: messageDetails.NIN || messageDetails.nin, // National ID Number
+            firstName: messageDetails.FirstName || messageDetails.firstName,
+            middleName: messageDetails.MiddleName || messageDetails.middleName,
+            lastName: messageDetails.LastName || messageDetails.lastName,
+            mobileNo: messageDetails.MobileNo || messageDetails.mobileNo,
+            sex: messageDetails.Sex || messageDetails.sex,
+            dateOfBirth: messageDetails.DateOfBirth || messageDetails.dateOfBirth,
+            employmentDate: messageDetails.EmploymentDate || messageDetails.employmentDate,
+            bankAccountNumber: messageDetails.BankAccountNumber || messageDetails.bankAccountNumber,
+            swiftCode: messageDetails.SwiftCode || messageDetails.swiftCode,
+            checkNumber: messageDetails.CheckNumber || messageDetails.checkNumber,
+            // Loan data
+            requestedAmount: messageDetails.RequestedAmount || messageDetails.requestedAmount,
+            productCode: messageDetails.ProductCode || messageDetails.productCode,
+            tenure: messageDetails.Tenure || messageDetails.tenure,
+            interestRate: messageDetails.InterestRate || messageDetails.interestRate,
+            processingFee: messageDetails.ProcessingFee || messageDetails.processingFee,
+            insurance: messageDetails.Insurance || messageDetails.insurance
         };
 
         console.log('Final approval data:', approvalData);
 
-        // TODO: Update loan status in your system
-        // await updateLoanStatus(approvalData);
+        // Update loan mapping with final approval data
+        try {
+            await LoanMappingService.updateWithFinalApproval(approvalData.loanNumber, approvalData);
+        } catch (mappingError) {
+            console.error('❌ Error updating loan mapping with final approval:', mappingError);
+            // Continue processing even if mapping update fails
+        }
 
-        // Return acknowledgment
-        const responseData = {
-            Data: {
-                Header: {
-                    Sender: process.env.FSP_NAME || "FSP_SYSTEM",
-                    Receiver: "ESS_UTUMISHI",
-                    FSPCode: parsedData.Document.Data.Header.FSPCode,
-                    MsgId: `ACK_${Date.now()}`,
-                    MessageType: "RESPONSE"
-                },
-                MessageDetails: {
-                    ResponseCode: "8000",
-                    Description: "Final approval processed successfully"
+        // 1. Check if customer exists using NIN as external ID
+        let clientExists = false;
+        let clientId = null;
+
+        if (approvalData.nin) {
+            try {
+                console.log('Checking if client exists with NIN:', approvalData.nin);
+                const clientSearch = await cbsApi.get(`/v1/clients?externalId=${approvalData.nin}`);
+                clientExists = clientSearch.status && clientSearch.response && clientSearch.response.length > 0;
+                if (clientExists) {
+                    clientId = clientSearch.response[0].id;
+                    console.log('✅ Client exists with ID:', clientId);
+                }
+            } catch (error) {
+                console.log('Client search failed, will create new client:', error.message);
+            }
+        }
+
+        if (!clientExists) {
+            // 2. Create customer in MIFOS
+            console.log('Creating new client in MIFOS...');
+
+            // Format phone number with country code 255
+            const formattedMobile = approvalData.mobileNo ?
+                (approvalData.mobileNo.startsWith('+') ? approvalData.mobileNo : `+255${approvalData.mobileNo.replace(/^0/, '')}`) : null;
+
+            // Map gender (optional - skip if not available)
+            // const genderMapping = { 'M': 1, 'F': 2 };
+            // const genderId = genderMapping[approvalData.sex] || undefined;
+            console.log('=== GENDER DISABLED TEST - VERSION 4 -', new Date().toISOString(), '===');
+            console.log('Skipping gender mapping for now - MIFOS gender codes not configured');
+
+            const clientPayload = {
+                firstname: approvalData.firstName,
+                lastname: approvalData.lastName,
+                middlename: approvalData.middleName || '',
+                externalId: approvalData.nin,
+                dateOfBirth: approvalData.dateOfBirth,
+                mobileNo: formattedMobile,
+                clientTypeId: 1, // Always use 1 (Retail) for emkopo
+                officeId: 1, // Head Office
+                activationDate: new Date().toISOString().split('T')[0],
+                submittedOnDate: new Date().toISOString().split('T')[0],
+                legalFormId: 1, // Person
+                isStaff: false,
+                locale: 'en',
+                dateFormat: 'yyyy-MM-dd'
+            };
+
+            // Gender temporarily disabled due to MIFOS configuration
+            // if (genderId) {
+            //     clientPayload.genderId = genderId;
+            //     console.log('Adding genderId to payload:', genderId);
+            // } else {
+            //     console.log('Skipping genderId - not available');
+            // }
+
+            console.log('Final client payload:', JSON.stringify(clientPayload, null, 2));
+
+            const clientResponse = await cbsApi.post('/v1/clients', clientPayload);
+            if (!clientResponse.status) {
+                throw new Error('Failed to create client: ' + JSON.stringify(clientResponse.response));
+            }
+
+            clientId = clientResponse.response.clientId;
+            console.log('✅ Client created successfully:', clientId);
+
+            // Update loan mapping with MIFOS client ID
+            try {
+                await LoanMappingService.updateWithClientCreation(approvalData.loanNumber, clientId);
+            } catch (mappingError) {
+                console.error('❌ Error updating loan mapping with client creation:', mappingError);
+            }
+
+            // 3. Activate Client in MIFOS
+            console.log('Activating client...');
+            const activationResponse = await cbsApi.post(`/v1/clients/${clientId}?command=activate`, {
+                activationDate: new Date().toISOString().split('T')[0],
+                locale: 'en',
+                dateFormat: 'yyyy-MM-dd'
+            });
+
+            if (!activationResponse.status) {
+                console.log('⚠️ Client activation failed, but continuing:', activationResponse.message);
+            } else {
+                console.log('✅ Client activated successfully');
+            }
+
+            // Insert client onboarding datatable data
+            if (approvalData.checkNumber) {
+                const formatEmploymentDate = (dateString) => {
+                    if (!dateString) return null;
+                    const date = new Date(dateString);
+                    const day = date.getDate();
+                    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+                                      'July', 'August', 'September', 'October', 'November', 'December'];
+                    const month = monthNames[date.getMonth()];
+                    const year = date.getFullYear();
+                    return `${day} ${month} ${year}`;
+                };
+
+                const onboardingData = {
+                    dateFormat: 'dd MMMM yyyy',
+                    locale: 'en',
+                    EmploymentDate: formatEmploymentDate(approvalData.employmentDate),
+                    SwiftCode: approvalData.swiftCode,
+                    BankAccountNumber: approvalData.bankAccountNumber,
+                    CheckNumber: approvalData.checkNumber
+                };
+
+                try {
+                    const datatableResponse = await cbsApi.post(`/v1/datatables/client_onboarding/${clientId}`, onboardingData);
+                    if (datatableResponse.status) {
+                        console.log('✅ Client onboarding data inserted successfully');
+                    }
+                } catch (datatableError) {
+                    console.log('⚠️ Datatable insertion failed:', datatableError.message);
                 }
             }
-        };
+        } else {
+            console.log('Client already exists with NIN:', approvalData.nin, 'ID:', clientId);
+        }
 
-        const signedResponse = digitalSignature.createSignedXML(responseData.Data);
-        res.set('Content-Type', 'application/xml');
-        res.send(signedResponse);
+        // 5. Check if loan already exists for this LoanNumber
+        console.log('Checking if loan already exists for LoanNumber:', approvalData.loanNumber);
+        let existingLoanId = null;
+        
+        if (loanMappings.has(approvalData.loanNumber)) {
+            existingLoanId = loanMappings.get(approvalData.loanNumber).loanId;
+            console.log('✅ Found existing loan:', existingLoanId);
+        } else {
+            console.log('No existing loan found for this LoanNumber, will create new loan');
+        }
+
+        let loanId;
+
+        if (existingLoanId) {
+            // Use existing loan
+            loanId = existingLoanId;
+            console.log('Using existing loan ID:', loanId);
+        } else {
+            // 6. Create Loan in MIFOS (only if it doesn't exist)
+            console.log('Creating loan in MIFOS...');
+
+            // Get loan product details (use valid product ID 17)
+            const productResponse = await cbsApi.get(`/v1/loanproducts/${approvalData.productCode || 17}`);
+            if (!productResponse.status) {
+                throw new Error('Loan product not found: ' + (approvalData.productCode || 17));
+            }
+
+            const product = productResponse.response;
+            console.log('Product details retrieved:', product.name);
+
+            // Create loan payload
+            const loanPayload = {
+                clientId: clientId,
+                productId: approvalData.productCode || 17, // Use valid product ID 17 as default
+                principal: approvalData.requestedAmount,
+                loanTermFrequency: approvalData.tenure,
+                loanTermFrequencyType: 2, // Months
+                numberOfRepayments: approvalData.tenure,
+                repaymentEvery: 1,
+                repaymentFrequencyType: 2, // Months
+                interestRatePerPeriod: approvalData.interestRate || 28, // Use product default
+                amortizationType: 1, // Equal installments
+                interestType: 0, // Declining balance
+                interestCalculationPeriodType: 1, // Same as repayment period
+                submittedOnDate: new Date().toISOString().split('T')[0],
+                expectedDisbursementDate: new Date().toISOString().split('T')[0],
+                locale: 'en',
+                dateFormat: 'yyyy-MM-dd'
+            };
+
+            const loanResponse = await cbsApi.post('/v1/loans', loanPayload);
+            if (!loanResponse.status) {
+                throw new Error('Failed to create loan: ' + JSON.stringify(loanResponse.response));
+            }
+
+            loanId = loanResponse.response.loanId;
+            console.log('✅ Loan created successfully:', loanId);
+
+            // Update loan mapping with MIFOS loan details
+            try {
+                await LoanMappingService.updateWithLoanCreation(
+                    approvalData.loanNumber,
+                    loanId,
+                    loanResponse.response.accountNo || `LOAN${loanId}`
+                );
+            } catch (mappingError) {
+                console.error('❌ Error updating loan mapping with loan creation:', mappingError);
+            }
+        }
+
+        // 7. Check current loan status
+        console.log('Checking current loan status...');
+        const loanDetailsResponse = await cbsApi.get(`/v1/loans/${loanId}`);
+        if (!loanDetailsResponse.status) {
+            throw new Error('Failed to get loan details: ' + JSON.stringify(loanDetailsResponse.response));
+        }
+        
+        const loanStatus = loanDetailsResponse.response.status?.code;
+        console.log('Current loan status:', loanStatus);
+
+        // 8. Approve LOAN in MIFOS (if not already approved)
+        let loanApproved = false;
+        if (loanStatus !== '300' && loanStatus !== '400') { // Not approved or disbursed
+            console.log('Approving loan...');
+            const approvalResponse = await cbsApi.post(`/v1/loans/${loanId}?command=approve`, {
+                approvedOnDate: new Date().toISOString().split('T')[0],
+                approvedLoanAmount: approvalData.requestedAmount,
+                locale: 'en',
+                dateFormat: 'yyyy-MM-dd'
+            });
+
+            if (!approvalResponse.status) {
+                throw new Error('Failed to approve loan: ' + JSON.stringify(approvalResponse.response));
+            }
+
+            console.log('✅ Loan approved successfully');
+            loanApproved = true;
+        } else {
+            console.log('Loan already approved or disbursed');
+        }
+
+        // 9. Disburse LOAN in MIFOS (if not already disbursed)
+        let loanDisbursed = false;
+        if (loanStatus !== '400') { // Not disbursed
+            console.log('Disbursing loan...');
+            const disbursementResponse = await cbsApi.post(`/v1/loans/${loanId}?command=disburse`, {
+                actualDisbursementDate: new Date().toISOString().split('T')[0],
+                transactionAmount: approvalData.requestedAmount,
+                locale: 'en',
+                dateFormat: 'yyyy-MM-dd'
+            });
+
+            if (!disbursementResponse.status) {
+                throw new Error('Failed to disburse loan: ' + JSON.stringify(disbursementResponse.response));
+            }
+
+            console.log('✅ Loan disbursed successfully');
+            loanDisbursed = true;
+        } else {
+            console.log('Loan already disbursed');
+        }
+
+        // LOAN_DISBURSEMENT_NOTIFICATION will be sent to ESS when MIFOS webhook triggers disbursement event
+
+        // Processing complete - no response sent to ESS
+        // LOAN_DISBURSEMENT_NOTIFICATION will be sent via webhook when disbursement occurs
+
+        console.log('✅ Final approval processing completed - awaiting disbursement notification');
 
     } catch (error) {
         console.error('Error processing final approval:', error);
-        return sendErrorResponse(res, '8014', 'Error processing final approval: ' + error.message, 'xml');
+        return sendErrorResponse(res, '8014', 'Error processing final approval: ' + error.message, 'xml', parsedData);
     }
 }
 
 /**
- * Handle LOAN_CANCELLATION_NOTIFICATION - Loan cancellation
+ * Handle MIFOS webhooks for loan events
  */
+async function handleMifosWebhook(req, res) {
+    try {
+        console.log('Received MIFOS webhook:', JSON.stringify(req.body, null, 2));
+
+        const webhookData = req.body;
+
+        // Check if this is a loan disbursement event
+        if (webhookData.entityName === 'LOAN' && webhookData.action === 'DISBURSE') {
+            console.log('Processing loan disbursement webhook...');
+
+            const loanId = webhookData.entityId;
+
+            // Get loan mapping from database using MIFOS loan ID
+            let loanMapping;
+            try {
+                loanMapping = await LoanMappingService.getByMifosLoanId(loanId);
+                console.log('✅ Found loan mapping for disbursement:', loanMapping.essLoanNumber);
+            } catch (mappingError) {
+                console.error('❌ No loan mapping found for MIFOS loan ID:', loanId);
+                return res.status(404).json({ error: 'Loan mapping not found' });
+            }
+
+            // Get loan details from MIFOS for additional data
+            const loanDetailsResponse = await cbsApi.get(`/v1/loans/${loanId}`);
+            if (!loanDetailsResponse.status) {
+                console.error('Failed to get loan details for webhook:', loanDetailsResponse.message);
+                return res.status(500).json({ error: 'Failed to get loan details' });
+            }
+
+            const loan = loanDetailsResponse.response;
+
+            // Use the correct ESS identifiers from the mapping
+            const applicationNumber = loanMapping.essApplicationNumber;
+            const fspReferenceNumber = loanMapping.fspReferenceNumber;
+            const loanNumber = loanMapping.essLoanNumberAlias; // Send back the alias that ESS knows
+
+            // Get client details
+            const clientDetailsResponse = await cbsApi.get(`/v1/clients/${loan.clientId}`);
+            const client = clientDetailsResponse.status ? clientDetailsResponse.response : {};
+
+            // Send LOAN_DISBURSEMENT_NOTIFICATION to ESS
+            const disbursementNotification = {
+                Data: {
+                    Header: {
+                        Sender: process.env.FSP_NAME || "ZE DONE",
+                        Receiver: "ESS_UTUMISHI",
+                        FSPCode: process.env.FSP_CODE || "FL8090",
+                        MsgId: `WEBHOOK_DISBURSE_${Date.now()}`,
+                        MessageType: "LOAN_DISBURSEMENT_NOTIFICATION"
+                    },
+                    MessageDetails: {
+                        ApplicationNumber: applicationNumber,
+                        FSPReferenceNumber: fspReferenceNumber,
+                        LoanNumber: loanNumber,
+                        ClientId: loan.clientId,
+                        LoanId: loanId,
+                        DisbursedAmount: loan.principal,
+                        DisbursementDate: new Date().toISOString().split('T')[0],
+                        Status: "DISBURSED"
+                    }
+                }
+            };
+
+            // Create signed XML and send to ESS
+            const signedDisbursementXml = digitalSignature.createSignedXML(disbursementNotification.Data);
+            console.log('Sending LOAN_DISBURSEMENT_NOTIFICATION to ESS...');
+
+            try {
+                const essResponse = await forwardToThirdParty(signedDisbursementXml, "LOAN_DISBURSEMENT_NOTIFICATION");
+                console.log('✅ LOAN_DISBURSEMENT_NOTIFICATION sent successfully to ESS');
+                console.log('ESS Response:', essResponse);
+
+                // Update loan mapping status to DISBURSED
+                try {
+                    await LoanMappingService.updateWithDisbursement(loanId);
+                } catch (mappingError) {
+                    console.error('❌ Error updating loan mapping with disbursement:', mappingError);
+                }
+
+            } catch (sendError) {
+                console.error('❌ Failed to send LOAN_DISBURSEMENT_NOTIFICATION to ESS:', sendError.message);
+                // Continue processing webhook even if notification fails
+            }
+
+            res.status(200).json({ status: 'success', message: 'Webhook processed, disbursement notification sent' });
+
+        } else {
+            console.log('Ignoring non-disbursement webhook event');
+            res.status(200).json({ status: 'ignored', message: 'Event not processed' });
+        }
+
+    } catch (error) {
+        console.error('Error processing MIFOS webhook:', error);
+        res.status(500).json({ error: 'Webhook processing failed' });
+    }
+}
 async function handleLoanCancellation(parsedData, res) {
     try {
         console.log('Processing LOAN_CANCELLATION_NOTIFICATION...');
@@ -437,7 +829,7 @@ async function handleLoanCancellation(parsedData, res) {
             Data: {
                 Header: {
                     Sender: process.env.FSP_NAME || "FSP_SYSTEM",
-                    Receiver: "ESS_UTUMISHI",
+                    Receiver: parsedData.Document.Data.Header.Sender || "ESS_UTUMISHI",
                     FSPCode: parsedData.Document.Data.Header.FSPCode,
                     MsgId: `CANCEL_${Date.now()}`,
                     MessageType: "RESPONSE"
@@ -455,7 +847,7 @@ async function handleLoanCancellation(parsedData, res) {
 
     } catch (error) {
         console.error('Error processing loan cancellation:', error);
-        return sendErrorResponse(res, '8015', 'Error processing loan cancellation: ' + error.message, 'xml');
+    return sendErrorResponse(res, '8015', 'Error processing loan cancellation: ' + error.message, 'xml', parsedData);
     }
 }
 
@@ -465,7 +857,7 @@ async function forwardToESS(parsedData, res, contentType) {
     const validationResult = validateXML(parsedData);
     if (!validationResult.isValid) {
         console.error('XML validation failed:', validationResult.description);
-        return sendErrorResponse(res, validationResult.errorCode || '8001', validationResult.description, contentType.includes('json') ? 'json' : 'xml');
+    return sendErrorResponse(res, validationResult.errorCode || '8001', validationResult.description, contentType.includes('json') ? 'json' : 'xml', parsedData);
     }
 
     // Get the extracted data element
@@ -479,7 +871,7 @@ async function forwardToESS(parsedData, res, contentType) {
     const messageValidation = validateMessageType(messageType, dataElement);
     if (!messageValidation.isValid) {
         console.error('Message validation failed:', messageValidation.description);
-        return sendErrorResponse(res, '8001', messageValidation.description, contentType.includes('json') ? 'json' : 'xml');
+    return sendErrorResponse(res, '8001', messageValidation.description, contentType.includes('json') ? 'json' : 'xml', parsedData);
     }
 
     // Step 3: AUTO-GENERATE SIGNATURE for the request
@@ -518,10 +910,150 @@ async function forwardToESS(parsedData, res, contentType) {
 
     } catch (signError) {
         console.error('Signature generation failed:', signError.message);
-        return sendErrorResponse(res, '8009', 'Digital signature generation failed: ' + signError.message, contentType.includes('json') ? 'json' : 'xml');
+    return sendErrorResponse(res, '8009', 'Digital signature generation failed: ' + signError.message, contentType.includes('json') ? 'json' : 'xml', parsedData);
+    }
+}
+
+/**
+ * Handle TOP_UP_PAY_0FF_BALANCE_REQUEST - Get loan payoff balance
+ */
+async function handleTopUpPayOffBalanceRequest(parsedData, res) {
+    try {
+        console.log('Processing TOP_UP_PAY_0FF_BALANCE_REQUEST...');
+
+        const messageDetails = parsedData.Document.Data.MessageDetails;
+        const loanNumber = messageDetails.LoanNumber;
+
+        console.log('Getting payoff balance for loan:', loanNumber);
+
+        // Call MIFOS API to get loan payoff balance
+        const payoffResponse = await cbsApi.get(`${API_ENDPOINTS.LOAN}${loanNumber}/transactions/template?command=payoff`);
+        
+        if (!payoffResponse.status) {
+            console.error('MIFOS API error:', payoffResponse.message);
+            return sendErrorResponse(res, '8014', 'Failed to retrieve loan balance from CBS', 'xml');
+        }
+
+        const balanceAmount = payoffResponse.response.amount || 0;
+
+        // Create response
+        const responseData = {
+            Data: {
+                Header: {
+                    Sender: process.env.FSP_NAME || "ZE DONE",
+                    Receiver: "ESS_UTUMISHI",
+                    FSPCode: parsedData.Document.Data.Header.FSPCode,
+                    MsgId: `BAL_${Date.now()}`,
+                    MessageType: "LOAN_TOP_UP_BALANCE_RESPONSE"
+                },
+                MessageDetails: {
+                    CheckNumber: messageDetails.CheckNumber,
+                    LoanNumber: loanNumber,
+                    BalanceAmount: balanceAmount.toFixed(2),
+                    Currency: "TZS",
+                    ResponseCode: "00",
+                    ResponseDescription: "Success",
+                    TransactionReference: `TXN${Date.now()}`
+                }
+            }
+        };
+
+        const signedResponse = digitalSignature.createSignedXML(responseData.Data);
+        res.set('Content-Type', 'application/xml');
+        res.send(signedResponse);
+
+    } catch (error) {
+        console.error('Error processing top-up pay-off balance request:', error);
+    return sendErrorResponse(res, '8015', 'Error retrieving loan balance: ' + error.message, 'xml', parsedData);
+    }
+}
+
+/**
+ * Handle TOP_UP_OFFER_REQUEST - Process top-up loan offer
+ */
+async function handleTopUpOfferRequest(parsedData, res) {
+    try {
+        console.log('Processing TOP_UP_OFFER_REQUEST...');
+
+        const messageDetails = parsedData.Document.Data.MessageDetails;
+
+        // Extract top-up offer data
+        const topUpOfferData = {
+            checkNumber: messageDetails.CheckNumber,
+            existingLoanNumber: messageDetails.ExistingLoanNumber,
+            firstName: messageDetails.FirstName,
+            middleName: messageDetails.MiddleName,
+            lastName: messageDetails.LastName,
+            sex: messageDetails.Sex,
+            employmentDate: messageDetails.EmploymentDate,
+            maritalStatus: messageDetails.MaritalStatus,
+            confirmationDate: messageDetails.ConfirmationDate,
+            bankAccountNumber: messageDetails.BankAccountNumber,
+            nearestBranchName: messageDetails.NearestBranchName,
+            nearestBranchCode: messageDetails.NearestBranchCode,
+            voteCode: messageDetails.VoteCode,
+            voteName: messageDetails.VoteName,
+            nin: messageDetails.NIN,
+            designationCode: messageDetails.DesignationCode,
+            designationName: messageDetails.DesignationName,
+            basicSalary: parseFloat(messageDetails.BasicSalary),
+            netSalary: parseFloat(messageDetails.NetSalary),
+            oneThirdAmount: parseFloat(messageDetails.OneThirdAmount),
+            totalEmployeeDeduction: parseFloat(messageDetails.TotalEmployeeDeduction),
+            retirementDate: messageDetails.RetirementDate,
+            termsOfEmployment: messageDetails.TermsOfEmployment,
+            requestedTopUpAmount: parseFloat(messageDetails.RequestedTopUpAmount),
+            productCode: messageDetails.ProductCode,
+            interestRate: parseFloat(messageDetails.InterestRate),
+            processingFee: parseFloat(messageDetails.ProcessingFee),
+            insurance: parseFloat(messageDetails.Insurance),
+            tenure: parseInt(messageDetails.Tenure),
+            fspCode: parsedData.Document.Data.Header.FSPCode
+        };
+
+        console.log('Processing top-up offer:', topUpOfferData);
+
+        // Call MIFOS API to create top-up loan offer
+        const offerResult = await CreateTopUpLoanOffer(topUpOfferData);
+
+        // Create response with calculated values
+        const responseData = {
+            Data: {
+                Header: {
+                    Sender: process.env.FSP_NAME || "ZE DONE",
+                    Receiver: "ESS_UTUMISHI",
+                    FSPCode: parsedData.Document.Data.Header.FSPCode,
+                    MsgId: `TOPUP_${Date.now()}`,
+                    MessageType: "LOAN_TOP_UP_OFFER_RESPONSE"
+                },
+                MessageDetails: {
+                    CheckNumber: topUpOfferData.checkNumber,
+                    ExistingLoanNumber: topUpOfferData.existingLoanNumber,
+                    OfferedTopUpAmount: offerResult.offeredAmount.toFixed(2),
+                    InterestRate: offerResult.interestRate.toFixed(2),
+                    Tenure: offerResult.tenure,
+                    MonthlyInstallment: offerResult.monthlyInstallment,
+                    TotalPayable: offerResult.totalPayable,
+                    ProcessingFee: topUpOfferData.processingFee.toFixed(2),
+                    Insurance: topUpOfferData.insurance.toFixed(2),
+                    ResponseCode: "00",
+                    ResponseDescription: "Top-up offer created successfully",
+                    FSPReferenceNumber: offerResult.loanId
+                }
+            }
+        };
+
+        const signedResponse = digitalSignature.createSignedXML(responseData.Data);
+        res.set('Content-Type', 'application/xml');
+        res.send(signedResponse);
+
+    } catch (error) {
+        console.error('Error processing top-up offer request:', error);
+    return sendErrorResponse(res, '8016', 'Error processing top-up offer: ' + error.message, 'xml', parsedData);
     }
 }
 
 module.exports = {
-    processRequest
+    processRequest,
+    handleMifosWebhook
 };
