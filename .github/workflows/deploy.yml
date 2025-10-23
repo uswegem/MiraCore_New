@@ -30,8 +30,8 @@ jobs:
 
     - name: Deploy to server
       run: |
-        # Copy files to remote
-        scp -r . ${{ secrets.REMOTE_USER }}@${{ secrets.REMOTE_HOST }}:/home/uswege/ess
+        # Copy files to remote (excluding .git)
+        tar -czf - --exclude=.git . | ssh ${{ secrets.REMOTE_USER }}@${{ secrets.REMOTE_HOST }} "cd /home/uswege/ess && tar -xzf -"
         
         # SSH and install/restart
         ssh ${{ secrets.REMOTE_USER }}@${{ secrets.REMOTE_HOST }} << EOF
