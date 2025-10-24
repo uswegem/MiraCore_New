@@ -66,6 +66,8 @@ app.use((req, res, next) => {
     console.log('   Method:', req.method);
     console.log('   Path:', req.path);
     console.log('   Content-Type:', contentType);
+    console.log('   Source IP:', req.ip || req.connection.remoteAddress || req.socket.remoteAddress || 'unknown');
+    console.log('   User-Agent:', req.get('User-Agent') || 'not provided');
     console.log('   Body type:', typeof req.body);
     
     // Handle XML content

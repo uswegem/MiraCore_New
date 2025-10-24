@@ -2,9 +2,104 @@ const { sendResponse } = require("../utils/responseHelper");
 const api = require("./cbs.api");
 const { API_ENDPOINTS } = require("./cbs.endpoints");
 
+// Helper functions for comprehensive affordability calculation
+async function searchClientByExternalId(externalId) {
+    try {
+        const response = await api.get(`/v1/clients?externalId=${externalId}`);
+        if (response.status && response.response && response.response.length > 0) {
+            return response.response[0];
+        }
+        return null;
+    } catch (error) {
+        console.log('Client search error:', error.message);
+        return null;
+    }
+}
+
+async function getClientLoans(clientId) {
+    try {
+        const response = await api.get(`/v1/clients/${clientId}/accounts`);
+        if (response.status && response.response && response.response.loanAccounts) {
+            return response.response.loanAccounts;
+        }
+        return [];
+    } catch (error) {
+        console.log('Client loans fetch error:', error.message);
+        return [];
+    }
+}
+
+function calculateForwardLoan(principal, annualInterestRate, tenure) {
+    const monthlyRate = annualInterestRate / 100 / 12;
+    const monthlyEMI = (principal * monthlyRate * Math.pow(1 + monthlyRate, tenure)) /
+                      (Math.pow(1 + monthlyRate, tenure) - 1);
+
+    const totalAmount = monthlyEMI * tenure;
+    const totalInterest = totalAmount - principal;
+
+    return {
+        principalAmount: principal,
+        monthlyEMI: monthlyEMI,
+        totalAmount: totalAmount,
+        totalInterest: totalInterest,
+        tenure: tenure
+    };
+}
+
+function calculateReverseLoan(monthlyEMI, annualInterestRate, tenure) {
+    const monthlyRate = annualInterestRate / 100 / 12;
+    const principal = (monthlyEMI * (Math.pow(1 + monthlyRate, tenure) - 1)) /
+                     (monthlyRate * Math.pow(1 + monthlyRate, tenure));
+
+    const totalAmount = monthlyEMI * tenure;
+    const totalInterest = totalAmount - principal;
+
+    return {
+        principalAmount: principal,
+        monthlyEMI: monthlyEMI,
+        totalAmount: totalAmount,
+        totalInterest: totalInterest,
+        tenure: tenure
+    };
+}
+
+function validateRetirementAge(tenure, retirementDate) {
+    if (!retirementDate) return tenure;
+
+    const retirement = new Date(retirementDate);
+    const now = new Date();
+    const ageAtRetirement = retirement.getFullYear() - now.getFullYear();
+
+    // Assume current age is 30 if not available, max tenure based on retirement
+    const maxTenureMonths = Math.max(12, (ageAtRetirement - 30) * 12);
+
+    return Math.min(tenure, maxTenureMonths);
+}
+
+function generateLoanChargesErrorResponse({ msgId, checkNumber, errorMessage }) {
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<Document>
+    <Data>
+        <Header>
+            <Sender>FSP_SYSTEM</Sender>
+            <Receiver>ESS_UTUMISHI</Receiver>
+            <FSPCode>FL8090</FSPCode>
+            <MsgId>${msgId}</MsgId>
+            <MessageType>LOAN_CHARGES_RESPONSE</MessageType>
+        </Header>
+        <MessageDetails>
+            <CheckNumber>${checkNumber}</CheckNumber>
+            <ResponseCode>422</ResponseCode>
+            <Description>${errorMessage}</Description>
+        </MessageDetails>
+    </Data>
+</Document>`;
+}
 
 const LoanCalculate = async (data) => {
     try {
+        console.log('🔄 Processing ESS LOAN_CHARGES_REQUEST with comprehensive affordability calculation');
+
         const {
             checkNumber,
             designationCode,
@@ -25,217 +120,184 @@ const LoanCalculate = async (data) => {
             jobClassCode
         } = data;
 
-        const productId = productCode || 17; // Use product ID 17 as default if not provided
-        console.log('Using product ID:', productId);
+        // Product configuration and validation
+        const productInfo = { minAmount: 10000, maxAmount: 120000000, name: 'Standard Loan' };
+        const interestRate = 24.0; // Standard rate
 
-        //check loan product
-        let loanProduct;
-        try {
-            loanProduct = await api.get(API_ENDPOINTS.PRODUCT + '/' + productId);
-        } catch (error) {
-            console.log('Product API call failed, using default values for product ID', productId);
-            // Use default product values if API fails
-            loanProduct = {
-                status: true,
-                response: {
-                    interestRatePerPeriod: 28,
-                    charges: [
-                        { name: "Insurance", amount: 1 },
-                        { name: "Arrangement Fee", amount: 2 }
-                    ],
-                    maxPrincipal: 120000000,
-                    minPrincipal: 100000,
-                    minNumberOfRepayments: 6,
-                    maxNumberOfRepayments: 96,
-                    numberOfRepayments: 96
+        console.log('🏷️ Product Info:', productInfo);
+
+        let calculationResult;
+        let validationError = null;
+
+        // If we have comprehensive ESS data, use full calculation
+        if (basicSalary && netSalary && oneThirdAmount) {
+            console.log('📈 Using comprehensive ESS data for LOAN_CHARGES calculation');
+
+            // 🔍 STEP 1: Validate client existence in MIFOS system
+            console.log('🔍 Validating client existence for checkNumber:', checkNumber);
+
+            let client = null;
+            let existingLoans = [];
+            let currentTotalEMI = 0;
+
+            try {
+                // Check if client exists in MIFOS
+                client = await searchClientByExternalId(checkNumber);
+
+                if (!client) {
+                    console.log('ℹ️ Client not found in MIFOS for checkNumber:', checkNumber);
+                    console.log('ℹ️ Continuing with loan calculation anyway (customer validation updated)');
+                    // Continue with loan calculation even if customer doesn't exist
+                    client = null;
+                } else {
+                    console.log('✅ Client found in MIFOS:', client.displayName);
+
+                    // 🔍 STEP 2: Check for existing loans if client exists
+                    existingLoans = await getClientLoans(client.id);
+                    const activeLoans = existingLoans.filter(loan =>
+                        loan.status && loan.status.active === true
+                    );
+
+                    if (activeLoans.length > 0) {
+                        console.log(`❌ Client has ${activeLoans.length} active loan(s) - rejecting request`);
+                        throw new Error('Customer already has an active loan');
+                    }
+
+                    console.log('✅ Client has no existing active loans - can proceed');
+
+                    // Calculate total current EMI from existing loans (should be 0 at this point)
+                    currentTotalEMI = activeLoans.reduce((total, loan) => {
+                        const emi = loan.repaymentSchedule?.periods?.find(period =>
+                            period.dueDate && new Date(period.dueDate) > new Date()
+                        )?.totalDueForPeriod || 0;
+
+                        console.log(`📋 Existing loan ${loan.accountNo}: EMI = ${emi}`);
+                        return total + (emi || 0);
+                    }, 0);
+
+                    console.log(`💰 Total current EMI obligations: ${currentTotalEMI}`);
                 }
-            };
-        }
 
-
-        const { response, status } = loanProduct
-        if (!status) {
-            console.log('Using default product values due to API failure');
-            // Use default values
-            response = {
-                interestRatePerPeriod: 28,
-                charges: [
-                    { name: "Insurance", amount: 1 },
-                    { name: "Arrangement Fee", amount: 2 }
-                ],
-                maxPrincipal: 120000000,
-                minPrincipal: 100000,
-                minNumberOfRepayments: 6,
-                maxNumberOfRepayments: 96,
-                numberOfRepayments: 24
-            };
-        }
-
-        console.log('Full MIFOS product response:', JSON.stringify(response, null, 2));
-
-        let {
-            interestRatePerPeriod,
-            charges,
-            maxPrincipal,
-            minPrincipal,
-            minNumberOfRepayments,
-            maxNumberOfRepayments,
-            numberOfRepayments
-        } = response;
-
-
-        // pick usable tenure values
-        const defaultTenure = numberOfRepayments || maxNumberOfRepayments;
-
-        if (!defaultTenure) {
-            throw new Error("Unable to find loan tenure");
-        }
-
-        if (!interestRatePerPeriod) {
-            throw new Error("Unable to find Interest Rate");
-        }
-
-        let principal = (requestedAmount && requestedAmount > 0) ? requestedAmount : null;
-        let months = (tenure && tenure > 0) ? tenure : null;
-        let desiredDeduction = (desiredDeductibleAmount && desiredDeductibleAmount > 0) ? desiredDeductibleAmount : null;
-
-        // Handle charges - use defaults if not available
-        let insuranceCharge = null;
-        let processingFeeCharge = null;
-
-        if (charges && charges.length > 0) {
-            insuranceCharge = charges.find(c => c.name && c.name.includes("Insurance"));
-            processingFeeCharge = charges.find(c => c.name && c.name.includes("Arrangement"));
-        }
-
-        // Use default values if charges not found
-        if (!insuranceCharge) {
-            insuranceCharge = { amount: 1 }; // 1% insurance
-            console.log('Using default insurance charge: 1%');
-        }
-        if (!processingFeeCharge) {
-            processingFeeCharge = { amount: 2 }; // 2% processing fee
-            console.log('Using default processing fee charge: 2%');
-        }
-
-        console.log('TEST: Code has been updated - using default charges');
-
-        // --- CASE 1: requestedAmount only ---
-        if (principal && !months && !desiredDeduction) {
-            months = defaultTenure;
-        }
-
-        // --- CASE 2: tenure only ---
-        if (!principal && months && !desiredDeduction) {
-            if (!maxPrincipal) {
-                throw new Error("Unable to find maxPrincipal");
+            } catch (mifosError) {
+                console.log('ℹ️ MIFOS system error during client validation:', mifosError.message);
+                console.log('ℹ️ Continuing with loan calculation anyway');
+                // Continue with loan calculation even if MIFOS check fails
+                client = null;
             }
-            principal = maxPrincipal;
+
+            // 💡 CRITICAL: Adjust affordability for existing EMI obligations
+            const grossAffordableEMI = desiredDeductibleAmount && desiredDeductibleAmount > 0
+                ? desiredDeductibleAmount
+                : Math.floor(netSalary - oneThirdAmount);
+
+            const maxAffordableEMI = Math.max(0, grossAffordableEMI - currentTotalEMI);
+
+            console.log(`💰 Affordability Analysis:
+                - Gross Affordable EMI: ${grossAffordableEMI}
+                - Current Total EMI: ${currentTotalEMI}
+                - Net Available EMI: ${maxAffordableEMI}`);
+
+            // Check if customer has any remaining capacity for new loan
+            if (maxAffordableEMI <= 0) {
+                console.error('❌ Customer has no remaining EMI capacity due to existing loans');
+                throw new Error('Insufficient repayment capacity due to existing loan obligations');
+            }
+
+            const desirableEMI = !desiredDeductibleAmount || desiredDeductibleAmount <= 0
+                ? maxAffordableEMI
+                : Math.min(desiredDeductibleAmount - currentTotalEMI, maxAffordableEMI);
+
+            let calculatedTenure = tenure || 96; // Default 96 months
+            if (retirementDate) {
+                calculatedTenure = validateRetirementAge(calculatedTenure, retirementDate);
+            }
+
+            // Determine calculation type
+            if (requestedAmount && requestedAmount > 0) {
+                console.log('💰 Forward calculation: Requested Amount =', requestedAmount);
+
+                // Validate minimum amount
+                if (requestedAmount < productInfo.minAmount) {
+                    validationError = `Amount requested (${requestedAmount}) is less than the product minimum (${productInfo.minAmount})`;
+                } else {
+                    // Forward calculation
+                    let targetAmount = requestedAmount;
+
+                    // Cap to product max
+                    if (targetAmount > productInfo.maxAmount) {
+                        targetAmount = productInfo.maxAmount;
+                    }
+
+                    calculationResult = calculateForwardLoan(targetAmount, interestRate, calculatedTenure);
+
+                    // If EMI exceeds affordable, cap the amount to affordable
+                    if (calculationResult.monthlyEMI > maxAffordableEMI) {
+                        calculationResult = calculateReverseLoan(maxAffordableEMI, interestRate, calculatedTenure);
+                    }
+
+                    // Check minimum after capping
+                    if (calculationResult.principalAmount < productInfo.minAmount) {
+                        validationError = `Calculated loan amount (${Math.round(calculationResult.principalAmount)}) is less than the product minimum (${productInfo.minAmount})`;
+                    }
+                }
+            } else {
+                console.log('🔄 Reverse calculation: EMI =', desirableEMI);
+                // Reverse calculation (EMI to loan amount)
+                calculationResult = calculateReverseLoan(desirableEMI, interestRate, calculatedTenure);
+
+                // Validate calculated amount against product limits
+                if (calculationResult.principalAmount < productInfo.minAmount) {
+                    validationError = `Calculated loan amount (${Math.round(calculationResult.principalAmount)}) is less than the product minimum (${productInfo.minAmount})`;
+                } else if (calculationResult.principalAmount > productInfo.maxAmount) {
+                    calculationResult.principalAmount = productInfo.maxAmount;
+                    calculationResult = calculateForwardLoan(productInfo.maxAmount, interestRate, calculatedTenure);
+                }
+            }
+
+            if (calculationResult && !validationError) {
+                calculationResult.processingFee = Math.round(calculationResult.principalAmount * 0.02);
+                calculationResult.insurance = Math.round(calculationResult.principalAmount * 0.015);
+                calculationResult.employeeId = checkNumber;
+                calculationResult.loanAmount = calculationResult.principalAmount;
+            }
+
+        } else {
+            // Fallback to basic calculation for legacy format
+            console.log('📊 Using basic forward calculation for legacy format');
+            const principal = parseFloat(requestedAmount) || parseFloat(data.loanAmount) || 100000;
+            const calculatedTenure = parseInt(tenure) || 12;
+
+            // Validate minimum amount
+            if (principal < productInfo.minAmount) {
+                validationError = `Amount requested (${principal}) is less than the product minimum (${productInfo.minAmount})`;
+            } else {
+                calculationResult = calculateForwardLoan(principal, interestRate, calculatedTenure);
+                calculationResult.processingFee = Math.round(principal * 0.02);
+                calculationResult.insurance = Math.round(principal * 0.015);
+                calculationResult.employeeId = checkNumber || data.employeeId;
+                calculationResult.loanAmount = principal;
+            }
         }
 
-        // --- CASE 3: desiredDeductibleAmount only ---
-        if (!principal && !months && desiredDeduction) {
-            months = defaultTenure;
-            principal = (desiredDeduction * months) / (1 + (interestRatePerPeriod / 100) * months);
-        }
-
-        // --- CASE 4: requestedAmount + tenure ---
-        // just use directly
-
-        // --- CASE 5: requestedAmount + desiredDeductibleAmount ---
-        if (principal && desiredDeduction && !months) {
-            const totalInterest = (principal * (interestRatePerPeriod / 100)) * defaultTenure;
-            const approxTotalPay = principal + totalInterest;
-            months = Math.ceil(approxTotalPay / desiredDeduction);
-        }
-
-        // --- CASE 6: tenure + desiredDeductibleAmount ---
-        if (!principal && months && desiredDeduction) {
-            principal = (desiredDeduction * months) / (1 + (interestRatePerPeriod / 100) * months);
-        }
-
-        // --- Charges & Interest ---
-        const totalInsurance = (principal * (insuranceCharge?.amount || 0)) / 100;
-        const totalProcessingFees = (principal * (processingFeeCharge?.amount || 0)) / 100;
-
-        // Call MIFOS loan calculation API instead of local calculation
-        const calculationPayload = {
-            productId: productId,
-            principal: principal,
-            loanTermFrequency: months,
-            loanTermFrequencyType: 2, // Months
-            numberOfRepayments: months,
-            repaymentEvery: 1,
-            repaymentFrequencyType: 2, // Months
-            interestRatePerPeriod: interestRatePerPeriod,
-            amortizationType: 1, // Equal installments
-            interestType: 0, // Declining balance
-            interestCalculationPeriodType: 1, // Same as repayment period
-            allowPartialPeriodInterestCalcualtion: false,
-            transactionProcessingStrategyId: 1
-            // Removed charges as they might cause validation issues
-        };
-
-        console.log('Calling MIFOS calculation API with payload:', JSON.stringify(calculationPayload, null, 2));
-
-        const calculationResult = await api.post(API_ENDPOINTS.CALCULATE_POSSIBLE_LOAN_CHARGES, calculationPayload);
-
-        if (!calculationResult.status) {
-            console.error('MIFOS calculation failed:', calculationResult.response);
-            // Fallback to local calculation if MIFOS fails
-            console.log('Falling back to local calculation');
-            const monthlyInterestRate = (interestRatePerPeriod / 100) / 12;
-            const localTotalInterest = months ? principal * monthlyInterestRate * months : 0;
-            const localTotalAmount = principal + localTotalInterest + totalInsurance + totalProcessingFees;
-            const localMonthlyReturn = months ? localTotalAmount / months : 0;
-
-            const result = {
-                requestedAmount: principal.toFixed(2),
-                desiredDeductibleAmount: (desiredDeduction ?? localMonthlyReturn).toFixed(2),
-                totalInsurance: totalInsurance.toFixed(2),
-                totalProcessingFees: totalProcessingFees.toFixed(2),
-                totalInterestRateAmount: localTotalInterest.toFixed(2),
-                netLoanAmount: netLoanAmount.toFixed(2),
-                totalAmountToPay: localTotalAmount.toFixed(2),
-                tenure: months,
-                eligibleAmount: maxPrincipal.toFixed(2),
-                monthlyReturnAmount: localMonthlyReturn.toFixed(2),
+        // Return calculation result even on validation error for transparency
+        if (calculationResult) {
+            return {
+                requestedAmount: calculationResult.principalAmount?.toFixed(2) || "0.00",
+                desiredDeductibleAmount: (calculationResult.monthlyEMI?.toFixed(2)) || "0.00",
+                totalInsurance: calculationResult.insurance?.toFixed(2) || "0.00",
+                totalProcessingFees: calculationResult.processingFee?.toFixed(2) || "0.00",
+                totalInterestRateAmount: calculationResult.totalInterest?.toFixed(2) || "0.00",
+                netLoanAmount: (calculationResult.principalAmount - (calculationResult.insurance || 0) - (calculationResult.processingFee || 0))?.toFixed(2) || "0.00",
+                totalAmountToPay: calculationResult.totalAmount?.toFixed(2) || "0.00",
+                tenure: calculationResult.tenure || tenure || 0,
+                eligibleAmount: productInfo.maxAmount?.toFixed(2) || "0.00",
+                monthlyReturnAmount: calculationResult.monthlyEMI?.toFixed(2) || "0.00",
+                validationError: validationError // Include validation error if any
             };
-
-            console.log('Local calculation result:', result);
-            return result;
         }
 
-        const mifosSchedule = calculationResult.response;
-
-        // Extract values from MIFOS response
-        const totalInterestRateAmount = mifosSchedule.totalInterestCharged || 0;
-        const totalAmountToPay = mifosSchedule.totalRepaymentExpected || 0;
-        const monthlyReturnAmount = months ? totalAmountToPay / months : 0;
-
-        // fallback if user didn't provide deduction
-        if (!desiredDeduction) {
-            desiredDeduction = monthlyReturnAmount;
-        }
-
-        const result = {
-            requestedAmount: principal.toFixed(2),
-            desiredDeductibleAmount: (desiredDeduction ?? monthlyReturnAmount).toFixed(2),
-            totalInsurance: totalInsurance.toFixed(2),
-            totalProcessingFees: totalProcessingFees.toFixed(2),
-            totalInterestRateAmount: totalInterestRateAmount.toFixed(2),
-            netLoanAmount: netLoanAmount.toFixed(2),
-            totalAmountToPay: totalAmountToPay.toFixed(2),
-            tenure: months,
-            eligibleAmount: maxPrincipal.toFixed(2),
-            monthlyReturnAmount: monthlyReturnAmount.toFixed(2),
-        };
-
-        console.log('MIFOS calculation result:', result);
-        return result
-
-
-        return result
+        // If no calculation result, return error
+        throw new Error(validationError || 'Unable to calculate loan charges');
 
     } catch (error) {
         console.error('LoanCalculate error:', error);
