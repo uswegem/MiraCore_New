@@ -4,6 +4,7 @@ const { forwardToThirdParty } = require('../services/thirdPartyService');
 const digitalSignature = require('../utils/signatureUtils');
 const { LoanCalculate, CreateTopUpLoanOffer, CreateTakeoverLoanOffer, CreateLoanOffer } = require('../services/loanService');
 const LoanMappingService = require('../services/loanMappingService');
+const cbsApi = require('../services/cbs.api');
 
 const parser = new xml2js.Parser({
     explicitArray: false,
