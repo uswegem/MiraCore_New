@@ -481,10 +481,10 @@ async function handleLoanFinalApproval(parsedData, res) {
                 (approvalData.mobileNo.startsWith('+') ? approvalData.mobileNo : `+255${approvalData.mobileNo.replace(/^0/, '')}`) : null;
 
             // Map gender (optional - skip if not available)
-            const genderMapping = { 'M': 1, 'F': 1 }; // Temporarily map both to 1 until MIFOS gender codes are verified
-            const genderId = genderMapping[approvalData.sex] || undefined;
-            console.log('=== GENDER MAPPING - TEMP FIX -', new Date().toISOString(), '===');
-            console.log('Temporarily mapping all genders to 1, pending MIFOS gender code verification');
+            // const genderMapping = { 'M': 1, 'F': 1 }; // Temporarily map both to 1 until MIFOS gender codes are verified
+            // const genderId = genderMapping[approvalData.sex] || undefined;
+            console.log('=== GENDER DISABLED - MIFOS GENDER CODES NOT CONFIGURED -', new Date().toISOString(), '===');
+            console.log('Skipping gender mapping - MIFOS gender codes not configured in tenant zedone-uat');
 
             const clientPayload = {
                 firstname: approvalData.firstName,
@@ -503,13 +503,8 @@ async function handleLoanFinalApproval(parsedData, res) {
                 dateFormat: 'yyyy-MM-dd'
             };
 
-            // Gender enabled
-            if (genderId) {
-                clientPayload.genderId = genderId;
-                console.log('Adding genderId to payload:', genderId);
-            } else {
-                console.log('Skipping genderId - not available');
-            }
+            // Gender disabled - MIFOS gender codes not configured
+            console.log('Skipping genderId - MIFOS gender codes not configured');
 
             console.log('Final client payload:', JSON.stringify(clientPayload, null, 2));
 
