@@ -43,11 +43,11 @@ const LoanCalculate = async (data) => {
                         { name: "Insurance", amount: 1 },
                         { name: "Arrangement Fee", amount: 2 }
                     ],
-                    maxPrincipal: 10000000,
+                    maxPrincipal: 120000000,
                     minPrincipal: 100000,
-                    minNumberOfRepayments: 12,
-                    maxNumberOfRepayments: 60,
-                    numberOfRepayments: 24
+                    minNumberOfRepayments: 6,
+                    maxNumberOfRepayments: 96,
+                    numberOfRepayments: 96
                 }
             };
         }
@@ -63,10 +63,10 @@ const LoanCalculate = async (data) => {
                     { name: "Insurance", amount: 1 },
                     { name: "Arrangement Fee", amount: 2 }
                 ],
-                maxPrincipal: 10000000,
+                maxPrincipal: 120000000,
                 minPrincipal: 100000,
-                minNumberOfRepayments: 12,
-                maxNumberOfRepayments: 60,
+                minNumberOfRepayments: 6,
+                maxNumberOfRepayments: 96,
                 numberOfRepayments: 24
             };
         }
@@ -158,18 +158,50 @@ const LoanCalculate = async (data) => {
         const totalInsurance = (principal * (insuranceCharge?.amount || 0)) / 100;
         const totalProcessingFees = (principal * (processingFeeCharge?.amount || 0)) / 100;
 
-        // Interest is per *year*, convert to monthly if repayment is in months
-        const monthlyInterestRate = (interestRatePerPeriod / 100) / 12;
+        // Call MIFOS loan calculation API instead of local calculation
+        const calculationPayload = {
+            productId: productId,
+            principal: principal,
+            loanTermFrequency: months,
+            loanTermFrequencyType: 2, // Months
+            numberOfRepayments: months,
+            repaymentEvery: 1,
+            repaymentFrequencyType: 2, // Months
+            interestRatePerPeriod: interestRatePerPeriod,
+            amortizationType: 1, // Equal installments
+            interestType: 0, // Declining balance
+            interestCalculationPeriodType: 1, // Same as repayment period
+            allowPartialPeriodInterestCalcualtion: false,
+            transactionProcessingStrategyId: 1,
+            charges: [
+                {
+                    chargeId: insuranceCharge?.id || 1,
+                    amount: totalInsurance
+                },
+                {
+                    chargeId: processingFeeCharge?.id || 2,
+                    amount: totalProcessingFees
+                }
+            ]
+        };
 
-        const totalInterestRateAmount = months
-            ? principal * monthlyInterestRate * months
-            : 0;
+        console.log('Calling MIFOS calculation API with payload:', JSON.stringify(calculationPayload, null, 2));
 
-        const netLoanAmount = principal - (totalInsurance + totalProcessingFees);
-        const totalAmountToPay = principal + totalInterestRateAmount + totalInsurance + totalProcessingFees;
+        const calculationResult = await api.post(API_ENDPOINTS.CALCULATE_POSSIBLE_LOAN_CHARGES, calculationPayload);
+
+        if (!calculationResult.status) {
+            throw new Error('MIFOS calculation failed: ' + JSON.stringify(calculationResult.response));
+        }
+
+        const mifosSchedule = calculationResult.response;
+
+        // Extract values from MIFOS response
+        const totalInterestRateAmount = mifosSchedule.totalInterestCharged || 0;
+        const totalAmountToPay = mifosSchedule.totalRepaymentExpected || 0;
+        const netLoanAmount = principal - totalInsurance - totalProcessingFees;
         const monthlyReturnAmount = months ? totalAmountToPay / months : 0;
 
-        // fallback if user didn’t provide deduction
+        // fallback if user didn't provide deduction
         if (!desiredDeduction) {
             desiredDeduction = monthlyReturnAmount;
         }
@@ -186,6 +218,9 @@ const LoanCalculate = async (data) => {
             eligibleAmount: maxPrincipal.toFixed(2),
             monthlyReturnAmount: monthlyReturnAmount.toFixed(2),
         };
+
+        console.log('MIFOS calculation result:', result);
+        return result
 
 
         return result
