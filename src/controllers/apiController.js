@@ -481,10 +481,10 @@ async function handleLoanFinalApproval(parsedData, res) {
                 (approvalData.mobileNo.startsWith('+') ? approvalData.mobileNo : `+255${approvalData.mobileNo.replace(/^0/, '')}`) : null;
 
             // Map gender (optional - skip if not available)
-            const genderMapping = { 'M': 1, 'F': 2 };
+            const genderMapping = { 'M': 1, 'F': 1 }; // Temporarily map both to 1 until MIFOS gender codes are verified
             const genderId = genderMapping[approvalData.sex] || undefined;
-            console.log('=== GENDER ENABLED - VERSION 5 -', new Date().toISOString(), '===');
-            console.log('Gender mapping enabled with codes M:1, F:2');
+            console.log('=== GENDER MAPPING - TEMP FIX -', new Date().toISOString(), '===');
+            console.log('Temporarily mapping all genders to 1, pending MIFOS gender code verification');
 
             const clientPayload = {
                 firstname: approvalData.firstName,
