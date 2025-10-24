@@ -30,6 +30,8 @@ class LoanMappingService {
         productCode: loanDetails.productCode,
         requestedAmount: loanDetails.requestedAmount,
         tenure: loanDetails.tenure,
+        mifosClientId: loanDetails.clientId,
+        mifosLoanId: loanDetails.loanId,
         status: 'INITIAL_OFFER',
         metadata: {
           initialOfferDetails: loanDetails

@@ -2,10 +2,7 @@ const xml2js = require('xml2js');
 const { validateXML, validateMessageType } = require('../validations/xmlValidator');
 const { forwardToThirdParty } = require('../services/thirdPartyService');
 const digitalSignature = require('../utils/signatureUtils');
-const { LoanCalculate } = require('../services/loanService');
-const cbsApi = require('../services/cbs.api');
-const { API_ENDPOINTS } = require('../services/cbs.endpoints');
-const { CreateTopUpLoanOffer } = require('../services/loanService');
+const { LoanCalculate, CreateTopUpLoanOffer, CreateTakeoverLoanOffer, CreateLoanOffer } = require('../services/loanService');
 const LoanMappingService = require('../services/loanMappingService');
 
 const parser = new xml2js.Parser({
@@ -89,6 +86,15 @@ async function processRequest(req, res) {
 
                     case 'TOP_UP_OFFER_REQUEST':
                         return await handleTopUpOfferRequest(parsedData, res);
+
+                    case 'TAKEOVER_PAY_OFF_BALANCE_REQUEST':
+                        return await handleTakeoverPayOffBalanceRequest(parsedData, res);
+
+                    case 'LOAN_TAKEOVER_OFFER_REQUEST':
+                        return await handleLoanTakeoverOfferRequest(parsedData, res);
+
+                    case 'TAKEOVER_PAYMENT_NOTIFICATION':
+                        return await handleTakeoverPaymentNotification(parsedData, res);
 
                     default:
                         return await forwardToESS(parsedData, res, contentType);
@@ -346,12 +352,8 @@ async function handleLoanOfferRequest(parsedData, res) {
 
         console.log('Processing loan offer:', loanOfferData);
 
-        // TODO: Call your loan offer processing service
-        // const result = await processLoanOffer(loanOfferData);
-
-        // For now, return immediate approval notification
-        const fspReferenceNumber = `FSPREF${Date.now()}`;
-        const loanNumberAlias = LoanMappingService.generateLoanNumberAlias();
+        // Call the loan offer processing service to create client and loan
+        const result = await CreateLoanOffer(loanOfferData);
 
         const responseData = {
             Data: {
@@ -364,12 +366,12 @@ async function handleLoanOfferRequest(parsedData, res) {
                 },
                 MessageDetails: {
                     ApplicationNumber: loanOfferData.applicationNumber,
-                    Reason: "Loan offer received successfully",
-                    FSPReferenceNumber: fspReferenceNumber,
-                    LoanNumber: loanNumberAlias, // Use generated alias in YYYYMMDDHHMM + 3 digits format
-                    TotalAmountToPay: "0.00", // Calculate based on your business logic
+                    Reason: "Loan offer received and processed successfully",
+                    FSPReferenceNumber: result.fspReferenceNumber,
+                    LoanNumber: result.loanNumber,
+                    TotalAmountToPay: result.offeredAmount.toString(),
                     OtherCharges: "0.00",
-                    Approval: "APPROVED" // or "REJECTED" based on your logic
+                    Approval: "APPROVED"
                 }
             }
         };
@@ -379,11 +381,13 @@ async function handleLoanOfferRequest(parsedData, res) {
             await LoanMappingService.createInitialMapping(
                 loanOfferData.applicationNumber,
                 loanOfferData.checkNumber,
-                fspReferenceNumber,
+                result.fspReferenceNumber,
                 {
                     productCode: loanOfferData.productCode,
                     requestedAmount: loanOfferData.requestedAmount,
-                    tenure: loanOfferData.tenure
+                    tenure: loanOfferData.tenure,
+                    clientId: result.clientId,
+                    loanId: result.loanId
                 }
             );
         } catch (mappingError) {
@@ -476,10 +480,10 @@ async function handleLoanFinalApproval(parsedData, res) {
                 (approvalData.mobileNo.startsWith('+') ? approvalData.mobileNo : `+255${approvalData.mobileNo.replace(/^0/, '')}`) : null;
 
             // Map gender (optional - skip if not available)
-            // const genderMapping = { 'M': 1, 'F': 2 };
-            // const genderId = genderMapping[approvalData.sex] || undefined;
-            console.log('=== GENDER DISABLED TEST - VERSION 4 -', new Date().toISOString(), '===');
-            console.log('Skipping gender mapping for now - MIFOS gender codes not configured');
+            const genderMapping = { 'M': 1, 'F': 2 };
+            const genderId = genderMapping[approvalData.sex] || undefined;
+            console.log('=== GENDER ENABLED - VERSION 5 -', new Date().toISOString(), '===');
+            console.log('Gender mapping enabled with codes M:1, F:2');
 
             const clientPayload = {
                 firstname: approvalData.firstName,
@@ -498,13 +502,13 @@ async function handleLoanFinalApproval(parsedData, res) {
                 dateFormat: 'yyyy-MM-dd'
             };
 
-            // Gender temporarily disabled due to MIFOS configuration
-            // if (genderId) {
-            //     clientPayload.genderId = genderId;
-            //     console.log('Adding genderId to payload:', genderId);
-            // } else {
-            //     console.log('Skipping genderId - not available');
-            // }
+            // Gender enabled
+            if (genderId) {
+                clientPayload.genderId = genderId;
+                console.log('Adding genderId to payload:', genderId);
+            } else {
+                console.log('Skipping genderId - not available');
+            }
 
             console.log('Final client payload:', JSON.stringify(clientPayload, null, 2));
 
@@ -1050,6 +1054,191 @@ async function handleTopUpOfferRequest(parsedData, res) {
     } catch (error) {
         console.error('Error processing top-up offer request:', error);
     return sendErrorResponse(res, '8016', 'Error processing top-up offer: ' + error.message, 'xml', parsedData);
+    }
+}
+
+async function handleTakeoverPayOffBalanceRequest(parsedData, res) {
+    try {
+        console.log('Processing TAKEOVER_PAY_OFF_BALANCE_REQUEST...');
+
+        const messageDetails = parsedData.Document.Data.MessageDetails;
+        const loanNumber = messageDetails.LoanNumber;
+
+        console.log('Getting takeover payoff balance for loan:', loanNumber);
+
+        // Call MIFOS API to get loan payoff balance
+        const payoffResponse = await cbsApi.get(`${API_ENDPOINTS.LOAN}${loanNumber}/transactions/template?command=payoff`);
+        
+        if (!payoffResponse.status) {
+            console.error('MIFOS API error:', payoffResponse.message);
+            return sendErrorResponse(res, '8014', 'Failed to retrieve loan balance from CBS', 'xml');
+        }
+
+        const balanceAmount = payoffResponse.response.amount || 0;
+
+        // Create response
+        const responseData = {
+            Data: {
+                Header: {
+                    Sender: process.env.FSP_NAME || "ZE DONE",
+                    Receiver: "ESS_UTUMISHI",
+                    FSPCode: parsedData.Document.Data.Header.FSPCode,
+                    MsgId: `TAKEOVER_BAL_${Date.now()}`,
+                    MessageType: "LOAN_TAKEOVER_BALANCE_RESPONSE"
+                },
+                MessageDetails: {
+                    CheckNumber: messageDetails.CheckNumber,
+                    LoanNumber: loanNumber,
+                    BalanceAmount: balanceAmount.toFixed(2),
+                    Currency: "TZS",
+                    ResponseCode: "00",
+                    ResponseDescription: "Success",
+                    TransactionReference: `TXN${Date.now()}`
+                }
+            }
+        };
+
+        const signedResponse = digitalSignature.createSignedXML(responseData.Data);
+        res.set('Content-Type', 'application/xml');
+        res.send(signedResponse);
+
+    } catch (error) {
+        console.error('Error processing takeover pay-off balance request:', error);
+    return sendErrorResponse(res, '8015', 'Error retrieving loan balance: ' + error.message, 'xml', parsedData);
+    }
+}
+
+async function handleLoanTakeoverOfferRequest(parsedData, res) {
+    try {
+        console.log('Processing LOAN_TAKEOVER_OFFER_REQUEST...');
+
+        const messageDetails = parsedData.Document.Data.MessageDetails;
+
+        // Extract takeover offer data
+        const takeoverOfferData = {
+            checkNumber: messageDetails.CheckNumber,
+            existingLoanNumber: messageDetails.ExistingLoanNumber,
+            firstName: messageDetails.FirstName,
+            middleName: messageDetails.MiddleName,
+            lastName: messageDetails.LastName,
+            sex: messageDetails.Sex,
+            employmentDate: messageDetails.EmploymentDate,
+            maritalStatus: messageDetails.MaritalStatus,
+            confirmationDate: messageDetails.ConfirmationDate,
+            bankAccountNumber: messageDetails.BankAccountNumber,
+            nearestBranchName: messageDetails.NearestBranchName,
+            nearestBranchCode: messageDetails.NearestBranchCode,
+            voteCode: messageDetails.VoteCode,
+            voteName: messageDetails.VoteName,
+            nin: messageDetails.NIN,
+            designationCode: messageDetails.DesignationCode,
+            designationName: messageDetails.DesignationName,
+            basicSalary: parseFloat(messageDetails.BasicSalary),
+            netSalary: parseFloat(messageDetails.NetSalary),
+            oneThirdAmount: parseFloat(messageDetails.OneThirdAmount),
+            totalEmployeeDeduction: parseFloat(messageDetails.TotalEmployeeDeduction),
+            retirementDate: messageDetails.RetirementDate,
+            termsOfEmployment: messageDetails.TermsOfEmployment,
+            requestedTakeoverAmount: parseFloat(messageDetails.RequestedTakeoverAmount),
+            productCode: messageDetails.ProductCode,
+            interestRate: parseFloat(messageDetails.InterestRate),
+            processingFee: parseFloat(messageDetails.ProcessingFee),
+            insurance: parseFloat(messageDetails.Insurance),
+            tenure: parseInt(messageDetails.Tenure),
+            fspCode: parsedData.Document.Data.Header.FSPCode
+        };
+
+        console.log('Processing takeover offer:', takeoverOfferData);
+
+        // Call MIFOS API to create takeover loan offer
+        const offerResult = await CreateTakeoverLoanOffer(takeoverOfferData);
+
+        // Create response with calculated values
+        const responseData = {
+            Data: {
+                Header: {
+                    Sender: process.env.FSP_NAME || "ZE DONE",
+                    Receiver: "ESS_UTUMISHI",
+                    FSPCode: parsedData.Document.Data.Header.FSPCode,
+                    MsgId: `TAKEOVER_${Date.now()}`,
+                    MessageType: "LOAN_TAKEOVER_OFFER_RESPONSE"
+                },
+                MessageDetails: {
+                    CheckNumber: takeoverOfferData.checkNumber,
+                    ExistingLoanNumber: takeoverOfferData.existingLoanNumber,
+                    OfferedTakeoverAmount: offerResult.offeredAmount.toFixed(2),
+                    InterestRate: offerResult.interestRate.toFixed(2),
+                    Tenure: offerResult.tenure,
+                    MonthlyInstallment: offerResult.monthlyInstallment,
+                    TotalPayable: offerResult.totalPayable,
+                    ProcessingFee: takeoverOfferData.processingFee.toFixed(2),
+                    Insurance: takeoverOfferData.insurance.toFixed(2),
+                    ResponseCode: "00",
+                    ResponseDescription: "Takeover offer created successfully",
+                    FSPReferenceNumber: offerResult.loanId
+                }
+            }
+        };
+
+        const signedResponse = digitalSignature.createSignedXML(responseData.Data);
+        res.set('Content-Type', 'application/xml');
+        res.send(signedResponse);
+
+    } catch (error) {
+        console.error('Error processing takeover offer request:', error);
+    return sendErrorResponse(res, '8017', 'Error processing takeover offer: ' + error.message, 'xml', parsedData);
+    }
+}
+
+async function handleTakeoverPaymentNotification(parsedData, res) {
+    try {
+        console.log('Processing TAKEOVER_PAYMENT_NOTIFICATION...');
+
+        const messageDetails = parsedData.Document.Data.MessageDetails;
+
+        // Extract takeover payment data
+        const paymentData = {
+            applicationNumber: messageDetails.ApplicationNumber,
+            fspReferenceNumber: messageDetails.FSPReferenceNumber,
+            loanNumber: messageDetails.LoanNumber,
+            clientId: messageDetails.ClientId,
+            loanId: messageDetails.LoanId,
+            loanAccountNumber: messageDetails.LoanAccountNumber,
+            disbursementAmount: parseFloat(messageDetails.DisbursementAmount),
+            disbursementDate: messageDetails.DisbursementDate,
+            bankAccountNumber: messageDetails.BankAccountNumber,
+            swiftCode: messageDetails.SwiftCode,
+            checkNumber: messageDetails.CheckNumber,
+            requestedAmount: parseFloat(messageDetails.RequestedAmount),
+            productCode: messageDetails.ProductCode,
+            tenure: parseInt(messageDetails.Tenure),
+            interestRate: parseFloat(messageDetails.InterestRate),
+            processingFee: parseFloat(messageDetails.ProcessingFee),
+            insurance: parseFloat(messageDetails.Insurance)
+        };
+
+        console.log('Processing takeover payment notification:', paymentData);
+
+        // Update loan mapping with final approval details
+        await loanMappingService.updateWithFinalApproval(
+            paymentData.applicationNumber,
+            paymentData.loanNumber,
+            paymentData.clientId,
+            paymentData.loanId,
+            'TAKEOVER'
+        );
+
+        // Process takeover payment through MIFOS
+        const paymentResult = await processTakeoverPayment(paymentData);
+
+        console.log('Takeover payment processed successfully');
+
+        // For notifications, we don't send a response back
+        res.status(200).send('Takeover payment notification processed successfully');
+
+    } catch (error) {
+        console.error('Error processing takeover payment notification:', error);
+        return sendErrorResponse(res, '8018', 'Error processing takeover payment: ' + error.message, 'xml', parsedData);
     }
 }
 
