@@ -513,6 +513,8 @@ async function handleLoanFinalApproval(parsedData, res) {
             console.log('Final client payload:', JSON.stringify(clientPayload, null, 2));
 
             const clientResponse = await cbsApi.post('/v1/clients', clientPayload);
+            console.log('MIFOS client creation response status:', clientResponse.status);
+            console.log('MIFOS client creation response:', JSON.stringify(clientResponse.response, null, 2));
             if (!clientResponse.status) {
                 throw new Error('Failed to create client: ' + JSON.stringify(clientResponse.response));
             }
