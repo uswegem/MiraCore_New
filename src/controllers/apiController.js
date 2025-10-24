@@ -578,11 +578,17 @@ async function handleLoanFinalApproval(parsedData, res) {
         console.log('Checking if loan already exists for LoanNumber:', approvalData.loanNumber);
         let existingLoanId = null;
         
-        if (loanMappings.has(approvalData.loanNumber)) {
-            existingLoanId = loanMappings.get(approvalData.loanNumber).loanId;
-            console.log('✅ Found existing loan:', existingLoanId);
-        } else {
-            console.log('No existing loan found for this LoanNumber, will create new loan');
+        try {
+            const existingMapping = await LoanMappingService.getByEssLoanNumberAlias(approvalData.loanNumber);
+            if (existingMapping && existingMapping.mifosLoanId) {
+                existingLoanId = existingMapping.mifosLoanId;
+                console.log('✅ Found existing loan:', existingLoanId);
+            } else {
+                console.log('No existing loan found for this LoanNumber, will create new loan');
+            }
+        } catch (error) {
+            console.log('Error checking existing loan mapping:', error.message);
+            console.log('Will create new loan');
         }
 
         let loanId;
