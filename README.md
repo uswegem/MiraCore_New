@@ -19,7 +19,7 @@ Create a `.env` file in the root directory:
 
 ```env
 # Server Configuration
-PORT=8000
+PORT=3002
 NODE_ENV=production
 
 # Third-party API Configuration
@@ -39,7 +39,7 @@ JWT_SECRET=your_jwt_secret_here
 
 ### Current Deployment
 
-- **Port**: 8000
+- **Port**: 3002
 - **Server**: Ubuntu 22.04 LTS (135.181.33.13)
 - **Process Manager**: PM2 (ess-app)
 - **Database**: MongoDB
