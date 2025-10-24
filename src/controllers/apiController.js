@@ -626,6 +626,8 @@ async function handleLoanFinalApproval(parsedData, res) {
                 interestCalculationPeriodType: 1, // Same as repayment period
                 submittedOnDate: new Date().toISOString().split('T')[0],
                 expectedDisbursementDate: new Date().toISOString().split('T')[0],
+                loanType: 'individual', // Required for individual loans
+                transactionProcessingStrategyCode: 'mifos-standard-strategy', // Standard repayment strategy
                 locale: 'en',
                 dateFormat: 'yyyy-MM-dd'
             };
