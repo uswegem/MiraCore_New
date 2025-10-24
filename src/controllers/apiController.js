@@ -294,7 +294,19 @@ async function handleLoanChargesRequest(parsedData, res) {
 
     } catch (error) {
         console.error('Error processing loan charges request:', error);
-    return sendErrorResponse(res, '8012', 'Error calculating loan charges: ' + error.message, 'xml', parsedData);
+
+        // Handle ApplicationException with specific error codes
+        if (error.errorCode) {
+            const errorCodeMap = {
+                '8014': '8014', // Invalid code, mismatch of supplied code on information and header (NOT_ELIGIBLE)
+                '8012': '8012'  // Request cannot be completed at this time, try later (INTERNAL_ERROR)
+            };
+
+            const responseCode = errorCodeMap[error.errorCode] || '8012';
+            return sendErrorResponse(res, responseCode, error.errorMsg || error.message, 'xml', parsedData);
+        }
+
+        return sendErrorResponse(res, '8012', 'Error calculating loan charges: ' + error.message, 'xml', parsedData);
     }
 }
 

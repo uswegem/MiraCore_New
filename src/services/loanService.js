@@ -1,6 +1,16 @@
 const { sendResponse } = require("../utils/responseHelper");
 const api = require("./cbs.api");
 const { API_ENDPOINTS } = require("./cbs.endpoints");
+const PossibleLoanCharges = require("../models/PossibleLoanCharges");
+const eligibilityService = require("./eligibilityService");
+const activeLoanProvider = require("./activeLoanProvider");
+const customerService = require("./customerService");
+const {
+  validateRetirementAge,
+  calculateMonthsUntilRetirement,
+  ApplicationException,
+  LOAN_CONSTANTS
+} = require("../utils/loanUtils");
 
 // Helper functions for comprehensive affordability calculation
 async function searchClientByExternalId(externalId) {
@@ -76,18 +86,6 @@ function calculateReverseLoan(monthlyEMI, annualInterestRate, tenure) {
     };
 }
 
-function validateRetirementAge(tenure, retirementDate, maxTenorMonths = 12) {
-    if (!retirementDate) return Math.min(tenure, maxTenorMonths);
-
-    const retirement = new Date(retirementDate);
-    const now = new Date();
-    const ageAtRetirement = retirement.getFullYear() - now.getFullYear();
-
-    // Use product-specific max tenor instead of hardcoded 12 months minimum
-    const maxTenureMonths = Math.max(maxTenorMonths, (ageAtRetirement - 30) * 12);
-
-    return Math.min(tenure, maxTenureMonths);
-}
 
 function generateLoanChargesErrorResponse({ msgId, checkNumber, errorMessage }) {
     return `<?xml version="1.0" encoding="UTF-8"?>
@@ -111,7 +109,7 @@ function generateLoanChargesErrorResponse({ msgId, checkNumber, errorMessage }) 
 
 const LoanCalculate = async (data) => {
     try {
-        console.log('🔄 Processing ESS LOAN_CHARGES_REQUEST with comprehensive affordability calculation');
+        console.log('🔄 Processing ESS LOAN_CHARGES_REQUEST with enhanced affordability logic');
 
         const {
             checkNumber,
@@ -133,204 +131,285 @@ const LoanCalculate = async (data) => {
             jobClassCode
         } = data;
 
-        // Fetch product details from MIFOS
-        console.log('🔍 Fetching product details from MIFOS for productCode:', productCode);
-        const productDetails = await getProductDetails(productCode || 17);
-
-        // Product configuration from MIFOS (with fallbacks)
-        const productInfo = productDetails ? {
-            minAmount: productDetails.minPrincipal || 10000,
-            maxAmount: productDetails.maxPrincipal || 120000000,
-            maxTenorMonths: productDetails.maxNumberOfRepayments || 120, // Maximum tenor in months
-            name: productDetails.name || 'Standard Loan'
-        } : {
-            minAmount: 10000,
-            maxAmount: 120000000,
-            maxTenorMonths: 120, // Fallback maximum tenor
-            name: 'Standard Loan'
+        // Create UtumishiOfferRequest object for persistence
+        const utumishiRequest = {
+            checkNumber,
+            designationCode,
+            designationName,
+            basicSalary: basicSalary || 0,
+            netSalary: netSalary || 0,
+            oneThirdAmount: oneThirdAmount || 0,
+            deductibleAmount: deductibleAmount || 0,
+            retirementDate,
+            termsOfEmployment,
+            requestedAmount: requestedAmount || 0,
+            desiredDeductibleAmount: desiredDeductibleAmount || 0,
+            tenure: tenure || 0,
+            fspCode,
+            productCode: productCode,
+            voteCode,
+            totalEmployeeDeduction: totalEmployeeDeduction || 0,
+            jobClassCode
         };
 
-        const interestRate = productDetails?.interestRatePerPeriod || 24.0; // Use MIFOS rate or fallback
+        // Calculate affordability parameters
+        const maxAffordableEMI = deductibleAmount && deductibleAmount > 0
+            ? deductibleAmount
+            : Math.floor((netSalary || 0) - (oneThirdAmount || 0));
 
-        console.log('🏷️ Product Info from MIFOS:', productInfo);
+        const desirableEMI = desiredDeductibleAmount && desiredDeductibleAmount > 0
+            ? Math.min(desiredDeductibleAmount, maxAffordableEMI)
+            : maxAffordableEMI;
 
-        let calculationResult;
-        let validationError = null;
+        // Calculate retirement months left
+        const retirementMonthsLeft = calculateMonthsUntilRetirement(retirementDate);
 
-        // If we have comprehensive ESS data, use full calculation
-        if (basicSalary && netSalary && oneThirdAmount) {
-            console.log('📈 Using comprehensive ESS data for LOAN_CHARGES calculation');
+        // Determine tenure with retirement validation
+        let calculatedTenure = tenure && tenure > 0 ? tenure : LOAN_CONSTANTS.DEFAULT_TENURE;
+        calculatedTenure = validateRetirementAge(calculatedTenure, retirementMonthsLeft);
 
-            // 🔍 STEP 1: Validate client existence in MIFOS system
-            console.log('🔍 Validating client existence for checkNumber:', checkNumber);
+        // Determine affordability type
+        const affordabilityType = (!requestedAmount || requestedAmount <= 0) && calculatedTenure
+            ? LOAN_CONSTANTS.AFFORDABILITY_TYPE.REVERSE
+            : LOAN_CONSTANTS.AFFORDABILITY_TYPE.FORWARD;
 
-            let client = null;
-            let existingLoans = [];
-            let currentTotalEMI = 0;
+        console.log(`Affordability Type: ${affordabilityType}`);
+        console.log(`Max Affordable EMI: ${maxAffordableEMI}`);
+        console.log(`Desirable EMI: ${desirableEMI}`);
+        console.log(`Calculated Tenure: ${calculatedTenure}`);
 
-            try {
-                // Check if client exists in MIFOS
-                client = await searchClientByExternalId(checkNumber);
-
-                if (!client) {
-                    console.log('ℹ️ Client not found in MIFOS for checkNumber:', checkNumber);
-                    console.log('ℹ️ Continuing with loan calculation anyway (customer validation updated)');
-                    // Continue with loan calculation even if customer doesn't exist
-                    client = null;
-                } else {
-                    console.log('✅ Client found in MIFOS:', client.displayName);
-
-                    // 🔍 STEP 2: Check for existing loans if client exists
-                    existingLoans = await getClientLoans(client.id);
-                    const activeLoans = existingLoans.filter(loan =>
-                        loan.status && loan.status.active === true
-                    );
-
-                    if (activeLoans.length > 0) {
-                        console.log(`❌ Client has ${activeLoans.length} active loan(s) - rejecting request`);
-                        throw new Error('Customer already has an active loan');
-                    }
-
-                    console.log('✅ Client has no existing active loans - can proceed');
-
-                    // Calculate total current EMI from existing loans (should be 0 at this point)
-                    currentTotalEMI = activeLoans.reduce((total, loan) => {
-                        const emi = loan.repaymentSchedule?.periods?.find(period =>
-                            period.dueDate && new Date(period.dueDate) > new Date()
-                        )?.totalDueForPeriod || 0;
-
-                        console.log(`📋 Existing loan ${loan.accountNo}: EMI = ${emi}`);
-                        return total + (emi || 0);
-                    }, 0);
-
-                    console.log(`💰 Total current EMI obligations: ${currentTotalEMI}`);
-                }
-
-            } catch (mifosError) {
-                console.log('ℹ️ MIFOS system error during client validation:', mifosError.message);
-                console.log('ℹ️ Continuing with loan calculation anyway');
-                // Continue with loan calculation even if MIFOS check fails
-                client = null;
-            }
-
-            // 💡 CRITICAL: Adjust affordability for existing EMI obligations
-            const grossAffordableEMI = desiredDeductibleAmount && desiredDeductibleAmount > 0
-                ? desiredDeductibleAmount
-                : Math.floor(netSalary - oneThirdAmount);
-
-            const maxAffordableEMI = Math.max(0, grossAffordableEMI - currentTotalEMI);
-
-            console.log(`💰 Affordability Analysis:
-                - Gross Affordable EMI: ${grossAffordableEMI}
-                - Current Total EMI: ${currentTotalEMI}
-                - Net Available EMI: ${maxAffordableEMI}`);
-
-            // Check if customer has any remaining capacity for new loan
-            if (maxAffordableEMI <= 0) {
-                console.error('❌ Customer has no remaining EMI capacity due to existing loans');
-                throw new Error('Insufficient repayment capacity due to existing loan obligations');
-            }
-
-            const desirableEMI = !desiredDeductibleAmount || desiredDeductibleAmount <= 0
-                ? maxAffordableEMI
-                : Math.min(desiredDeductibleAmount - currentTotalEMI, maxAffordableEMI);
-
-            let calculatedTenure = tenure || 96; // Default 96 months
-            if (retirementDate) {
-                calculatedTenure = validateRetirementAge(calculatedTenure, retirementDate, productInfo.maxTenorMonths);
-            }
-
-            // Determine calculation type
-            if (requestedAmount && requestedAmount > 0) {
-                console.log('💰 Forward calculation: Requested Amount =', requestedAmount);
-
-                // Validate minimum amount
-                if (requestedAmount < productInfo.minAmount) {
-                    validationError = `Amount requested (${requestedAmount}) is less than the product minimum (${productInfo.minAmount})`;
-                } else {
-                    // Forward calculation
-                    let targetAmount = requestedAmount;
-
-                    // Cap to product max
-                    if (targetAmount > productInfo.maxAmount) {
-                        targetAmount = productInfo.maxAmount;
-                    }
-
-                    calculationResult = calculateForwardLoan(targetAmount, interestRate, calculatedTenure);
-
-                    // If EMI exceeds affordable, cap the amount to affordable
-                    if (calculationResult.monthlyEMI > maxAffordableEMI) {
-                        calculationResult = calculateReverseLoan(maxAffordableEMI, interestRate, calculatedTenure);
-                    }
-
-                    // Check minimum after capping
-                    if (calculationResult.principalAmount < productInfo.minAmount) {
-                        validationError = `Calculated loan amount (${Math.round(calculationResult.principalAmount)}) is less than the product minimum (${productInfo.minAmount})`;
-                    }
-                }
-            } else {
-                console.log('🔄 Reverse calculation: EMI =', desirableEMI);
-                // Reverse calculation (EMI to loan amount)
-                calculationResult = calculateReverseLoan(desirableEMI, interestRate, calculatedTenure);
-
-                // Validate calculated amount against product limits
-                if (calculationResult.principalAmount < productInfo.minAmount) {
-                    validationError = `Calculated loan amount (${Math.round(calculationResult.principalAmount)}) is less than the product minimum (${productInfo.minAmount})`;
-                } else if (calculationResult.principalAmount > productInfo.maxAmount) {
-                    calculationResult.principalAmount = productInfo.maxAmount;
-                    calculationResult = calculateForwardLoan(productInfo.maxAmount, interestRate, calculatedTenure);
-                }
-            }
-
-            if (calculationResult && !validationError) {
-                calculationResult.processingFee = Math.round(calculationResult.principalAmount * 0.02);
-                calculationResult.insurance = Math.round(calculationResult.principalAmount * 0.015);
-                calculationResult.employeeId = checkNumber;
-                calculationResult.loanAmount = calculationResult.principalAmount;
-            }
-
-        } else {
-            // Fallback to basic calculation for legacy format
-            console.log('📊 Using basic forward calculation for legacy format');
-            const principal = parseFloat(requestedAmount) || parseFloat(data.loanAmount) || 100000;
-            const calculatedTenure = Math.min(parseInt(tenure) || productInfo.maxTenorMonths, productInfo.maxTenorMonths);
-
-            // Validate minimum amount
-            if (principal < productInfo.minAmount) {
-                validationError = `Amount requested (${principal}) is less than the product minimum (${productInfo.minAmount})`;
-            } else {
-                calculationResult = calculateForwardLoan(principal, interestRate, calculatedTenure);
-                calculationResult.processingFee = Math.round(principal * 0.02);
-                calculationResult.insurance = Math.round(principal * 0.015);
-                calculationResult.employeeId = checkNumber || data.employeeId;
-                calculationResult.loanAmount = principal;
-            }
-        }
-
-        // Return calculation result even on validation error for transparency
-        if (calculationResult) {
-            return {
-                requestedAmount: calculationResult.principalAmount?.toFixed(2) || "0.00",
-                desiredDeductibleAmount: (calculationResult.monthlyEMI?.toFixed(2)) || "0.00",
-                totalInsurance: calculationResult.insurance?.toFixed(2) || "0.00",
-                totalProcessingFees: calculationResult.processingFee?.toFixed(2) || "0.00",
-                totalInterestRateAmount: calculationResult.totalInterest?.toFixed(2) || "0.00",
-                netLoanAmount: (calculationResult.principalAmount - (calculationResult.insurance || 0) - (calculationResult.processingFee || 0))?.toFixed(2) || "0.00",
-                totalAmountToPay: calculationResult.totalAmount?.toFixed(2) || "0.00",
-                tenure: calculationResult.tenure || tenure || 0,
-                eligibleAmount: productInfo.maxAmount?.toFixed(2) || "0.00",
-                monthlyReturnAmount: calculationResult.monthlyEMI?.toFixed(2) || "0.00",
-                validationError: validationError // Include validation error if any
+        // Save initial request to database
+        let possibleLoanChargesEntity = null;
+        try {
+            possibleLoanChargesEntity = await PossibleLoanCharges.create({
+                productCode: productCode,
+                productName: 'DAS',
+                idNumber: checkNumber,
+                idNumberType: 'CHECK_NUMBER',
+                request: JSON.stringify(utumishiRequest)
+            });
+            console.log(`Created PossibleLoanCharges entity with ID: ${possibleLoanChargesEntity._id}`);
+        } catch (dbError) {
+            console.warn('Database not available, continuing without persistence:', dbError.message);
+            // Create a mock entity for processing
+            possibleLoanChargesEntity = {
+                _id: 'mock-id',
+                updateOne: async () => {},
+                save: async () => {}
             };
         }
 
-        // If no calculation result, return error
-        throw new Error(validationError || 'Unable to calculate loan charges');
+        // Create LoanOfferDTO
+        const loanOfferDTO = {
+            country: 'tanzania',
+            institution: 'LBT',
+            loanType: 'DAS',
+            affordabilityType,
+            productCode: productCode,
+            totalDeduction: totalEmployeeDeduction || 0,
+            basicSalary: basicSalary || 0,
+            netSalary: netSalary || 0,
+            loanAmount: requestedAmount || 0,
+            tenure: calculatedTenure,
+            employmentType: 'EMPLOYED_FULL_TIME',
+            employerCode: '', // Not provided in request
+            employerName: '', // Not provided in request
+            newLoanOfferExpected: true,
+            centralRegAffordability: affordabilityType === LOAN_CONSTANTS.AFFORDABILITY_TYPE.REVERSE ? desirableEMI : maxAffordableEMI
+        };
+
+        // Get customer number and ID
+        const customerNumberAndCustomerId = await customerService.getCustomerNumberAndCustomerId('tanzania', checkNumber);
+
+        if (customerNumberAndCustomerId) {
+            loanOfferDTO.customerNumber = customerNumberAndCustomerId[0];
+            loanOfferDTO.newLoanOfferExpected = false;
+            loanOfferDTO.customerId = customerNumberAndCustomerId[1];
+
+            // Check if customer is active
+            await eligibilityService.isActiveCBSCustomer('tanzania', loanOfferDTO.customerNumber);
+
+            // Check for existing loans
+            const loanAccounts = await activeLoanProvider.enquireLoanAccount('tanzania', loanOfferDTO.customerNumber);
+
+            if (loanAccounts?.accountDetailList && loanAccounts.accountDetailList.length > 0) {
+                const activeAccount = loanAccounts.accountDetailList.find(account =>
+                    account.accountStatus === 'FULL' || account.accountStatus === 'PART'
+                );
+
+                if (activeAccount?.accountNumber) {
+                    const loanDetail = await activeLoanProvider.viewActiveLoanDetail('tanzania', activeAccount.accountNumber);
+
+                    if (loanDetail.isPositiveArrears() && loanDetail.dayArr > LOAN_CONSTANTS.NPA_LOAN_ARR_DAYS) {
+                        console.warn(`Loan account ${activeAccount.accountNumber} is NPA for customer ${loanOfferDTO.customerNumber}`);
+                        try {
+                            await possibleLoanChargesEntity.updateOne({
+                                status: 'FAILED',
+                                errorMessage: 'Customer has NPA loan'
+                            });
+                        } catch (dbError) {
+                            console.warn('Failed to update entity status:', dbError.message);
+                        }
+                        throw new ApplicationException(LOAN_CONSTANTS.ERROR_CODES.NOT_ELIGIBLE, 'Customer has NPA loan');
+                    }
+
+                    loanOfferDTO.accountNumber = activeAccount.accountNumber;
+                }
+            }
+        }
+
+        // Save offer request
+        try {
+            await possibleLoanChargesEntity.updateOne({
+                offerRequest: JSON.stringify(loanOfferDTO)
+            });
+        } catch (dbError) {
+            console.warn('Failed to save offer request to database:', dbError.message);
+        }
+
+        console.log('Getting loan offer from eligibility service...');
+        const loanOffer = await eligibilityService.getOffer(loanOfferDTO, true);
+
+        // Save offer data
+        try {
+            await possibleLoanChargesEntity.updateOne({
+                offerData: JSON.stringify(loanOffer)
+            });
+        } catch (dbError) {
+            console.warn('Failed to save offer data to database:', dbError.message);
+        }
+
+        if (!loanOffer?.loanOffer?.product) {
+            await possibleLoanChargesEntity.updateOne({
+                status: 'FAILED',
+                errorMessage: 'Customer is not eligible'
+            });
+            throw new ApplicationException(LOAN_CONSTANTS.ERROR_CODES.NOT_ELIGIBLE, 'Customer is not eligible');
+        }
+
+        // Update loan offer with additional data
+        loanOffer.loanOffer.maxEligibleAmount = loanOffer.loanOffer.maximumAmount || 0;
+        loanOffer.loanOffer.maxEligibleTerm = loanOffer.loanOffer.maximumTerm || 0;
+        loanOffer.loanOffer.baseTotalLoanAmount = loanOffer.loanOffer.totalLoanAmount || 0;
+
+        // Check if we need forward offer (when reverse was used but requested amount is provided)
+        if (affordabilityType === LOAN_CONSTANTS.AFFORDABILITY_TYPE.REVERSE && requestedAmount && requestedAmount > 0) {
+            return await doForwardOffer(possibleLoanChargesEntity, loanOfferDTO, requestedAmount, loanOffer.loanOffer.product.loanTerm, desiredDeductibleAmount);
+        }
+
+        // Calculate response values
+        const totalInterestRateAmount = (loanOffer.loanOffer.bpi || 0) + loanOffer.loanOffer.totalInterestAmount;
+
+        const response = {
+            monthlyReturnAmount: (loanOffer.loanOffer.product.totalMonthlyInst || 0).toFixed(2),
+            tenure: loanOffer.loanOffer.product.loanTerm || 0,
+            totalAmountToPay: ((loanOffer.loanOffer.product.totalMonthlyInst || 0) * (loanOffer.loanOffer.product.loanTerm || 0)).toFixed(2),
+            netLoanAmount: (loanOffer.loanOffer.product.loanAmount || 0).toFixed(2),
+            eligibleAmount: (loanOffer.loanOffer.product.loanAmount || 0).toFixed(2),
+            totalInterestRateAmount: totalInterestRateAmount.toFixed(2),
+            totalProcessingFees: (loanOffer.loanOffer.adminFee || 0).toFixed(2),
+            totalInsurance: (loanOffer.loanOffer.insurance?.oneTimeAmount || 0).toFixed(2),
+            otherCharges: "0.00",
+            desiredDeductibleAmount: desiredDeductibleAmount?.toString() || "0.00"
+        };
+
+        // Save response
+        try {
+            await possibleLoanChargesEntity.updateOne({
+                response: JSON.stringify(response),
+                status: 'COMPLETED'
+            });
+        } catch (dbError) {
+            console.warn('Failed to save response to database:', dbError.message);
+        }
+
+        return response;
 
     } catch (error) {
-        console.error('LoanCalculate error:', error);
-        throw error;
+        console.error('Exception in LoanCalculate:', error);
+
+        if (error instanceof ApplicationException) {
+            throw error;
+        }
+
+        if (error.message?.toLowerCase().includes('not eligible')) {
+            throw new ApplicationException(LOAN_CONSTANTS.ERROR_CODES.NOT_ELIGIBLE, 'Customer is not eligible');
+        }
+
+        throw new ApplicationException(LOAN_CONSTANTS.ERROR_CODES.INTERNAL_ERROR, error.message || 'Internal error occurred');
     }
+};
+
+/**
+ * Handle forward offer calculation when needed
+ */
+async function doForwardOffer(possibleLoanChargesEntity, loanOfferDTO, requestedAmount, term, desiredDeductibleAmount) {
+    console.log('Performing forward offer calculation...');
+
+    loanOfferDTO.affordabilityType = LOAN_CONSTANTS.AFFORDABILITY_TYPE.FORWARD;
+    loanOfferDTO.loanAmount = requestedAmount;
+    loanOfferDTO.tenure = term;
+
+    try {
+        await possibleLoanChargesEntity.updateOne({
+            offerRequest: JSON.stringify(loanOfferDTO)
+        });
+    } catch (dbError) {
+        console.warn('Failed to save forward offer request:', dbError.message);
+    }
+
+    const forwardLoanOffer = await eligibilityService.getOffer(loanOfferDTO);
+
+    try {
+        await possibleLoanChargesEntity.updateOne({
+            offerData: JSON.stringify(forwardLoanOffer)
+        });
+    } catch (dbError) {
+        console.warn('Failed to save forward offer data:', dbError.message);
+    }
+
+    if (!forwardLoanOffer?.loanOffer?.product) {
+        try {
+            await possibleLoanChargesEntity.updateOne({
+                status: 'FAILED',
+                errorMessage: 'Customer is not eligible with forward offer'
+            });
+        } catch (dbError) {
+            console.warn('Failed to update entity status:', dbError.message);
+        }
+        throw new ApplicationException(LOAN_CONSTANTS.ERROR_CODES.NOT_ELIGIBLE, 'Customer is not eligible with forward offer');
+    }
+
+    // Update forward offer with additional data
+    forwardLoanOffer.loanOffer.maxEligibleAmount = forwardLoanOffer.loanOffer.maximumAmount || 0;
+    forwardLoanOffer.loanOffer.maxEligibleTerm = forwardLoanOffer.loanOffer.maximumTerm || 0;
+    forwardLoanOffer.loanOffer.baseTotalLoanAmount = forwardLoanOffer.loanOffer.totalLoanAmount || 0;
+
+    const totalInterestRateAmount = (forwardLoanOffer.loanOffer.bpi || 0) + (forwardLoanOffer.loanOffer.totalInterestAmount || 0);
+
+    const response = {
+        monthlyReturnAmount: (forwardLoanOffer.loanOffer.product.totalMonthlyInst || 0).toFixed(2),
+        tenure: forwardLoanOffer.loanOffer.product.loanTerm || 0,
+        totalAmountToPay: ((forwardLoanOffer.loanOffer.product.totalMonthlyInst || 0) * (forwardLoanOffer.loanOffer.product.loanTerm || 0)).toFixed(2),
+        netLoanAmount: (forwardLoanOffer.loanOffer.product.loanAmount || 0).toFixed(2),
+        eligibleAmount: (forwardLoanOffer.loanOffer.product.loanAmount || 0).toFixed(2),
+        totalInterestRateAmount: totalInterestRateAmount.toFixed(2),
+        totalProcessingFees: (forwardLoanOffer.loanOffer.adminFee || 0).toFixed(2),
+        totalInsurance: (forwardLoanOffer.loanOffer.insurance?.oneTimeAmount || 0).toFixed(2),
+        otherCharges: "0.00",
+        desiredDeductibleAmount: desiredDeductibleAmount?.toString() || "0.00"
+    };
+
+    try {
+        await possibleLoanChargesEntity.updateOne({
+            response: JSON.stringify(response),
+            status: 'COMPLETED'
+        });
+    } catch (dbError) {
+        console.warn('Failed to save forward response:', dbError.message);
+    }
+
+    return response;
 }
 
 const CreateTopUpLoanOffer = async (data) => {
