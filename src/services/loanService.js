@@ -29,6 +29,19 @@ async function getClientLoans(clientId) {
     }
 }
 
+async function getProductDetails(productCode) {
+    try {
+        const response = await api.get(`/v1/loanproducts/${productCode}`);
+        if (response.status && response.response) {
+            return response.response;
+        }
+        return null;
+    } catch (error) {
+        console.log('Product details fetch error:', error.message);
+        return null;
+    }
+}
+
 function calculateForwardLoan(principal, annualInterestRate, tenure) {
     const monthlyRate = annualInterestRate / 100 / 12;
     const monthlyEMI = (principal * monthlyRate * Math.pow(1 + monthlyRate, tenure)) /
@@ -63,15 +76,15 @@ function calculateReverseLoan(monthlyEMI, annualInterestRate, tenure) {
     };
 }
 
-function validateRetirementAge(tenure, retirementDate) {
-    if (!retirementDate) return tenure;
+function validateRetirementAge(tenure, retirementDate, maxTenorMonths = 12) {
+    if (!retirementDate) return Math.min(tenure, maxTenorMonths);
 
     const retirement = new Date(retirementDate);
     const now = new Date();
     const ageAtRetirement = retirement.getFullYear() - now.getFullYear();
 
-    // Assume current age is 30 if not available, max tenure based on retirement
-    const maxTenureMonths = Math.max(12, (ageAtRetirement - 30) * 12);
+    // Use product-specific max tenor instead of hardcoded 12 months minimum
+    const maxTenureMonths = Math.max(maxTenorMonths, (ageAtRetirement - 30) * 12);
 
     return Math.min(tenure, maxTenureMonths);
 }
@@ -120,11 +133,26 @@ const LoanCalculate = async (data) => {
             jobClassCode
         } = data;
 
-        // Product configuration and validation
-        const productInfo = { minAmount: 10000, maxAmount: 120000000, name: 'Standard Loan' };
-        const interestRate = 24.0; // Standard rate
+        // Fetch product details from MIFOS
+        console.log('🔍 Fetching product details from MIFOS for productCode:', productCode);
+        const productDetails = await getProductDetails(productCode || 17);
 
-        console.log('🏷️ Product Info:', productInfo);
+        // Product configuration from MIFOS (with fallbacks)
+        const productInfo = productDetails ? {
+            minAmount: productDetails.minPrincipal || 10000,
+            maxAmount: productDetails.maxPrincipal || 120000000,
+            maxTenorMonths: productDetails.maxNumberOfRepayments || 120, // Maximum tenor in months
+            name: productDetails.name || 'Standard Loan'
+        } : {
+            minAmount: 10000,
+            maxAmount: 120000000,
+            maxTenorMonths: 120, // Fallback maximum tenor
+            name: 'Standard Loan'
+        };
+
+        const interestRate = productDetails?.interestRatePerPeriod || 24.0; // Use MIFOS rate or fallback
+
+        console.log('🏷️ Product Info from MIFOS:', productInfo);
 
         let calculationResult;
         let validationError = null;
@@ -209,7 +237,7 @@ const LoanCalculate = async (data) => {
 
             let calculatedTenure = tenure || 96; // Default 96 months
             if (retirementDate) {
-                calculatedTenure = validateRetirementAge(calculatedTenure, retirementDate);
+                calculatedTenure = validateRetirementAge(calculatedTenure, retirementDate, productInfo.maxTenorMonths);
             }
 
             // Determine calculation type
@@ -265,7 +293,7 @@ const LoanCalculate = async (data) => {
             // Fallback to basic calculation for legacy format
             console.log('📊 Using basic forward calculation for legacy format');
             const principal = parseFloat(requestedAmount) || parseFloat(data.loanAmount) || 100000;
-            const calculatedTenure = parseInt(tenure) || 12;
+            const calculatedTenure = Math.min(parseInt(tenure) || productInfo.maxTenorMonths, productInfo.maxTenorMonths);
 
             // Validate minimum amount
             if (principal < productInfo.minAmount) {
