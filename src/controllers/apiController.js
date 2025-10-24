@@ -493,7 +493,7 @@ async function handleLoanFinalApproval(parsedData, res) {
                 externalId: approvalData.nin,
                 dateOfBirth: approvalData.dateOfBirth,
                 mobileNo: formattedMobile,
-                clientTypeId: 1, // Always use 1 (Retail) for emkopo
+                // clientTypeId: 1, // Removed - ClientType code 1 does not exist in MIFOS
                 officeId: 1, // Head Office
                 activationDate: new Date().toISOString().split('T')[0],
                 submittedOnDate: new Date().toISOString().split('T')[0],
