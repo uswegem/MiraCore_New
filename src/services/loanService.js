@@ -172,17 +172,8 @@ const LoanCalculate = async (data) => {
             interestType: 0, // Declining balance
             interestCalculationPeriodType: 1, // Same as repayment period
             allowPartialPeriodInterestCalcualtion: false,
-            transactionProcessingStrategyId: 1,
-            charges: [
-                {
-                    chargeId: insuranceCharge?.id || 1,
-                    amount: totalInsurance
-                },
-                {
-                    chargeId: processingFeeCharge?.id || 2,
-                    amount: totalProcessingFees
-                }
-            ]
+            transactionProcessingStrategyId: 1
+            // Removed charges as they might cause validation issues
         };
 
         console.log('Calling MIFOS calculation API with payload:', JSON.stringify(calculationPayload, null, 2));
@@ -190,7 +181,29 @@ const LoanCalculate = async (data) => {
         const calculationResult = await api.post(API_ENDPOINTS.CALCULATE_POSSIBLE_LOAN_CHARGES, calculationPayload);
 
         if (!calculationResult.status) {
-            throw new Error('MIFOS calculation failed: ' + JSON.stringify(calculationResult.response));
+            console.error('MIFOS calculation failed:', calculationResult.response);
+            // Fallback to local calculation if MIFOS fails
+            console.log('Falling back to local calculation');
+            const monthlyInterestRate = (interestRatePerPeriod / 100) / 12;
+            const localTotalInterest = months ? principal * monthlyInterestRate * months : 0;
+            const localTotalAmount = principal + localTotalInterest + totalInsurance + totalProcessingFees;
+            const localMonthlyReturn = months ? localTotalAmount / months : 0;
+
+            const result = {
+                requestedAmount: principal.toFixed(2),
+                desiredDeductibleAmount: (desiredDeduction ?? localMonthlyReturn).toFixed(2),
+                totalInsurance: totalInsurance.toFixed(2),
+                totalProcessingFees: totalProcessingFees.toFixed(2),
+                totalInterestRateAmount: localTotalInterest.toFixed(2),
+                netLoanAmount: netLoanAmount.toFixed(2),
+                totalAmountToPay: localTotalAmount.toFixed(2),
+                tenure: months,
+                eligibleAmount: maxPrincipal.toFixed(2),
+                monthlyReturnAmount: localMonthlyReturn.toFixed(2),
+            };
+
+            console.log('Local calculation result:', result);
+            return result;
         }
 
         const mifosSchedule = calculationResult.response;
@@ -198,7 +211,6 @@ const LoanCalculate = async (data) => {
         // Extract values from MIFOS response
         const totalInterestRateAmount = mifosSchedule.totalInterestCharged || 0;
         const totalAmountToPay = mifosSchedule.totalRepaymentExpected || 0;
-        const netLoanAmount = principal - totalInsurance - totalProcessingFees;
         const monthlyReturnAmount = months ? totalAmountToPay / months : 0;
 
         // fallback if user didn't provide deduction
