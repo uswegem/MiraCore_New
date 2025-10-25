@@ -322,6 +322,17 @@ const LoanCalculate = async (data) => {
             throw new ApplicationException(LOAN_CONSTANTS.ERROR_CODES.NOT_ELIGIBLE, 'Customer is not eligible');
         }
 
+        // Validate that calculated EMI does not exceed DeductibleAmount
+        const calculatedEMI = loanOffer.loanOffer.product.totalMonthlyInst || 0;
+        if (calculatedEMI > deductibleAmount) {
+            console.warn(`Calculated EMI ${calculatedEMI} exceeds DeductibleAmount ${deductibleAmount}`);
+            await possibleLoanChargesEntity.updateOne({
+                status: 'FAILED',
+                errorMessage: `Calculated EMI (${calculatedEMI}) exceeds maximum deductible amount (${deductibleAmount})`
+            });
+            throw new ApplicationException(LOAN_CONSTANTS.ERROR_CODES.INVALID_AMOUNT, `Calculated EMI (${calculatedEMI}) exceeds maximum deductible amount (${deductibleAmount})`);
+        }
+
         // Update loan offer with additional data
         loanOffer.loanOffer.maxEligibleAmount = loanOffer.loanOffer.maximumAmount || 0;
         loanOffer.loanOffer.maxEligibleTerm = loanOffer.loanOffer.maximumTerm || 0;
