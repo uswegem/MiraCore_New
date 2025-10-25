@@ -214,6 +214,26 @@ const LoanCalculate = async (data) => {
             };
         }
 
+        // Fetch MIFOS product details with fallback to constants
+        console.log('Fetching product details from MIFOS for product code:', productCode);
+        let productDetails = null;
+        try {
+            productDetails = await getProductDetails(productCode);
+            if (productDetails) {
+                console.log('Successfully fetched product details from MIFOS:', {
+                    name: productDetails.name,
+                    interestRate: productDetails.nominalInterestRatePerPeriod,
+                    maxPrincipal: productDetails.maxPrincipal,
+                    minPrincipal: productDetails.minPrincipal,
+                    maxNumberOfRepayments: productDetails.maxNumberOfRepayments
+                });
+            } else {
+                console.log('Product details not found in MIFOS, using fallback constants');
+            }
+        } catch (error) {
+            console.warn('Failed to fetch product details from MIFOS, using fallback constants:', error.message);
+        }
+
         // Create LoanOfferDTO with appropriate affordability constraint
         const loanOfferDTO = {
             country: 'tanzania',
@@ -232,7 +252,18 @@ const LoanCalculate = async (data) => {
             newLoanOfferExpected: true,
             centralRegAffordability: affordabilityType === LOAN_CONSTANTS.AFFORDABILITY_TYPE.REVERSE
                 ? desirableEMI  // For reverse: use DesiredDeductibleAmount (capped at DeductibleAmount)
-                : deductibleAmount // For forward: use DeductibleAmount as max constraint
+                : deductibleAmount, // For forward: use DeductibleAmount as max constraint
+            // Add MIFOS product parameters with fallback to constants
+            productDetails: productDetails || {
+                interestRate: LOAN_CONSTANTS.DEFAULT_INTEREST_RATE,
+                maxPrincipal: LOAN_CONSTANTS.MAX_LOAN_AMOUNT,
+                minPrincipal: LOAN_CONSTANTS.TEST_LOAN_AMOUNT,
+                maxNumberOfRepayments: LOAN_CONSTANTS.MAX_TENURE,
+                interestRateFrequencyType: { id: 3 }, // Monthly
+                interestCalculationPeriodType: { id: 1 }, // Same as repayment period
+                amortizationType: { id: 1 }, // Equal installments
+                interestType: { id: 0 } // Declining balance
+            }
         };
 
         // Get customer number and ID using real MIFOS API with NIN

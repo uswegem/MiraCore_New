@@ -26,6 +26,21 @@ class EligibilityService {
       const tenure = loanOfferDTO.tenure || LOAN_CONSTANTS.DEFAULT_TENURE;
       const affordabilityType = loanOfferDTO.affordabilityType || 'FORWARD';
 
+      // Extract product parameters with fallback to constants
+      const productDetails = loanOfferDTO.productDetails || {};
+      const interestRate = productDetails.interestRate || LOAN_CONSTANTS.DEFAULT_INTEREST_RATE;
+      const maxPrincipal = productDetails.maxPrincipal || LOAN_CONSTANTS.MAX_LOAN_AMOUNT;
+      const minPrincipal = productDetails.minPrincipal || LOAN_CONSTANTS.TEST_LOAN_AMOUNT;
+      const maxTenure = productDetails.maxNumberOfRepayments || LOAN_CONSTANTS.MAX_TENURE;
+
+      console.log('Using product parameters:', {
+        interestRate,
+        maxPrincipal,
+        minPrincipal,
+        maxTenure,
+        source: productDetails.interestRate ? 'MIFOS' : 'CONSTANTS'
+      });
+
       let adjustedLoanAmount;
       let calculatedEMI;
 
@@ -33,22 +48,22 @@ class EligibilityService {
         // For reverse calculation: use centralRegAffordability as target EMI
         const targetEMI = loanOfferDTO.centralRegAffordability;
         console.log(`Reverse calculation: Using ${targetEMI} as target EMI`);
-        adjustedLoanAmount = this.calculateMaxLoanAmount(targetEMI, LOAN_CONSTANTS.DEFAULT_INTEREST_RATE, tenure);
+        adjustedLoanAmount = this.calculateMaxLoanAmount(targetEMI, interestRate, tenure);
         calculatedEMI = targetEMI;
         console.log(`Calculated max loan amount: ${adjustedLoanAmount} for EMI: ${calculatedEMI}`);
       } else {
         // For forward calculation: check if requested amount fits within affordability
-        const maxAffordableEMI = loanOfferDTO.centralRegAffordability || this.calculateEMI(requestedAmount, LOAN_CONSTANTS.DEFAULT_INTEREST_RATE, tenure);
+        const maxAffordableEMI = loanOfferDTO.centralRegAffordability || this.calculateEMI(requestedAmount, interestRate, tenure);
 
         // Calculate EMI for requested amount
-        calculatedEMI = this.calculateEMI(requestedAmount, LOAN_CONSTANTS.DEFAULT_INTEREST_RATE, tenure);
+        calculatedEMI = this.calculateEMI(requestedAmount, interestRate, tenure);
 
         // If calculated EMI exceeds maximum affordable EMI, adjust the loan amount
         adjustedLoanAmount = requestedAmount;
         if (calculatedEMI > maxAffordableEMI) {
           console.log(`Calculated EMI ${calculatedEMI} exceeds max affordable EMI ${maxAffordableEMI}, adjusting loan amount`);
           // Calculate maximum loan amount that fits within maxAffordableEMI
-          adjustedLoanAmount = this.calculateMaxLoanAmount(maxAffordableEMI, LOAN_CONSTANTS.DEFAULT_INTEREST_RATE, tenure);
+          adjustedLoanAmount = this.calculateMaxLoanAmount(maxAffordableEMI, interestRate, tenure);
           calculatedEMI = maxAffordableEMI;
           console.log(`Adjusted loan amount from ${requestedAmount} to ${adjustedLoanAmount} to fit EMI constraint`);
         } else {
@@ -56,26 +71,26 @@ class EligibilityService {
         }
       }
 
-      // Mock eligibility response
+      // Mock eligibility response using dynamic product parameters
       const mockOffer = {
         loanOffer: {
           product: {
             loanTerm: tenure,
             totalMonthlyInst: calculatedEMI,
             loanAmount: adjustedLoanAmount,
-            totalLoanAmount: adjustedLoanAmount * LOAN_CONSTANTS.TOTAL_LOAN_MULTIPLIER, // with interest
-            maximumAmount: LOAN_CONSTANTS.MAX_LOAN_AMOUNT,
-            maximumTerm: LOAN_CONSTANTS.MAX_TENURE
+            totalLoanAmount: adjustedLoanAmount * (productDetails.totalLoanMultiplier || LOAN_CONSTANTS.TOTAL_LOAN_MULTIPLIER), // with interest
+            maximumAmount: maxPrincipal,
+            maximumTerm: maxTenure
           },
-          totalInterestAmount: adjustedLoanAmount * LOAN_CONSTANTS.INTEREST_MULTIPLIER,
-          adminFee: adjustedLoanAmount * LOAN_CONSTANTS.ADMIN_FEE_RATE,
+          totalInterestAmount: adjustedLoanAmount * (productDetails.interestMultiplier || LOAN_CONSTANTS.INTEREST_MULTIPLIER),
+          adminFee: adjustedLoanAmount * (productDetails.adminFeeRate || LOAN_CONSTANTS.ADMIN_FEE_RATE),
           insurance: {
-            oneTimeAmount: adjustedLoanAmount * LOAN_CONSTANTS.INSURANCE_RATE
+            oneTimeAmount: adjustedLoanAmount * (productDetails.insuranceRate || LOAN_CONSTANTS.INSURANCE_RATE)
           },
           bpi: 0, // Bank Processing Fee
-          maxEligibleAmount: LOAN_CONSTANTS.MAX_LOAN_AMOUNT,
-          maxEligibleTerm: LOAN_CONSTANTS.MAX_TENURE,
-          baseTotalLoanAmount: adjustedLoanAmount * LOAN_CONSTANTS.TOTAL_LOAN_MULTIPLIER
+          maxEligibleAmount: maxPrincipal,
+          maxEligibleTerm: maxTenure,
+          baseTotalLoanAmount: adjustedLoanAmount * (productDetails.totalLoanMultiplier || LOAN_CONSTANTS.TOTAL_LOAN_MULTIPLIER)
         }
       };
 
