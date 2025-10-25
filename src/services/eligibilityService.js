@@ -24,19 +24,36 @@ class EligibilityService {
     try {
       const requestedAmount = loanOfferDTO.loanAmount || LOAN_CONSTANTS.DEFAULT_LOAN_AMOUNT;
       const tenure = loanOfferDTO.tenure || LOAN_CONSTANTS.DEFAULT_TENURE;
-      const maxAffordableEMI = loanOfferDTO.centralRegAffordability || this.calculateEMI(requestedAmount, LOAN_CONSTANTS.DEFAULT_INTEREST_RATE, tenure);
+      const affordabilityType = loanOfferDTO.affordabilityType || 'FORWARD';
 
-      // Calculate EMI for requested amount
-      let calculatedEMI = this.calculateEMI(requestedAmount, LOAN_CONSTANTS.DEFAULT_INTEREST_RATE, tenure);
+      let adjustedLoanAmount;
+      let calculatedEMI;
 
-      // If calculated EMI exceeds maximum affordable EMI, adjust the loan amount
-      let adjustedLoanAmount = requestedAmount;
-      if (calculatedEMI > maxAffordableEMI) {
-        console.log(`Calculated EMI ${calculatedEMI} exceeds max affordable EMI ${maxAffordableEMI}, adjusting loan amount`);
-        // Calculate maximum loan amount that fits within maxAffordableEMI
-        adjustedLoanAmount = this.calculateMaxLoanAmount(maxAffordableEMI, LOAN_CONSTANTS.DEFAULT_INTEREST_RATE, tenure);
-        calculatedEMI = maxAffordableEMI;
-        console.log(`Adjusted loan amount from ${requestedAmount} to ${adjustedLoanAmount} to fit EMI constraint`);
+      if (affordabilityType === 'REVERSE') {
+        // For reverse calculation: use centralRegAffordability as target EMI
+        const targetEMI = loanOfferDTO.centralRegAffordability;
+        console.log(`Reverse calculation: Using ${targetEMI} as target EMI`);
+        adjustedLoanAmount = this.calculateMaxLoanAmount(targetEMI, LOAN_CONSTANTS.DEFAULT_INTEREST_RATE, tenure);
+        calculatedEMI = targetEMI;
+        console.log(`Calculated max loan amount: ${adjustedLoanAmount} for EMI: ${calculatedEMI}`);
+      } else {
+        // For forward calculation: check if requested amount fits within affordability
+        const maxAffordableEMI = loanOfferDTO.centralRegAffordability || this.calculateEMI(requestedAmount, LOAN_CONSTANTS.DEFAULT_INTEREST_RATE, tenure);
+
+        // Calculate EMI for requested amount
+        calculatedEMI = this.calculateEMI(requestedAmount, LOAN_CONSTANTS.DEFAULT_INTEREST_RATE, tenure);
+
+        // If calculated EMI exceeds maximum affordable EMI, adjust the loan amount
+        adjustedLoanAmount = requestedAmount;
+        if (calculatedEMI > maxAffordableEMI) {
+          console.log(`Calculated EMI ${calculatedEMI} exceeds max affordable EMI ${maxAffordableEMI}, adjusting loan amount`);
+          // Calculate maximum loan amount that fits within maxAffordableEMI
+          adjustedLoanAmount = this.calculateMaxLoanAmount(maxAffordableEMI, LOAN_CONSTANTS.DEFAULT_INTEREST_RATE, tenure);
+          calculatedEMI = maxAffordableEMI;
+          console.log(`Adjusted loan amount from ${requestedAmount} to ${adjustedLoanAmount} to fit EMI constraint`);
+        } else {
+          console.log(`Requested amount ${requestedAmount} fits within affordability (EMI: ${calculatedEMI})`);
+        }
       }
 
       // Mock eligibility response

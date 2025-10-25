@@ -189,6 +189,8 @@ const LoanCalculate = async (data) => {
         console.log(`Affordability Type: ${affordabilityType}`);
         console.log(`Max Affordable EMI: ${maxAffordableEMI}`);
         console.log(`Desirable EMI: ${desirableEMI}`);
+        console.log(`Central Reg Affordability (used for calculation): ${affordabilityType === LOAN_CONSTANTS.AFFORDABILITY_TYPE.REVERSE ? desirableEMI : deductibleAmount}`);
+        console.log(`Desirable EMI: ${desirableEMI}`);
         console.log(`Calculated Tenure: ${calculatedTenure}`);
 
         // Save initial request to database
@@ -212,7 +214,7 @@ const LoanCalculate = async (data) => {
             };
         }
 
-        // Create LoanOfferDTO with DeductibleAmount as the affordability constraint
+        // Create LoanOfferDTO with appropriate affordability constraint
         const loanOfferDTO = {
             country: 'tanzania',
             institution: 'LBT',
@@ -228,7 +230,9 @@ const LoanCalculate = async (data) => {
             employerCode: '', // Not provided in request
             employerName: '', // Not provided in request
             newLoanOfferExpected: true,
-            centralRegAffordability: deductibleAmount // Use DeductibleAmount as max affordable EMI
+            centralRegAffordability: affordabilityType === LOAN_CONSTANTS.AFFORDABILITY_TYPE.REVERSE
+                ? desirableEMI  // For reverse: use DesiredDeductibleAmount (capped at DeductibleAmount)
+                : deductibleAmount // For forward: use DeductibleAmount as max constraint
         };
 
         // Get customer number and ID using real MIFOS API with NIN
