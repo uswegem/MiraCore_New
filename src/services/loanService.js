@@ -325,12 +325,21 @@ const LoanCalculate = async (data) => {
         // Validate that calculated EMI does not exceed DeductibleAmount
         const calculatedEMI = loanOffer.loanOffer.product.totalMonthlyInst || 0;
         if (calculatedEMI > deductibleAmount) {
-            console.warn(`Calculated EMI ${calculatedEMI} exceeds DeductibleAmount ${deductibleAmount}`);
-            await possibleLoanChargesEntity.updateOne({
-                status: 'FAILED',
-                errorMessage: `Calculated EMI (${calculatedEMI}) exceeds maximum deductible amount (${deductibleAmount})`
-            });
-            throw new ApplicationException(LOAN_CONSTANTS.ERROR_CODES.INVALID_AMOUNT, `Calculated EMI (${calculatedEMI}) exceeds maximum deductible amount (${deductibleAmount})`);
+            console.log(`Calculated EMI ${calculatedEMI} exceeds DeductibleAmount ${deductibleAmount}, constraining to DeductibleAmount for affordability calculation`);
+
+            // Use DeductibleAmount as the maximum affordable EMI for recalculation
+            loanOfferDTO.centralRegAffordability = deductibleAmount;
+
+            // Recalculate loan offer with constrained EMI
+            const constrainedLoanOffer = await eligibilityService.getOffer(loanOfferDTO);
+
+            if (constrainedLoanOffer?.loanOffer?.product) {
+                console.log('Successfully recalculated loan offer with constrained EMI');
+                // Use the constrained offer for response generation
+                loanOffer = constrainedLoanOffer;
+            } else {
+                console.warn('Failed to recalculate loan offer with constrained EMI, proceeding with original offer');
+            }
         }
 
         // Update loan offer with additional data
