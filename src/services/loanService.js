@@ -212,7 +212,7 @@ const LoanCalculate = async (data) => {
             };
         }
 
-        // Create LoanOfferDTO
+        // Create LoanOfferDTO with DeductibleAmount as the affordability constraint
         const loanOfferDTO = {
             country: 'tanzania',
             institution: 'LBT',
@@ -228,7 +228,7 @@ const LoanCalculate = async (data) => {
             employerCode: '', // Not provided in request
             employerName: '', // Not provided in request
             newLoanOfferExpected: true,
-            centralRegAffordability: affordabilityType === LOAN_CONSTANTS.AFFORDABILITY_TYPE.REVERSE ? desirableEMI : maxAffordableEMI
+            centralRegAffordability: deductibleAmount // Use DeductibleAmount as max affordable EMI
         };
 
         // Get customer number and ID using real MIFOS API with NIN
@@ -303,50 +303,7 @@ const LoanCalculate = async (data) => {
         }
 
         console.log('Getting loan offer from eligibility service...');
-        let loanOffer = await eligibilityService.getOffer(loanOfferDTO, true);
-
-        // Save offer data
-        try {
-            await possibleLoanChargesEntity.updateOne({
-                offerData: JSON.stringify(loanOffer)
-            });
-        } catch (dbError) {
-            console.warn('Failed to save offer data to database:', dbError.message);
-        }
-
-        if (!loanOffer?.loanOffer?.product) {
-            await possibleLoanChargesEntity.updateOne({
-                status: 'FAILED',
-                errorMessage: 'Customer is not eligible'
-            });
-            throw new ApplicationException(LOAN_CONSTANTS.ERROR_CODES.NOT_ELIGIBLE, 'Customer is not eligible');
-        }
-
-        // Validate that calculated EMI does not exceed DeductibleAmount
-        const calculatedEMI = loanOffer.loanOffer.product.totalMonthlyInst || 0;
-        if (calculatedEMI > deductibleAmount) {
-            console.log(`Calculated EMI ${calculatedEMI} exceeds DeductibleAmount ${deductibleAmount}, constraining to DeductibleAmount for affordability calculation`);
-
-            try {
-                // Use DeductibleAmount as the maximum affordable EMI for recalculation
-                loanOfferDTO.centralRegAffordability = deductibleAmount;
-
-                // Recalculate loan offer with constrained EMI
-                const constrainedLoanOffer = await eligibilityService.getOffer(loanOfferDTO);
-
-                if (constrainedLoanOffer?.loanOffer?.product) {
-                    console.log('Successfully recalculated loan offer with constrained EMI');
-                    // Use the constrained offer for response generation
-                    loanOffer = constrainedLoanOffer;
-                } else {
-                    console.warn('Failed to recalculate loan offer with constrained EMI, proceeding with original offer');
-                }
-            } catch (recalcError) {
-                console.warn('Error recalculating loan offer with constrained EMI:', recalcError.message);
-                console.log('Proceeding with original offer but capping EMI display');
-                // Could modify the response to show capped EMI, but for now proceed with original
-            }
-        }
+        const loanOffer = await eligibilityService.getOffer(loanOfferDTO, true);
 
         // Update loan offer with additional data
         loanOffer.loanOffer.maxEligibleAmount = loanOffer.loanOffer.maximumAmount || 0;
