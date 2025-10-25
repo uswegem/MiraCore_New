@@ -517,7 +517,6 @@ async function handleLoanFinalApproval(parsedData, res) {
                 bankAccountNumber: approvalData.bankAccountNumber,
                 employmentDate: approvalData.employmentDate,
                 maritalStatus: approvalData.maritalStatus,
-                retirementDate: approvalData.retirementDate,
                 physicalAddress: approvalData.physicalAddress,
                 contractEndDate: approvalData.contractEndDate,
                 swiftCode: approvalData.swiftCode,
