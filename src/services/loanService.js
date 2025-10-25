@@ -327,18 +327,24 @@ const LoanCalculate = async (data) => {
         if (calculatedEMI > deductibleAmount) {
             console.log(`Calculated EMI ${calculatedEMI} exceeds DeductibleAmount ${deductibleAmount}, constraining to DeductibleAmount for affordability calculation`);
 
-            // Use DeductibleAmount as the maximum affordable EMI for recalculation
-            loanOfferDTO.centralRegAffordability = deductibleAmount;
+            try {
+                // Use DeductibleAmount as the maximum affordable EMI for recalculation
+                loanOfferDTO.centralRegAffordability = deductibleAmount;
 
-            // Recalculate loan offer with constrained EMI
-            const constrainedLoanOffer = await eligibilityService.getOffer(loanOfferDTO);
+                // Recalculate loan offer with constrained EMI
+                const constrainedLoanOffer = await eligibilityService.getOffer(loanOfferDTO);
 
-            if (constrainedLoanOffer?.loanOffer?.product) {
-                console.log('Successfully recalculated loan offer with constrained EMI');
-                // Use the constrained offer for response generation
-                loanOffer = constrainedLoanOffer;
-            } else {
-                console.warn('Failed to recalculate loan offer with constrained EMI, proceeding with original offer');
+                if (constrainedLoanOffer?.loanOffer?.product) {
+                    console.log('Successfully recalculated loan offer with constrained EMI');
+                    // Use the constrained offer for response generation
+                    loanOffer = constrainedLoanOffer;
+                } else {
+                    console.warn('Failed to recalculate loan offer with constrained EMI, proceeding with original offer');
+                }
+            } catch (recalcError) {
+                console.warn('Error recalculating loan offer with constrained EMI:', recalcError.message);
+                console.log('Proceeding with original offer but capping EMI display');
+                // Could modify the response to show capped EMI, but for now proceed with original
             }
         }
 
