@@ -520,18 +520,8 @@ async function handleLoanFinalApproval(parsedData, res) {
                 isStaff: false,
                 locale: 'en',
                 dateFormat: 'yyyy-MM-dd'
+                // Note: addresses not supported in this MIFOS version
             };
-
-            // Add address entity if physicalAddress is provided
-            if (approvalData.physicalAddress) {
-                clientPayload.addresses = [{
-                    addressTypeId: 1, // Home address
-                    street: approvalData.physicalAddress,
-                    city: 'Dar es Salaam', // Default city
-                    countryId: 1, // Tanzania
-                    isActive: true
-                }];
-            }
 
             console.log('Final client payload:', JSON.stringify(clientPayload, null, 2));
 
@@ -552,18 +542,8 @@ async function handleLoanFinalApproval(parsedData, res) {
                 isStaff: false,
                 locale: 'en',
                 dateFormat: 'yyyy-MM-dd'
+                // Note: addresses not supported in this MIFOS version
             };
-
-            // Add address entity to base payload if physicalAddress is provided
-            if (approvalData.physicalAddress) {
-                baseClientPayload.addresses = [{
-                    addressTypeId: 1, // Home address
-                    street: approvalData.physicalAddress,
-                    city: 'Dar es Salaam', // Default city
-                    countryId: 1, // Tanzania
-                    isActive: true
-                }];
-            }
 
             // Fields to be stored in client_onboarding datatable
             const datatableFields = {
