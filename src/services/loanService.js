@@ -303,7 +303,7 @@ const LoanCalculate = async (data) => {
         }
 
         console.log('Getting loan offer from eligibility service...');
-        const loanOffer = await eligibilityService.getOffer(loanOfferDTO, true);
+        let loanOffer = await eligibilityService.getOffer(loanOfferDTO, true);
 
         // Save offer data
         try {
