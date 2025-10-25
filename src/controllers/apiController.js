@@ -598,15 +598,29 @@ async function handleLoanFinalApproval(parsedData, res) {
             console.log('MIFOS client creation response:', JSON.stringify(clientResponse.response, null, 2));
             console.log('✅ Client created successfully:', clientId);
 
-            // Update loan mapping with MIFOS client ID
+        if (!clientExists) {
+            // Update loan mapping with MIFOS client ID for new clients
             try {
                 await LoanMappingService.updateWithClientCreation(approvalData.loanNumber, clientId);
             } catch (mappingError) {
                 console.error('❌ Error updating loan mapping with client creation:', mappingError);
             }
+        } else {
+            console.log('Client already exists with NIN:', approvalData.nin, 'ID:', clientId);
+        }
 
-            // 3. Activate Client in MIFOS
-            console.log('Activating client...');
+        // 3. Check and activate client if needed
+        console.log('Checking client activation status...');
+        const clientDetailsResponse = await cbsApi.get(`/v1/clients/${clientId}`);
+        if (!clientDetailsResponse.status) {
+            throw new Error('Failed to get client details: ' + JSON.stringify(clientDetailsResponse.response));
+        }
+
+        const clientDetails = clientDetailsResponse.response;
+        const isActive = clientDetails.active;
+
+        if (!isActive) {
+            console.log('Client is not active, activating...');
             const activationResponse = await cbsApi.post(`/v1/clients/${clientId}?command=activate`, {
                 activationDate: new Date().toISOString().split('T')[0],
                 locale: 'en',
@@ -618,6 +632,9 @@ async function handleLoanFinalApproval(parsedData, res) {
             } else {
                 console.log('✅ Client activated successfully');
             }
+        } else {
+            console.log('✅ Client is already active');
+        }
 
             // Insert client onboarding datatable data
             if (approvalData.checkNumber) {
