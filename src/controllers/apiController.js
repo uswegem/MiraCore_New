@@ -511,8 +511,8 @@ async function handleLoanFinalApproval(parsedData, res) {
                 dateOfBirth: approvalData.dateOfBirth,
                 mobileNo: formattedMobile,
                 emailAddress: approvalData.emailAddress,
-                // Gender mapping: 1 for Female, 2 for Male
-                genderId: approvalData.sex === 'F' ? 1 : approvalData.sex === 'M' ? 2 : undefined,
+                // Gender mapping: Female = 16, Male = 15 (MIFOS zedone-uat codes)
+                genderId: approvalData.sex === 'F' ? 16 : approvalData.sex === 'M' ? 15 : undefined,
                 officeId: 1, // Head Office
                 activationDate: new Date().toISOString().split('T')[0],
                 submittedOnDate: new Date().toISOString().split('T')[0],
@@ -544,7 +544,7 @@ async function handleLoanFinalApproval(parsedData, res) {
                 dateOfBirth: approvalData.dateOfBirth,
                 mobileNo: formattedMobile,
                 emailAddress: approvalData.emailAddress,
-                genderId: approvalData.sex === 'F' ? 1 : approvalData.sex === 'M' ? 2 : undefined,
+                genderId: approvalData.sex === 'F' ? 16 : approvalData.sex === 'M' ? 15 : undefined,
                 officeId: 1, // Head Office
                 activationDate: new Date().toISOString().split('T')[0],
                 submittedOnDate: new Date().toISOString().split('T')[0],
@@ -585,7 +585,8 @@ async function handleLoanFinalApproval(parsedData, res) {
                     console.log('✅ Client created successfully with full payload');
                     clientId = clientResponse.response.clientId;
                 } else {
-                    throw new Error('Client creation failed');
+                    console.error('❌ MIFOS API returned error for full payload:', JSON.stringify(clientResponse, null, 2));
+                    throw new Error('Client creation failed: ' + JSON.stringify(clientResponse.response));
                 }
             } catch (fullPayloadError) {
                 console.log('⚠️ Full payload failed, attempting with base fields only...');
@@ -602,13 +603,14 @@ async function handleLoanFinalApproval(parsedData, res) {
                         console.log('Storing datatable fields in client_onboarding...');
                         await storeClientOnboardingData(clientId, datatableFields);
                     } else {
-                        throw new Error('Base client creation also failed');
+                        console.error('❌ MIFOS API returned error for base payload:', JSON.stringify(clientResponse, null, 2));
+                        throw new Error('Base client creation failed: ' + JSON.stringify(clientResponse.response));
                     }
                 } catch (basePayloadError) {
                     console.error('❌ Both client creation attempts failed');
                     console.error('Full payload error:', fullPayloadError.message);
                     console.error('Base payload error:', basePayloadError.message);
-                    throw new Error('Failed to create client in MIFOS');
+                    throw new Error('Failed to create client in MIFOS - check MIFOS API credentials, server connectivity, and field validation');
                 }
             }
 
