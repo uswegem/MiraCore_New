@@ -1,6 +1,7 @@
 const xml2js = require('xml2js');
 const { LoanCalculate } = require('./src/services/loanService');
 const digitalSignature = require('./src/utils/signatureUtils');
+const LOAN_CONSTANTS = require('./src/utils/loanConstants');
 
 const parser = new xml2js.Parser({
     explicitArray: false,
@@ -27,9 +28,9 @@ async function testLoanMessageTypesDirect() {
 <Document>
     <Data>
         <Header>
-            <Sender>ESS_UTUMISHI</Sender>
-            <Receiver>ZE DONE</Receiver>
-            <FSPCode>FL8090</FSPCode>
+            <Sender>LOAN_CONSTANTS.EXTERNAL_SYSTEM</Sender>
+            <Receiver>LOAN_CONSTANTS.FSP_NAME</Receiver>
+            <FSPCode>LOAN_CONSTANTS.FSP_CODE</FSPCode>
             <MsgId>CHARGES_TEST_001</MsgId>
             <MessageType>LOAN_CHARGES_REQUEST</MessageType>
         </Header>

@@ -1,4 +1,5 @@
 const { LoanCalculate } = require('./src/services/loanService');
+const LOAN_CONSTANTS = require('./src/utils/loanConstants');
 
 async function testNewLoanChargesLogic() {
     console.log('🧪 Testing new enhanced loan charges logic...');
@@ -6,23 +7,23 @@ async function testNewLoanChargesLogic() {
     try {
         // Test data matching the UtumishiOfferRequest structure
         const testData = {
-            checkNumber: 'CHK123456',
+            checkNumber: LOAN_CONSTANTS.TEST_CHECK_NUMBER,
             designationCode: 'DC001',
             designationName: 'Software Engineer',
-            basicSalary: 2000000, // 2,000,000 TZS
-            netSalary: 1800000, // 1,800,000 TZS
-            oneThirdAmount: 600000, // 600,000 TZS
-            deductibleAmount: 500000, // 500,000 TZS (desired EMI)
-            retirementDate: '2055-12-31', // Far in future
+            basicSalary: LOAN_CONSTANTS.TEST_BASIC_SALARY, // 2,000,000 TZS
+            netSalary: LOAN_CONSTANTS.TEST_NET_SALARY, // 1,800,000 TZS
+            oneThirdAmount: LOAN_CONSTANTS.TEST_ONE_THIRD_AMOUNT, // 600,000 TZS
+            deductibleAmount: LOAN_CONSTANTS.TEST_DEDUCTIBLE_AMOUNT, // 500,000 TZS (desired EMI)
+            retirementDate: LOAN_CONSTANTS.TEST_RETIREMENT_DATE, // Far in future
             termsOfEmployment: 'PERMANENT',
-            requestedAmount: 5000000, // 5,000,000 TZS
-            desiredDeductibleAmount: 500000, // 500,000 TZS
-            tenure: 60, // 60 months
-            fspCode: 'FL8090',
-            productCode: '17',
+            requestedAmount: LOAN_CONSTANTS.TEST_LOAN_AMOUNT, // 5,000,000 TZS
+            desiredDeductibleAmount: LOAN_CONSTANTS.TEST_DEDUCTIBLE_AMOUNT, // 500,000 TZS
+            tenure: LOAN_CONSTANTS.DEFAULT_TENURE,
+            fspCode: LOAN_CONSTANTS.FSP_CODE,
+            productCode: 'DAS',
             voteCode: 'V001',
-            totalEmployeeDeduction: 200000, // 200,000 TZS
-            jobClassCode: 'JC001'
+            totalEmployeeDeduction: LOAN_CONSTANTS.TEST_TOTAL_EMPLOYEE_DEDUCTION, // 200,000 TZS
+            jobClassCode: 'JCC001'
         };
 
         console.log('📊 Test Input Data:', testData);

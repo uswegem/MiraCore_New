@@ -1,4 +1,4 @@
-const LoanMappingService = require('./src/services/loanMappingService');
+const LOAN_CONSTANTS = require('./src/utils/loanConstants');
 const connectDB = require('./src/config/database');
 
 async function testLoanMapping() {
@@ -16,8 +16,8 @@ async function testLoanMapping() {
       `FSPREF${timestamp}`,
       {
         productCode: '17',
-        requestedAmount: 5000000,
-        tenure: 24
+        requestedAmount: LOAN_CONSTANTS.TEST_LOAN_AMOUNT,
+        tenure: LOAN_CONSTANTS.TEST_TENURE
       }
     );
     console.log('✅ Initial mapping created:', mapping._id);
@@ -28,20 +28,20 @@ async function testLoanMapping() {
     const updatedMapping = await LoanMappingService.updateWithFinalApproval(loanAlias, {
       applicationNumber: `APP${timestamp}`,
       loanNumber: loanAlias,
-      requestedAmount: 5000000,
+      requestedAmount: LOAN_CONSTANTS.TEST_LOAN_AMOUNT,
       productCode: '17',
-      tenure: 24
+      tenure: LOAN_CONSTANTS.TEST_TENURE
     });
     console.log('✅ Mapping updated with final approval');
 
     // Test 3: Update with client creation
     console.log('\n📝 Test 3: Updating with client creation...');
-    await LoanMappingService.updateWithClientCreation(loanAlias, 12345);
+    await LoanMappingService.updateWithClientCreation(loanAlias, LOAN_CONSTANTS.TEST_CLIENT_ID);
     console.log('✅ Mapping updated with client creation');
 
     // Test 4: Update with loan creation
     console.log('\n📝 Test 4: Updating with loan creation...');
-    await LoanMappingService.updateWithLoanCreation(loanAlias, 67890, 'LOAN67890');
+    await LoanMappingService.updateWithLoanCreation(loanAlias, LOAN_CONSTANTS.TEST_LOAN_ID, LOAN_CONSTANTS.TEST_LOAN_ALIAS);
     console.log('✅ Mapping updated with loan creation');
 
     // Test 5: Retrieve mapping
@@ -58,7 +58,7 @@ async function testLoanMapping() {
 
     // Test 6: Update with disbursement
     console.log('\n📝 Test 6: Updating with disbursement...');
-    await LoanMappingService.updateWithDisbursement(67890);
+    await LoanMappingService.updateWithDisbursement(LOAN_CONSTANTS.TEST_LOAN_ID);
     console.log('✅ Mapping updated with disbursement');
 
     // Test 7: Get stats

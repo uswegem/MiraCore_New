@@ -1,4 +1,4 @@
-const { LoanCalculate } = require('./src/services/loanService');
+const LOAN_CONSTANTS = require('./src/utils/loanConstants');
 
 async function simulateLoanChargesRequest() {
     console.log('Simulating LOAN_CHARGES_REQUEST...');
@@ -13,9 +13,9 @@ async function simulateLoanChargesRequest() {
         deductibleAmount: 100000,
         retirementDate: '2050-01-01',
         termsOfEmployment: 'PERMANENT',
-        requestedAmount: 5000000,
+        requestedAmount: LOAN_CONSTANTS.TEST_LOAN_AMOUNT,
         desiredDeductibleAmount: 150000,
-        tenure: 24,
+        tenure: LOAN_CONSTANTS.TEST_TENURE,
         fspCode: 'FL8090',
         productCode: '4',
         voteCode: 'V001',
@@ -60,7 +60,7 @@ async function simulateLoanOfferRequest() {
         totalEmployeeDeduction: 10000,
         retirementDate: 65,
         termsOfEmployment: 'Permanent',
-        requestedAmount: 5000000,
+        requestedAmount: LOAN_CONSTANTS.TEST_LOAN_AMOUNT,
         desiredDeductibleAmount: 150000,
         tenure: 60,
         fspCode: 'FL8090',

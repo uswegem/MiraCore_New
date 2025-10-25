@@ -1,4 +1,4 @@
-const { LOAN_CONSTANTS } = require('../utils/loanConstants');
+const LOAN_CONSTANTS = require('../utils/loanConstants');
 const { ApplicationException } = require('../utils/loanUtils');
 
 // Mock Eligibility Service
@@ -28,24 +28,24 @@ class EligibilityService {
           product: {
             loanTerm: loanOfferDTO.tenure || LOAN_CONSTANTS.DEFAULT_TENURE,
             totalMonthlyInst: this.calculateEMI(
-              loanOfferDTO.loanAmount || 1000000,
-              24, // interest rate
+              loanOfferDTO.loanAmount || LOAN_CONSTANTS.DEFAULT_LOAN_AMOUNT,
+              LOAN_CONSTANTS.DEFAULT_INTEREST_RATE, // interest rate
               loanOfferDTO.tenure || LOAN_CONSTANTS.DEFAULT_TENURE
             ),
-            loanAmount: loanOfferDTO.loanAmount || 1000000,
-            totalLoanAmount: (loanOfferDTO.loanAmount || 1000000) * 1.1, // with interest
-            maximumAmount: 5000000,
-            maximumTerm: 120
+            loanAmount: loanOfferDTO.loanAmount || LOAN_CONSTANTS.DEFAULT_LOAN_AMOUNT,
+            totalLoanAmount: (loanOfferDTO.loanAmount || LOAN_CONSTANTS.DEFAULT_LOAN_AMOUNT) * LOAN_CONSTANTS.TOTAL_LOAN_MULTIPLIER, // with interest
+            maximumAmount: LOAN_CONSTANTS.MAX_LOAN_AMOUNT,
+            maximumTerm: LOAN_CONSTANTS.MAX_TENURE
           },
-          totalInterestAmount: (loanOfferDTO.loanAmount || 1000000) * 0.1,
-          adminFee: (loanOfferDTO.loanAmount || 1000000) * 0.02,
+          totalInterestAmount: (loanOfferDTO.loanAmount || LOAN_CONSTANTS.DEFAULT_LOAN_AMOUNT) * LOAN_CONSTANTS.INTEREST_MULTIPLIER,
+          adminFee: (loanOfferDTO.loanAmount || LOAN_CONSTANTS.DEFAULT_LOAN_AMOUNT) * LOAN_CONSTANTS.ADMIN_FEE_RATE,
           insurance: {
-            oneTimeAmount: (loanOfferDTO.loanAmount || 1000000) * 0.015
+            oneTimeAmount: (loanOfferDTO.loanAmount || LOAN_CONSTANTS.DEFAULT_LOAN_AMOUNT) * LOAN_CONSTANTS.INSURANCE_RATE
           },
           bpi: 0, // Bank Processing Fee
-          maxEligibleAmount: 5000000,
-          maxEligibleTerm: 120,
-          baseTotalLoanAmount: (loanOfferDTO.loanAmount || 1000000) * 1.1
+          maxEligibleAmount: LOAN_CONSTANTS.MAX_LOAN_AMOUNT,
+          maxEligibleTerm: LOAN_CONSTANTS.MAX_TENURE,
+          baseTotalLoanAmount: (loanOfferDTO.loanAmount || LOAN_CONSTANTS.DEFAULT_LOAN_AMOUNT) * LOAN_CONSTANTS.TOTAL_LOAN_MULTIPLIER
         }
       };
 

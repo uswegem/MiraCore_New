@@ -7,7 +7,7 @@ const possibleLoanChargesSchema = new mongoose.Schema({
   },
   productName: {
     type: String,
-    default: 'DAS'
+    default: 'Watumishi Wezesha Loan'
   },
   idNumber: {
     type: String,
@@ -16,7 +16,7 @@ const possibleLoanChargesSchema = new mongoose.Schema({
   idNumberType: {
     type: String,
     enum: ['CHECK_NUMBER', 'NATIONAL_ID'],
-    default: 'CHECK_NUMBER'
+    default: 'NATIONAL_ID'
   },
   request: {
     type: String, // JSON string of UtumishiOfferRequest

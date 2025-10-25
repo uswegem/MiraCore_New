@@ -86,6 +86,19 @@ function calculateReverseLoan(monthlyEMI, annualInterestRate, tenure) {
     };
 }
 
+function calculatePayoffAmount(loan) {
+    // Calculate the amount needed to pay off the existing loan
+    // This includes outstanding principal + accrued interest
+    try {
+        const outstandingBalance = loan.principal || loan.outstandingBalance || 0;
+        // In a real implementation, this would calculate accrued interest
+        // For now, using outstanding balance as payoff amount
+        return outstandingBalance;
+    } catch (error) {
+        console.error('Error calculating payoff amount:', error);
+        return 0;
+    }
+}
 
 function generateLoanChargesErrorResponse({ msgId, checkNumber, errorMessage }) {
     return `<?xml version="1.0" encoding="UTF-8"?>
@@ -93,8 +106,8 @@ function generateLoanChargesErrorResponse({ msgId, checkNumber, errorMessage }) 
     <Data>
         <Header>
             <Sender>FSP_SYSTEM</Sender>
-            <Receiver>ESS_UTUMISHI</Receiver>
-            <FSPCode>FL8090</FSPCode>
+            <Receiver>LOAN_CONSTANTS.EXTERNAL_SYSTEM</Receiver>
+            <FSPCode>LOAN_CONSTANTS.FSP_CODE</FSPCode>
             <MsgId>${msgId}</MsgId>
             <MessageType>LOAN_CHARGES_RESPONSE</MessageType>
         </Header>
@@ -218,15 +231,37 @@ const LoanCalculate = async (data) => {
             centralRegAffordability: affordabilityType === LOAN_CONSTANTS.AFFORDABILITY_TYPE.REVERSE ? desirableEMI : maxAffordableEMI
         };
 
-        // Get customer number and ID
-        const customerNumberAndCustomerId = await customerService.getCustomerNumberAndCustomerId('tanzania', checkNumber);
+        // Get customer number and ID using real MIFOS API with NIN
+        const customer = await searchClientByExternalId(data.nin || checkNumber);
 
-        if (customerNumberAndCustomerId) {
-            loanOfferDTO.customerNumber = customerNumberAndCustomerId[0];
+        if (customer) {
+            loanOfferDTO.customerNumber = customer.accountNo;
             loanOfferDTO.newLoanOfferExpected = false;
-            loanOfferDTO.customerId = customerNumberAndCustomerId[1];
+            loanOfferDTO.customerId = customer.id;
 
-            // Check if customer is active
+            // Check existing loans using real CBS API (max 1 loan per customer)
+            const existingLoans = await getClientLoans(customer.id);
+            const activeLoans = existingLoans.filter(loan => loan.status.id === 300); // Active loans
+
+            if (activeLoans.length > 0) {
+                const existingLoan = activeLoans[0]; // Max 1 loan per customer
+
+                // Calculate payoff amount (minimum borrow requirement)
+                const payoffAmount = calculatePayoffAmount(existingLoan);
+                loanOfferDTO.minimumBorrowAmount = payoffAmount;
+                loanOfferDTO.hasExistingLoan = true;
+
+                // Validate minimum amount against payoff amount
+                if (requestedAmount && requestedAmount < payoffAmount) {
+                    console.warn(`Requested amount ${requestedAmount} is less than required payoff amount ${payoffAmount}`);
+                    throw new ApplicationException(
+                        LOAN_CONSTANTS.ERROR_CODES.INVALID_AMOUNT,
+                        `Loan amount must be at least ${payoffAmount} to cover existing loan payoff`
+                    );
+                }
+            }
+
+            // Check if customer is active (keeping existing logic)
             await eligibilityService.isActiveCBSCustomer('tanzania', loanOfferDTO.customerNumber);
 
             // Check for existing loans
@@ -902,7 +937,7 @@ const CreateLoanOffer = async (data) => {
                 lastname: lastName,
                 middlename: middleName || '', // Handle missing middle names gracefully
                 externalId: nin, // Use NIN as unique external identifier
-                dateOfBirth: '1990-01-01', // Default date of birth
+                dateOfBirth: LOAN_CONSTANTS.DEFAULT_DATE_OF_BIRTH, // Default date of birth
                 mobileNo: formattedMobile,
                 genderId: genderId,
                 clientTypeId: 1, // Default to Retail (Position 1)

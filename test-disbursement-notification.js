@@ -1,4 +1,5 @@
 const axios = require('axios');
+const LOAN_CONSTANTS = require('./src/utils/loanConstants');
 
 async function testDisbursementNotification() {
     console.log('🔔 Testing LOAN_DISBURSEMENT_NOTIFICATION via Webhook\n');
@@ -8,10 +9,10 @@ async function testDisbursementNotification() {
     const webhookPayload = {
         entityName: 'LOAN',
         action: 'DISBURSE',
-        entityId: 12345, // Mock loan ID
+        entityId: LOAN_CONSTANTS.TEST_CLIENT_ID, // Mock loan ID
         entityData: {
-            principal: 5000000,
-            accountNo: 'LN000123',
+            principal: LOAN_CONSTANTS.TEST_LOAN_AMOUNT,
+            accountNo: LOAN_CONSTANTS.TEST_ACCOUNT_NO,
             externalId: 'APP001'
         }
     };
@@ -29,7 +30,7 @@ async function testDisbursementNotification() {
 
     // Mock loan and client data (normally retrieved from MIFOS)
     const mockLoan = {
-        clientId: 67890,
+        clientId: LOAN_CONSTANTS.TEST_LOAN_ID,
         principal: webhookPayload.entityData.principal,
         accountNo: webhookPayload.entityData.accountNo
     };
@@ -37,9 +38,9 @@ async function testDisbursementNotification() {
     const disbursementNotification = {
         Data: {
             Header: {
-                Sender: process.env.FSP_NAME || "ZE DONE",
-                Receiver: "ESS_UTUMISHI",
-                FSPCode: process.env.FSP_CODE || "FL8090",
+                Sender: process.env.FSP_NAME || LOAN_CONSTANTS.FSP_NAME,
+                Receiver: LOAN_CONSTANTS.EXTERNAL_SYSTEM,
+                FSPCode: process.env.FSP_CODE || LOAN_CONSTANTS.FSP_CODE,
                 MsgId: `WEBHOOK_DISBURSE_${Date.now()}`,
                 MessageType: "LOAN_DISBURSEMENT_NOTIFICATION"
             },
