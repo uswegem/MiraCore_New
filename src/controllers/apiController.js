@@ -511,16 +511,8 @@ async function handleLoanFinalApproval(parsedData, res) {
                 dateOfBirth: approvalData.dateOfBirth,
                 mobileNo: formattedMobile,
                 emailAddress: approvalData.emailAddress,
-                // Additional client fields
-                checkNumber: approvalData.checkNumber,
-                sex: approvalData.sex,
-                bankAccountNumber: approvalData.bankAccountNumber,
-                employmentDate: approvalData.employmentDate,
-                maritalStatus: approvalData.maritalStatus,
-                physicalAddress: approvalData.physicalAddress,
-                contractEndDate: approvalData.contractEndDate,
-                swiftCode: approvalData.swiftCode,
-                // clientTypeId: 1, // Removed - ClientType code 1 does not exist in MIFOS
+                // Gender mapping: 1 for Female, 2 for Male
+                genderId: approvalData.sex === 'F' ? 1 : approvalData.sex === 'M' ? 2 : undefined,
                 officeId: 1, // Head Office
                 activationDate: new Date().toISOString().split('T')[0],
                 submittedOnDate: new Date().toISOString().split('T')[0],
@@ -530,19 +522,98 @@ async function handleLoanFinalApproval(parsedData, res) {
                 dateFormat: 'yyyy-MM-dd'
             };
 
-            // Gender disabled - MIFOS gender codes not configured
-            console.log('Skipping genderId - MIFOS gender codes not configured');
+            // Add address entity if physicalAddress is provided
+            if (approvalData.physicalAddress) {
+                clientPayload.addresses = [{
+                    addressTypeId: 1, // Home address
+                    street: approvalData.physicalAddress,
+                    city: 'Dar es Salaam', // Default city
+                    countryId: 1, // Tanzania
+                    isActive: true
+                }];
+            }
 
             console.log('Final client payload:', JSON.stringify(clientPayload, null, 2));
 
-            const clientResponse = await cbsApi.post('/v1/clients', clientPayload);
-            console.log('MIFOS client creation response status:', clientResponse.status);
-            console.log('MIFOS client creation response:', JSON.stringify(clientResponse.response, null, 2));
-            if (!clientResponse.status) {
-                throw new Error('Failed to create client: ' + JSON.stringify(clientResponse.response));
+            // Create base payload with only standard MIFOS fields
+            const baseClientPayload = {
+                firstname: approvalData.firstName,
+                lastname: approvalData.lastName,
+                middlename: approvalData.middleName || '',
+                externalId: approvalData.nin,
+                dateOfBirth: approvalData.dateOfBirth,
+                mobileNo: formattedMobile,
+                emailAddress: approvalData.emailAddress,
+                genderId: approvalData.sex === 'F' ? 1 : approvalData.sex === 'M' ? 2 : undefined,
+                officeId: 1, // Head Office
+                activationDate: new Date().toISOString().split('T')[0],
+                submittedOnDate: new Date().toISOString().split('T')[0],
+                legalFormId: 1, // Person
+                isStaff: false,
+                locale: 'en',
+                dateFormat: 'yyyy-MM-dd'
+            };
+
+            // Add address entity to base payload if physicalAddress is provided
+            if (approvalData.physicalAddress) {
+                baseClientPayload.addresses = [{
+                    addressTypeId: 1, // Home address
+                    street: approvalData.physicalAddress,
+                    city: 'Dar es Salaam', // Default city
+                    countryId: 1, // Tanzania
+                    isActive: true
+                }];
             }
 
-            clientId = clientResponse.response.clientId;
+            // Fields to be stored in client_onboarding datatable
+            const datatableFields = {
+                checkNumber: approvalData.checkNumber,
+                bankAccountNumber: approvalData.bankAccountNumber,
+                employmentDate: approvalData.employmentDate,
+                swiftCode: approvalData.swiftCode
+            };
+
+            let clientResponse;
+            let clientId;
+
+            try {
+                // First attempt: Try to create client with all fields
+                console.log('Attempting client creation with full payload...');
+                clientResponse = await cbsApi.post('/v1/clients', clientPayload);
+
+                if (clientResponse.status) {
+                    console.log('✅ Client created successfully with full payload');
+                    clientId = clientResponse.response.clientId;
+                } else {
+                    throw new Error('Client creation failed');
+                }
+            } catch (fullPayloadError) {
+                console.log('⚠️ Full payload failed, attempting with base fields only...');
+
+                try {
+                    // Second attempt: Create client with only standard MIFOS fields
+                    clientResponse = await cbsApi.post('/v1/clients', baseClientPayload);
+
+                    if (clientResponse.status) {
+                        console.log('✅ Client created successfully with base payload');
+                        clientId = clientResponse.response.clientId;
+
+                        // Store datatable fields in client_onboarding datatable
+                        console.log('Storing datatable fields in client_onboarding...');
+                        await storeClientOnboardingData(clientId, datatableFields);
+                    } else {
+                        throw new Error('Base client creation also failed');
+                    }
+                } catch (basePayloadError) {
+                    console.error('❌ Both client creation attempts failed');
+                    console.error('Full payload error:', fullPayloadError.message);
+                    console.error('Base payload error:', basePayloadError.message);
+                    throw new Error('Failed to create client in MIFOS');
+                }
+            }
+
+            console.log('MIFOS client creation response status:', clientResponse.status);
+            console.log('MIFOS client creation response:', JSON.stringify(clientResponse.response, null, 2));
             console.log('✅ Client created successfully:', clientId);
 
             // Update loan mapping with MIFOS client ID
@@ -587,9 +658,7 @@ async function handleLoanFinalApproval(parsedData, res) {
                     BankAccountNumber: approvalData.bankAccountNumber,
                     EmploymentDate: formatEmploymentDate(approvalData.employmentDate),
                     MaritalStatus: approvalData.maritalStatus,
-                    RetirementDate: approvalData.retirementDate,
                     PhysicalAddress: approvalData.physicalAddress,
-                    EmailAddress: approvalData.emailAddress,
                     ContractEndDate: approvalData.contractEndDate,
                     SwiftCode: approvalData.swiftCode
                 };
@@ -1278,6 +1347,57 @@ async function handleTakeoverPaymentNotification(parsedData, res) {
     } catch (error) {
         console.error('Error processing takeover payment notification:', error);
         return sendErrorResponse(res, '8018', 'Error processing takeover payment: ' + error.message, 'xml', parsedData);
+    }
+}
+
+/**
+ * Store client onboarding data in MIFOS client_onboarding datatable
+ */
+async function storeClientOnboardingData(clientId, datatableFields) {
+    try {
+        console.log('Storing client onboarding data for client ID:', clientId);
+
+        // Prepare datatable payload with only non-null values
+        const datatablePayload = {
+            dateFormat: 'dd MMMM yyyy',
+            locale: 'en'
+        };
+
+        // Format employment date if present
+        if (datatableFields.employmentDate) {
+            const formatEmploymentDate = (dateString) => {
+                if (!dateString) return null;
+                const date = new Date(dateString);
+                const day = date.getDate();
+                const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+                                  'July', 'August', 'September', 'October', 'November', 'December'];
+                const month = monthNames[date.getMonth()];
+                const year = date.getFullYear();
+                return `${day} ${month} ${year}`;
+            };
+            datatablePayload.EmploymentDate = formatEmploymentDate(datatableFields.employmentDate);
+        }
+
+        // Add other fields if they exist
+        if (datatableFields.checkNumber) datatablePayload.CheckNumber = datatableFields.checkNumber;
+        if (datatableFields.bankAccountNumber) datatablePayload.BankAccountNumber = datatableFields.bankAccountNumber;
+        if (datatableFields.swiftCode) datatablePayload.SwiftCode = datatableFields.swiftCode;
+
+        console.log('Client onboarding datatable payload:', JSON.stringify(datatablePayload, null, 2));
+
+        // Store in client_onboarding datatable
+        const datatableResponse = await cbsApi.post(`/v1/datatables/client_onboarding/${clientId}`, datatablePayload);
+
+        if (datatableResponse.status) {
+            console.log('✅ Client onboarding data stored successfully in datatable');
+        } else {
+            console.log('⚠️ Failed to store client onboarding data in datatable:', datatableResponse.message);
+            // Don't throw error here - client was created successfully, just log the warning
+        }
+
+    } catch (error) {
+        console.log('⚠️ Error storing client onboarding data:', error.message);
+        // Don't throw error - client creation was successful
     }
 }
 
