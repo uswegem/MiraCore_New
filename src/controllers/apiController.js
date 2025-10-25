@@ -479,9 +479,9 @@ async function handleLoanFinalApproval(parsedData, res) {
             try {
                 console.log('Checking if client exists with NIN:', approvalData.nin);
                 const clientSearch = await cbsApi.get(`/v1/clients?externalId=${approvalData.nin}`);
-                clientExists = clientSearch.status && clientSearch.response && clientSearch.response.length > 0;
+                clientExists = clientSearch.status && clientSearch.response && clientSearch.response.pageItems && clientSearch.response.pageItems.length > 0;
                 if (clientExists) {
-                    clientId = clientSearch.response[0].id;
+                    clientId = clientSearch.response.pageItems[0].id;
                     console.log('✅ Client exists with ID:', clientId);
                 }
             } catch (error) {
