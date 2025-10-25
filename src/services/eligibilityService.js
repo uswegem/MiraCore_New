@@ -22,30 +22,43 @@ class EligibilityService {
     console.log('Getting loan offer from eligibility service:', loanOfferDTO);
 
     try {
+      const requestedAmount = loanOfferDTO.loanAmount || LOAN_CONSTANTS.DEFAULT_LOAN_AMOUNT;
+      const tenure = loanOfferDTO.tenure || LOAN_CONSTANTS.DEFAULT_TENURE;
+      const maxAffordableEMI = loanOfferDTO.centralRegAffordability || this.calculateEMI(requestedAmount, LOAN_CONSTANTS.DEFAULT_INTEREST_RATE, tenure);
+
+      // Calculate EMI for requested amount
+      let calculatedEMI = this.calculateEMI(requestedAmount, LOAN_CONSTANTS.DEFAULT_INTEREST_RATE, tenure);
+
+      // If calculated EMI exceeds maximum affordable EMI, adjust the loan amount
+      let adjustedLoanAmount = requestedAmount;
+      if (calculatedEMI > maxAffordableEMI) {
+        console.log(`Calculated EMI ${calculatedEMI} exceeds max affordable EMI ${maxAffordableEMI}, adjusting loan amount`);
+        // Calculate maximum loan amount that fits within maxAffordableEMI
+        adjustedLoanAmount = this.calculateMaxLoanAmount(maxAffordableEMI, LOAN_CONSTANTS.DEFAULT_INTEREST_RATE, tenure);
+        calculatedEMI = maxAffordableEMI;
+        console.log(`Adjusted loan amount from ${requestedAmount} to ${adjustedLoanAmount} to fit EMI constraint`);
+      }
+
       // Mock eligibility response
       const mockOffer = {
         loanOffer: {
           product: {
-            loanTerm: loanOfferDTO.tenure || LOAN_CONSTANTS.DEFAULT_TENURE,
-            totalMonthlyInst: this.calculateEMI(
-              loanOfferDTO.loanAmount || LOAN_CONSTANTS.DEFAULT_LOAN_AMOUNT,
-              LOAN_CONSTANTS.DEFAULT_INTEREST_RATE, // interest rate
-              loanOfferDTO.tenure || LOAN_CONSTANTS.DEFAULT_TENURE
-            ),
-            loanAmount: loanOfferDTO.loanAmount || LOAN_CONSTANTS.DEFAULT_LOAN_AMOUNT,
-            totalLoanAmount: (loanOfferDTO.loanAmount || LOAN_CONSTANTS.DEFAULT_LOAN_AMOUNT) * LOAN_CONSTANTS.TOTAL_LOAN_MULTIPLIER, // with interest
+            loanTerm: tenure,
+            totalMonthlyInst: calculatedEMI,
+            loanAmount: adjustedLoanAmount,
+            totalLoanAmount: adjustedLoanAmount * LOAN_CONSTANTS.TOTAL_LOAN_MULTIPLIER, // with interest
             maximumAmount: LOAN_CONSTANTS.MAX_LOAN_AMOUNT,
             maximumTerm: LOAN_CONSTANTS.MAX_TENURE
           },
-          totalInterestAmount: (loanOfferDTO.loanAmount || LOAN_CONSTANTS.DEFAULT_LOAN_AMOUNT) * LOAN_CONSTANTS.INTEREST_MULTIPLIER,
-          adminFee: (loanOfferDTO.loanAmount || LOAN_CONSTANTS.DEFAULT_LOAN_AMOUNT) * LOAN_CONSTANTS.ADMIN_FEE_RATE,
+          totalInterestAmount: adjustedLoanAmount * LOAN_CONSTANTS.INTEREST_MULTIPLIER,
+          adminFee: adjustedLoanAmount * LOAN_CONSTANTS.ADMIN_FEE_RATE,
           insurance: {
-            oneTimeAmount: (loanOfferDTO.loanAmount || LOAN_CONSTANTS.DEFAULT_LOAN_AMOUNT) * LOAN_CONSTANTS.INSURANCE_RATE
+            oneTimeAmount: adjustedLoanAmount * LOAN_CONSTANTS.INSURANCE_RATE
           },
           bpi: 0, // Bank Processing Fee
           maxEligibleAmount: LOAN_CONSTANTS.MAX_LOAN_AMOUNT,
           maxEligibleTerm: LOAN_CONSTANTS.MAX_TENURE,
-          baseTotalLoanAmount: (loanOfferDTO.loanAmount || LOAN_CONSTANTS.DEFAULT_LOAN_AMOUNT) * LOAN_CONSTANTS.TOTAL_LOAN_MULTIPLIER
+          baseTotalLoanAmount: adjustedLoanAmount * LOAN_CONSTANTS.TOTAL_LOAN_MULTIPLIER
         }
       };
 
@@ -64,6 +77,16 @@ class EligibilityService {
     const emi = (principal * monthlyRate * Math.pow(1 + monthlyRate, tenureMonths)) /
                 (Math.pow(1 + monthlyRate, tenureMonths) - 1);
     return Math.round(emi * 100) / 100; // Round to 2 decimal places
+  }
+
+  /**
+   * Calculate maximum loan amount for a given EMI, interest rate, and tenure
+   */
+  calculateMaxLoanAmount(targetEMI, annualInterestRate, tenureMonths) {
+    const monthlyRate = annualInterestRate / 100 / 12;
+    const maxAmount = (targetEMI * (Math.pow(1 + monthlyRate, tenureMonths) - 1)) /
+                      (monthlyRate * Math.pow(1 + monthlyRate, tenureMonths));
+    return Math.round(maxAmount * 100) / 100; // Round to 2 decimal places
   }
 }
 
