@@ -447,6 +447,11 @@ async function handleLoanFinalApproval(parsedData, res) {
             bankAccountNumber: messageDetails.BankAccountNumber || messageDetails.bankAccountNumber,
             swiftCode: messageDetails.SwiftCode || messageDetails.swiftCode,
             checkNumber: messageDetails.CheckNumber || messageDetails.checkNumber,
+            maritalStatus: messageDetails.MaritalStatus || messageDetails.maritalStatus,
+            retirementDate: messageDetails.RetirementDate || messageDetails.retirementDate,
+            physicalAddress: messageDetails.PhysicalAddress || messageDetails.physicalAddress,
+            emailAddress: messageDetails.EmailAddress || messageDetails.emailAddress,
+            contractEndDate: messageDetails.ContractEndDate || messageDetails.contractEndDate,
             // Loan data
             requestedAmount: messageDetails.RequestedAmount || messageDetails.requestedAmount,
             productCode: messageDetails.ProductCode || messageDetails.productCode,
@@ -505,6 +510,17 @@ async function handleLoanFinalApproval(parsedData, res) {
                 externalId: approvalData.nin,
                 dateOfBirth: approvalData.dateOfBirth,
                 mobileNo: formattedMobile,
+                emailAddress: approvalData.emailAddress,
+                // Additional client fields
+                checkNumber: approvalData.checkNumber,
+                sex: approvalData.sex,
+                bankAccountNumber: approvalData.bankAccountNumber,
+                employmentDate: approvalData.employmentDate,
+                maritalStatus: approvalData.maritalStatus,
+                retirementDate: approvalData.retirementDate,
+                physicalAddress: approvalData.physicalAddress,
+                contractEndDate: approvalData.contractEndDate,
+                swiftCode: approvalData.swiftCode,
                 // clientTypeId: 1, // Removed - ClientType code 1 does not exist in MIFOS
                 officeId: 1, // Head Office
                 activationDate: new Date().toISOString().split('T')[0],
@@ -567,10 +583,16 @@ async function handleLoanFinalApproval(parsedData, res) {
                 const onboardingData = {
                     dateFormat: 'dd MMMM yyyy',
                     locale: 'en',
-                    EmploymentDate: formatEmploymentDate(approvalData.employmentDate),
-                    SwiftCode: approvalData.swiftCode,
+                    CheckNumber: approvalData.checkNumber,
+                    Sex: approvalData.sex,
                     BankAccountNumber: approvalData.bankAccountNumber,
-                    CheckNumber: approvalData.checkNumber
+                    EmploymentDate: formatEmploymentDate(approvalData.employmentDate),
+                    MaritalStatus: approvalData.maritalStatus,
+                    RetirementDate: approvalData.retirementDate,
+                    PhysicalAddress: approvalData.physicalAddress,
+                    EmailAddress: approvalData.emailAddress,
+                    ContractEndDate: approvalData.contractEndDate,
+                    SwiftCode: approvalData.swiftCode
                 };
 
                 try {
