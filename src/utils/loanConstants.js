@@ -1,8 +1,8 @@
 // Loan Service Constants and Default Values
 const LOAN_CONSTANTS = {
   // ===== LOAN AMOUNTS =====
-  DEFAULT_LOAN_AMOUNT: 120000000,        // 120,000,000 TZS - Default loan amount when not specified
-  MAX_LOAN_AMOUNT: 120000000,            // 120,000,000 TZS - Maximum eligible loan amount
+  DEFAULT_LOAN_AMOUNT: 5000000,        // 5,000,000 TZS - Default loan amount when not specified
+  MAX_LOAN_AMOUNT: 5000000,            // 5,000,000 TZS - Maximum eligible loan amount
   TEST_LOAN_AMOUNT: 5000000,           // 5,000,000 TZS - Amount used in tests
 
   // ===== LOAN TERMS =====
@@ -12,7 +12,6 @@ const LOAN_CONSTANTS = {
 
   // ===== INTEREST RATES & FEES =====
   DEFAULT_INTEREST_RATE: 24,           // 24% - Default annual interest rate
-  INTEREST_MULTIPLIER: 0.1,            // 10% - Interest amount multiplier
   ADMIN_FEE_RATE: 0.02,                // 2% - Administration fee rate
   INSURANCE_RATE: 0.015,               // 1.5% - Insurance rate
   TOTAL_LOAN_MULTIPLIER: 1.1,          // 110% - Total loan amount multiplier (principal + interest)

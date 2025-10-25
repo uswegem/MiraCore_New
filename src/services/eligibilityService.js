@@ -82,7 +82,7 @@ class EligibilityService {
             maximumAmount: maxPrincipal,
             maximumTerm: maxTenure
           },
-          totalInterestAmount: adjustedLoanAmount * (productDetails.interestMultiplier || LOAN_CONSTANTS.INTEREST_MULTIPLIER),
+          totalInterestAmount: (calculatedEMI * tenure) - adjustedLoanAmount,
           adminFee: adjustedLoanAmount * (productDetails.adminFeeRate || LOAN_CONSTANTS.ADMIN_FEE_RATE),
           insurance: {
             oneTimeAmount: adjustedLoanAmount * (productDetails.insuranceRate || LOAN_CONSTANTS.INSURANCE_RATE)
