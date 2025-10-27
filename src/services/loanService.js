@@ -517,7 +517,7 @@ const CreateTopUpLoanOffer = async (data) => {
             const formattedMobile = mobileNo ? (mobileNo.startsWith('+') ? mobileNo : `+255${mobileNo.replace(/^0/, '')}`) : null;
             
             // Map gender (now configured in MIFOS)
-            const genderMapping = { 'M': 1, 'F': 2 }; // M=1, F=2
+            const genderMapping = { 'M': 15, 'F': 16 }; // M=15, F=16 (MIFOS zedone-uat codes)
             const genderId = genderMapping[sex] || null;
             
             // Create client payload with all required fields
@@ -697,7 +697,7 @@ const CreateTakeoverLoanOffer = async (data) => {
             console.log('Creating new client in MIFOS...');
             
             const formattedMobile = mobileNo ? (mobileNo.startsWith('+') ? mobileNo : `+255${mobileNo.replace(/^0/, '')}`) : null;
-            const genderMapping = { 'M': 1, 'F': 2 };
+            const genderMapping = { 'M': 15, 'F': 16 }; // M=15, F=16 (MIFOS zedone-uat codes)
             const genderId = genderMapping[sex] || null;
             
             const clientPayload = {
@@ -950,7 +950,7 @@ const CreateLoanOffer = async (data) => {
             const formattedMobile = mobileNo ? (mobileNo.startsWith('+') ? mobileNo : `+255${mobileNo.replace(/^0/, '')}`) : null;
 
             // Map gender (now configured in MIFOS)
-            const genderMapping = { 'M': 1, 'F': 2 }; // M=1, F=2
+            const genderMapping = { 'M': 15, 'F': 16 }; // M=15, F=16 (MIFOS zedone-uat codes)
             const genderId = genderMapping[sex] || null;
 
             // Create client payload with all required fields
