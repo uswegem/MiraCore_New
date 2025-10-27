@@ -533,6 +533,8 @@ const CreateTopUpLoanOffer = async (data) => {
                 officeId: 1, // Head Office
                 activationDate: new Date().toISOString().split('T')[0], // YYYY-MM-DD format
                 submittedOnDate: new Date().toISOString().split('T')[0], // YYYY-MM-DD format
+                dateFormat: 'yyyy-MM-dd', // Required format parameter
+                locale: 'en', // Required locale parameter
                 legalFormId: 1, // Person
                 isStaff: false
             };
@@ -710,6 +712,8 @@ const CreateTakeoverLoanOffer = async (data) => {
                 officeId: 1,
                 activationDate: new Date().toISOString().split('T')[0],
                 submittedOnDate: new Date().toISOString().split('T')[0],
+                dateFormat: 'yyyy-MM-dd', // Required format parameter
+                locale: 'en', // Required locale parameter
                 legalFormId: 1,
                 isStaff: false
             };
@@ -962,6 +966,8 @@ const CreateLoanOffer = async (data) => {
                 officeId: 1, // Head Office
                 activationDate: new Date().toISOString().split('T')[0], // YYYY-MM-DD format
                 submittedOnDate: new Date().toISOString().split('T')[0], // YYYY-MM-DD format
+                dateFormat: 'yyyy-MM-dd', // Required format parameter
+                locale: 'en', // Required locale parameter
                 legalFormId: 1, // Person
                 isStaff: false
             };
