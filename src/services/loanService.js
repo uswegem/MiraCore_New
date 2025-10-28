@@ -502,9 +502,9 @@ const CreateTopUpLoanOffer = async (data) => {
         
         try {
             const clientSearch = await api.get(`/v1/clients?externalId=${nin}`);
-            clientExists = clientSearch.status && clientSearch.response && clientSearch.response.length > 0;
+            clientExists = clientSearch.status && clientSearch.response && clientSearch.response.pageItems && clientSearch.response.pageItems.length > 0;
             if (clientExists) {
-                clientId = clientSearch.response[0].id;
+                clientId = clientSearch.response.pageItems[0].id;
             }
         } catch (error) {
             console.log('Client search failed, will create new client');
@@ -685,9 +685,9 @@ const CreateTakeoverLoanOffer = async (data) => {
         
         try {
             const clientSearch = await api.get(`/v1/clients?externalId=${nin}`);
-            clientExists = clientSearch.status && clientSearch.response && clientSearch.response.length > 0;
+            clientExists = clientSearch.status && clientSearch.response && clientSearch.response.pageItems && clientSearch.response.pageItems.length > 0;
             if (clientExists) {
-                clientId = clientSearch.response[0].id;
+                clientId = clientSearch.response.pageItems[0].id;
             }
         } catch (error) {
             console.log('Client search failed, will create new client');
@@ -935,9 +935,9 @@ const CreateLoanOffer = async (data) => {
 
         try {
             const clientSearch = await api.get(`/v1/clients?externalId=${nin}`);
-            clientExists = clientSearch.status && clientSearch.response && clientSearch.response.length > 0;
+            clientExists = clientSearch.status && clientSearch.response && clientSearch.response.pageItems && clientSearch.response.pageItems.length > 0;
             if (clientExists) {
-                clientId = clientSearch.response[0].id;
+                clientId = clientSearch.response.pageItems[0].id;
             }
         } catch (error) {
             console.log('Client search failed, will create new client');
