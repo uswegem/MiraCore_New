@@ -949,15 +949,27 @@ const CreateLoanOffer = async (data) => {
         // Get loan product details for validation and calculation
         let loanProduct;
         try {
+            console.log('Fetching product from:', API_ENDPOINTS.PRODUCT + '/' + productId);
             loanProduct = await api.get(API_ENDPOINTS.PRODUCT + '/' + productId);
+            console.log('Product API response status:', loanProduct.status);
+            console.log('Product API response:', JSON.stringify(loanProduct.response, null, 2));
         } catch (error) {
-            console.log('Product ID', productId, 'not found, falling back to product ID 17');
-            loanProduct = await api.get(API_ENDPOINTS.PRODUCT + '/17');
+            console.log('Product ID', productId, 'not found, error:', error.message, 'falling back to product ID 17');
+            try {
+                console.log('Fetching fallback product from:', API_ENDPOINTS.PRODUCT + '/17');
+                loanProduct = await api.get(API_ENDPOINTS.PRODUCT + '/17');
+                console.log('Fallback product API response status:', loanProduct.status);
+                console.log('Fallback product API response:', JSON.stringify(loanProduct.response, null, 2));
+            } catch (fallbackError) {
+                console.log('Fallback product also failed:', fallbackError.message);
+                throw fallbackError;
+            }
         }
 
         const { response: productResponse, status: productStatus } = loanProduct;
         if (!productStatus) {
-            throw new Error(productResponse.error || "Product not found");
+            console.log('Product status is false, response:', productResponse);
+            throw new Error(productResponse?.error || "Product not found");
         }
 
         console.log('Loan product validated:', productResponse.name);
