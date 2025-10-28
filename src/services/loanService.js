@@ -529,13 +529,13 @@ const CreateTopUpLoanOffer = async (data) => {
                 dateOfBirth: dateOfBirth, // Ensure YYYY-MM-DD format
                 mobileNo: formattedMobile,
                 genderId: genderId,
-                clientTypeId: 1, // Default to Retail (Position 1)
                 officeId: 1, // Head Office
                 activationDate: new Date().toISOString().split('T')[0], // YYYY-MM-DD format
                 submittedOnDate: new Date().toISOString().split('T')[0], // YYYY-MM-DD format
                 dateFormat: 'yyyy-MM-dd', // Required format parameter
                 locale: 'en', // Required locale parameter
                 legalFormId: 1, // Person
+                clientTypeId: 17, // Retail client type (valid for zedone-uat tenant)
                 isStaff: false
             };
 
@@ -708,13 +708,13 @@ const CreateTakeoverLoanOffer = async (data) => {
                 dateOfBirth: dateOfBirth,
                 mobileNo: formattedMobile,
                 genderId: genderId,
-                clientTypeId: 1,
                 officeId: 1,
                 activationDate: new Date().toISOString().split('T')[0],
                 submittedOnDate: new Date().toISOString().split('T')[0],
                 dateFormat: 'yyyy-MM-dd', // Required format parameter
                 locale: 'en', // Required locale parameter
                 legalFormId: 1,
+                clientTypeId: 17, // Retail client type (valid for zedone-uat tenant)
                 isStaff: false
             };
 
@@ -962,13 +962,13 @@ const CreateLoanOffer = async (data) => {
                 dateOfBirth: LOAN_CONSTANTS.DEFAULT_DATE_OF_BIRTH, // Default date of birth
                 mobileNo: formattedMobile,
                 genderId: genderId,
-                clientTypeId: 1, // Default to Retail (Position 1)
                 officeId: 1, // Head Office
                 activationDate: new Date().toISOString().split('T')[0], // YYYY-MM-DD format
                 submittedOnDate: new Date().toISOString().split('T')[0], // YYYY-MM-DD format
                 dateFormat: 'yyyy-MM-dd', // Required format parameter
                 locale: 'en', // Required locale parameter
                 legalFormId: 1, // Person
+                clientTypeId: 17, // Retail client type (valid for zedone-uat tenant)
                 isStaff: false
             };
 
@@ -1062,7 +1062,6 @@ const CreateLoanOffer = async (data) => {
             interestType: 0, // Declining balance
             interestCalculationPeriodType: 1, // Same as repayment period
             allowPartialPeriodInterestCalcualtion: false,
-            transactionProcessingStrategyId: 1, // Mifos style
             charges: [],
             loanType: "individual",
             externalId: applicationNumber || `EXT_${Date.now()}`,
