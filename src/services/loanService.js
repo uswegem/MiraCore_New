@@ -502,12 +502,17 @@ const CreateTopUpLoanOffer = async (data) => {
         
         try {
             const clientSearch = await api.get(`/v1/clients?externalId=${nin}`);
+            console.log('Client search response status:', clientSearch.status);
+            console.log('Client search response:', JSON.stringify(clientSearch.response, null, 2));
             clientExists = clientSearch.status && clientSearch.response && clientSearch.response.pageItems && clientSearch.response.pageItems.length > 0;
             if (clientExists) {
                 clientId = clientSearch.response.pageItems[0].id;
+                console.log('Found existing client with ID:', clientId);
+            } else {
+                console.log('Client not found, will create new client');
             }
         } catch (error) {
-            console.log('Client search failed, will create new client');
+            console.log('Client search failed with error:', error.message, 'will create new client');
         }
 
         if (!clientExists) {
@@ -685,12 +690,17 @@ const CreateTakeoverLoanOffer = async (data) => {
         
         try {
             const clientSearch = await api.get(`/v1/clients?externalId=${nin}`);
+            console.log('Client search response status:', clientSearch.status);
+            console.log('Client search response:', JSON.stringify(clientSearch.response, null, 2));
             clientExists = clientSearch.status && clientSearch.response && clientSearch.response.pageItems && clientSearch.response.pageItems.length > 0;
             if (clientExists) {
                 clientId = clientSearch.response.pageItems[0].id;
+                console.log('Found existing client with ID:', clientId);
+            } else {
+                console.log('Client not found, will create new client');
             }
         } catch (error) {
-            console.log('Client search failed, will create new client');
+            console.log('Client search failed with error:', error.message, 'will create new client');
         }
 
         if (!clientExists) {
@@ -921,113 +931,22 @@ const CreateLoanOffer = async (data) => {
 
         // Validate mandatory fields
         if (!checkNumber) {
-            throw new Error('CheckNumber is mandatory for client onboarding');
+            throw new Error('CheckNumber is mandatory for loan offer');
         }
         if (!nin) {
-            throw new Error('NIN is mandatory for client onboarding');
+            throw new Error('NIN is mandatory for loan offer');
+        }
+        if (!requestedAmount) {
+            throw new Error('RequestedAmount is mandatory for loan offer');
         }
 
-        console.log('Creating loan offer for:', { checkNumber, applicationNumber, nin });
+        console.log('Calculating loan offer for:', { checkNumber, applicationNumber, nin, requestedAmount });
 
-        // 1. Check if client exists, if not create client
-        let clientExists = false;
-        let clientId = null;
-
-        try {
-            const clientSearch = await api.get(`/v1/clients?externalId=${nin}`);
-            clientExists = clientSearch.status && clientSearch.response && clientSearch.response.pageItems && clientSearch.response.pageItems.length > 0;
-            if (clientExists) {
-                clientId = clientSearch.response.pageItems[0].id;
-            }
-        } catch (error) {
-            console.log('Client search failed, will create new client');
-        }
-
-        if (!clientExists) {
-            console.log('Creating new client in MIFOS...');
-
-            // Format phone number with country code 255
-            const formattedMobile = mobileNo ? (mobileNo.startsWith('+') ? mobileNo : `+255${mobileNo.replace(/^0/, '')}`) : null;
-
-            // Map gender (now configured in MIFOS)
-            const genderMapping = { 'M': 15, 'F': 16 }; // M=15, F=16 (MIFOS zedone-uat codes)
-            const genderId = genderMapping[sex] || null;
-
-            // Create client payload with all required fields
-            const clientPayload = {
-                firstname: firstName,
-                lastname: lastName,
-                middlename: middleName || '', // Handle missing middle names gracefully
-                externalId: nin, // Use NIN as unique external identifier
-                dateOfBirth: LOAN_CONSTANTS.DEFAULT_DATE_OF_BIRTH, // Default date of birth
-                mobileNo: formattedMobile,
-                genderId: genderId,
-                officeId: 1, // Head Office
-                activationDate: new Date().toISOString().split('T')[0], // YYYY-MM-DD format
-                submittedOnDate: new Date().toISOString().split('T')[0], // YYYY-MM-DD format
-                dateFormat: 'yyyy-MM-dd', // Required format parameter
-                locale: 'en', // Required locale parameter
-                legalFormId: 1, // Person
-                clientTypeId: 17, // Retail client type (valid for zedone-uat tenant)
-                isStaff: false
-            };
-
-            const clientResponse = await api.post('/v1/clients', clientPayload);
-            if (!clientResponse.status) {
-                throw new Error('Failed to create client: ' + JSON.stringify(clientResponse.response));
-            }
-
-            clientId = clientResponse.response.clientId;
-            console.log('✅ Client created successfully:', clientId);
-
-            // 2. Add client onboarding datatable data
-            // Format employment date to MIFOS expected format: "dd MMMM yyyy"
-            const formatEmploymentDate = (dateString) => {
-                if (!dateString) return null;
-                const date = new Date(dateString);
-                const day = date.getDate();
-                const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
-                                  'July', 'August', 'September', 'October', 'November', 'December'];
-                const month = monthNames[date.getMonth()];
-                const year = date.getFullYear();
-                return `${day} ${month} ${year}`;
-            };
-
-            const onboardingData = {
-                dateFormat: 'dd MMMM yyyy',
-                locale: 'en',
-                EmploymentDate: formatEmploymentDate(employmentDate), // Convert to "dd MMMM yyyy" format
-                SwiftCode: swiftCode,
-                BankAccountNumber: bankAccountNumber,
-                CheckNumber: checkNumber // Mandatory field
-            };
-
-            console.log('Inserting client onboarding data:', onboardingData);
-
-            try {
-                const datatableResponse = await api.post(`/v1/datatables/client_onboarding/${clientId}`, onboardingData);
-                if (datatableResponse.status) {
-                    console.log('✅ Client onboarding data inserted successfully');
-                } else {
-                    console.log('⚠️ Failed to insert onboarding data:', datatableResponse.message);
-                    // Don't fail the entire process for datatable issues
-                }
-            } catch (datatableError) {
-                console.log('⚠️ Datatable insertion failed (datatable may not exist yet):', datatableError.message);
-                // Continue with the process even if datatable fails
-            }
-
-        } else {
-            console.log('Client already exists with NIN:', nin, 'ID:', clientId);
-        }
-
-        // 3. Create loan application
-        console.log('Creating loan application for client:', clientId);
-
+        // 1. Validate product exists
         const productId = productCode || 17; // Use product ID 17 as default if not provided
         console.log('Using product ID:', productId);
 
-        // Get loan product details
+        // Get loan product details for validation and calculation
         let loanProduct;
         try {
             loanProduct = await api.get(API_ENDPOINTS.PRODUCT + '/' + productId);
@@ -1041,77 +960,45 @@ const CreateLoanOffer = async (data) => {
             throw new Error(productResponse.error || "Product not found");
         }
 
-        console.log('Loan product response:', JSON.stringify(productResponse, null, 2));
+        console.log('Loan product validated:', productResponse.name);
 
-        // Calculate loan terms
+        // 2. Calculate loan terms (no actual creation)
         const principal = requestedAmount;
         const numberOfRepayments = tenure || productResponse.numberOfRepayments || productResponse.maxNumberOfRepayments || 24;
+        const interestRate = productResponse.interestRatePerPeriod || 2.5;
 
-        // Create loan payload
-        const loanPayload = {
-            clientId: clientId,
-            productId: productId,
-            principal: principal,
-            loanTermFrequency: numberOfRepayments,
-            loanTermFrequencyType: 2, // Months
-            numberOfRepayments: numberOfRepayments,
-            repaymentEvery: 1,
-            repaymentFrequencyType: 2, // Monthly
-            interestRatePerPeriod: productResponse.interestRatePerPeriod || 2.5,
-            amortizationType: 1, // Equal installments
-            interestType: 0, // Declining balance
-            interestCalculationPeriodType: 1, // Same as repayment period
-            allowPartialPeriodInterestCalcualtion: false,
-            charges: [],
-            loanType: "individual",
-            externalId: applicationNumber || `EXT_${Date.now()}`,
-            submittedOnDate: new Date().toISOString().split('T')[0],
-            expectedDisbursementDate: new Date().toISOString().split('T')[0],
-            locale: "en",
-            dateFormat: "yyyy-MM-dd"
-        };
+        // Calculate total amount (principal + interest)
+        const monthlyRate = interestRate / 100 / 12;
+        const monthlyPayment = (principal * monthlyRate * Math.pow(1 + monthlyRate, numberOfRepayments)) /
+                              (Math.pow(1 + monthlyRate, numberOfRepayments) - 1);
+        const totalAmount = monthlyPayment * numberOfRepayments;
+        const totalInterest = totalAmount - principal;
 
-        console.log('Creating loan with payload:', JSON.stringify(loanPayload, null, 2));
+        console.log('Loan calculation:', {
+            principal,
+            numberOfRepayments,
+            interestRate,
+            monthlyPayment,
+            totalAmount,
+            totalInterest
+        });
 
-        const loanResponse = await api.post(API_ENDPOINTS.LOAN, loanPayload);
-        if (!loanResponse.status) {
-            throw new Error('Failed to create loan: ' + JSON.stringify(loanResponse.response));
-        }
-
-        const loanId = loanResponse.response.loanId;
-        console.log('✅ Loan created successfully:', loanId);
-
-        // 4. Approve the loan
-        console.log('Approving loan:', loanId);
-
-        const approvalPayload = {
-            approvedOnDate: new Date().toISOString().split('T')[0],
-            approvedLoanAmount: principal,
-            locale: "en",
-            dateFormat: "yyyy-MM-dd"
-        };
-
-        const approvalResponse = await api.post(`${API_ENDPOINTS.LOAN}${loanId}?command=approve`, approvalPayload);
-        if (!approvalResponse.status) {
-            throw new Error('Failed to approve loan: ' + JSON.stringify(approvalResponse.response));
-        }
-
-        console.log('✅ Loan approved successfully');
-
-        // 5. Return offer details
+        // 3. Return offer details (no client or loan created)
         const offerResult = {
             success: true,
-            clientId: clientId,
-            loanId: loanId,
             applicationNumber: applicationNumber,
             offeredAmount: principal,
             tenure: numberOfRepayments,
             productId: productId,
+            monthlyPayment: monthlyPayment,
+            totalAmount: totalAmount,
+            totalInterest: totalInterest,
+            interestRate: interestRate,
             fspReferenceNumber: `FSPREF${Date.now()}`,
-            loanNumber: `LOAN${loanId}`
+            approvalStatus: 'APPROVED'
         };
 
-        console.log('Loan offer created:', offerResult);
+        console.log('Loan offer calculated:', offerResult);
         return offerResult;
 
     } catch (error) {

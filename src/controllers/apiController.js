@@ -379,17 +379,17 @@ async function handleLoanOfferRequest(parsedData, res) {
                 },
                 MessageDetails: {
                     ApplicationNumber: loanOfferData.applicationNumber,
-                    Reason: "Loan offer received and processed successfully",
+                    Reason: "Loan offer calculated successfully",
                     FSPReferenceNumber: result.fspReferenceNumber,
-                    LoanNumber: result.loanNumber,
-                    TotalAmountToPay: result.offeredAmount.toString(),
+                    LoanNumber: `CALC_${result.applicationNumber || Date.now()}`, // Placeholder loan number for calculation
+                    TotalAmountToPay: result.totalAmount.toString(),
                     OtherCharges: "0.00",
-                    Approval: "APPROVED"
+                    Approval: result.approvalStatus
                 }
             }
         };
 
-        // Create initial loan mapping in database
+        // Store loan offer calculation in database
         try {
             await LoanMappingService.createInitialMapping(
                 loanOfferData.applicationNumber,
@@ -399,12 +399,14 @@ async function handleLoanOfferRequest(parsedData, res) {
                     productCode: loanOfferData.productCode,
                     requestedAmount: loanOfferData.requestedAmount,
                     tenure: loanOfferData.tenure,
-                    clientId: result.clientId,
-                    loanId: result.loanId
+                    calculatedAmount: result.totalAmount,
+                    monthlyPayment: result.monthlyPayment,
+                    totalInterest: result.totalInterest,
+                    status: 'CALCULATED' // Indicates this is just a calculation, not actual loan
                 }
             );
         } catch (mappingError) {
-            console.error('❌ Error creating initial loan mapping:', mappingError);
+            console.error('❌ Error storing loan calculation:', mappingError);
             // Continue with response even if mapping fails
         }
 
