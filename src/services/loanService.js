@@ -942,9 +942,9 @@ const CreateLoanOffer = async (data) => {
 
         console.log('Calculating loan offer for:', { checkNumber, applicationNumber, nin, requestedAmount });
 
-        // 1. Validate product exists
-        const productId = productCode || 17; // Use product ID 17 as default if not provided
-        console.log('Using product ID:', productId);
+        // 1. Validate product exists with fallback logic
+        let productId = productCode || 17; // Use provided productCode or default to 17
+        console.log('Requested product ID:', productId);
 
         // Get loan product details for validation and calculation
         let loanProduct;
@@ -960,6 +960,7 @@ const CreateLoanOffer = async (data) => {
                 loanProduct = await api.get(API_ENDPOINTS.PRODUCT + '/17');
                 console.log('Fallback product API response status:', loanProduct.status);
                 console.log('Fallback product API response:', JSON.stringify(loanProduct.response, null, 2));
+                productId = 17; // Update productId to the fallback
             } catch (fallbackError) {
                 console.log('Fallback product also failed:', fallbackError.message);
                 throw fallbackError;
@@ -972,7 +973,7 @@ const CreateLoanOffer = async (data) => {
             throw new Error(productResponse?.error || "Product not found");
         }
 
-        console.log('Loan product validated:', productResponse.name);
+        console.log('Loan product validated:', productResponse.name, '(ID:', productId, productId !== (productCode || 17) ? '- fallback used' : '', ')');
 
         // 2. Calculate loan terms using same method as LoanCalculate (no actual creation)
         const principal = requestedAmount;
