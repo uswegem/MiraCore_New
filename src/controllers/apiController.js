@@ -525,9 +525,10 @@ async function handleLoanFinalApproval(parsedData, res) {
             // Continue processing even if mapping update fails
         }
 
-        // 1. Check if customer exists using NIN as external ID
+        // 1. Check if customer exists using NIN as external ID, then by mobile number
         let clientExists = false;
         let clientId = null;
+        let clientWasCreated = false; // Track if we actually created a new client
 
         if (approvalData.nin) {
             try {
@@ -536,10 +537,26 @@ async function handleLoanFinalApproval(parsedData, res) {
                 clientExists = clientSearch.status && clientSearch.response && clientSearch.response.pageItems && clientSearch.response.pageItems.length > 0;
                 if (clientExists) {
                     clientId = clientSearch.response.pageItems[0].id;
-                    console.log('✅ Client exists with ID:', clientId);
+                    console.log('✅ Client exists with ID (found by NIN):', clientId);
                 }
             } catch (error) {
-                console.log('Client search failed, will create new client:', error.message);
+                console.log('Client search by NIN failed:', error.message);
+            }
+        }
+
+        // If not found by NIN, try searching by mobile number
+        if (!clientExists && approvalData.mobileNo) {
+            try {
+                console.log('Checking if client exists with mobile number:', approvalData.mobileNo);
+                const formattedMobile = approvalData.mobileNo.startsWith('+') ? approvalData.mobileNo : `+255${approvalData.mobileNo.replace(/^0/, '')}`;
+                const mobileSearch = await cbsApi.get(`/v1/clients?mobileNo=${formattedMobile}`);
+                clientExists = mobileSearch.status && mobileSearch.response && mobileSearch.response.pageItems && mobileSearch.response.pageItems.length > 0;
+                if (clientExists) {
+                    clientId = mobileSearch.response.pageItems[0].id;
+                    console.log('✅ Client exists with ID (found by mobile):', clientId);
+                }
+            } catch (error) {
+                console.log('Client search by mobile failed:', error.message);
             }
         }
 
@@ -618,6 +635,7 @@ async function handleLoanFinalApproval(parsedData, res) {
                 if (clientResponse.status) {
                     console.log('✅ Client created successfully with full payload');
                     clientId = clientResponse.response.clientId;
+                    clientWasCreated = true;
                 } else {
                     console.error('❌ MIFOS API returned error for full payload:', JSON.stringify(clientResponse, null, 2));
                     throw new Error('Client creation failed: ' + JSON.stringify(clientResponse.response));
@@ -632,13 +650,41 @@ async function handleLoanFinalApproval(parsedData, res) {
                     if (clientResponse.status) {
                         console.log('✅ Client created successfully with base payload');
                         clientId = clientResponse.response.clientId;
+                        clientWasCreated = true;
 
                         // Store datatable fields in client_onboarding datatable
                         console.log('Storing datatable fields in client_onboarding...');
                         await storeClientOnboardingData(clientId, datatableFields);
                     } else {
                         console.error('❌ MIFOS API returned error for base payload:', JSON.stringify(clientResponse, null, 2));
-                        throw new Error('Base client creation failed: ' + JSON.stringify(clientResponse.response));
+
+                        // Check if the error is due to duplicate mobile number
+                        const errorResponse = clientResponse.response;
+                        const hasDuplicateMobileError = errorResponse?.errors?.some(error =>
+                            error.userMessageGlobalisationCode === 'error.msg.client.duplicate.mobileNo' ||
+                            error.developerMessage?.includes('mobileNo') && error.developerMessage?.includes('already exists')
+                        );
+
+                        if (hasDuplicateMobileError) {
+                            console.log('⚠️ Mobile number already exists, attempting to find existing client...');
+
+                            // Try to find the existing client by mobile number
+                            try {
+                                const existingClientSearch = await cbsApi.get(`/v1/clients?mobileNo=${formattedMobile}`);
+                                if (existingClientSearch.status && existingClientSearch.response?.pageItems?.length > 0) {
+                                    clientId = existingClientSearch.response.pageItems[0].id;
+                                    console.log('✅ Found existing client with duplicate mobile number:', clientId);
+                                    clientExists = true; // Mark as existing so we don't try to create onboarding data
+                                } else {
+                                    throw new Error('Could not find existing client with duplicate mobile number');
+                                }
+                            } catch (searchError) {
+                                console.error('❌ Failed to find existing client with duplicate mobile:', searchError.message);
+                                throw new Error('Client creation failed due to duplicate mobile number and unable to find existing client');
+                            }
+                        } else {
+                            throw new Error('Base client creation failed: ' + JSON.stringify(clientResponse.response));
+                        }
                     }
                 } catch (basePayloadError) {
                     console.error('❌ Both client creation attempts failed');
@@ -652,7 +698,7 @@ async function handleLoanFinalApproval(parsedData, res) {
             console.log('MIFOS client creation response:', JSON.stringify(clientResponse.response, null, 2));
             console.log('✅ Client created successfully:', clientId);
 
-        if (!clientExists) {
+        if (clientWasCreated) {
             // Update loan mapping with MIFOS client ID for new clients
             try {
                 await LoanMappingService.updateWithClientCreation(approvalData.loanNumber, clientId);
@@ -690,8 +736,8 @@ async function handleLoanFinalApproval(parsedData, res) {
             console.log('✅ Client is already active');
         }
 
-            // Insert client onboarding datatable data
-            if (approvalData.checkNumber) {
+            // Insert client onboarding datatable data (only for newly created clients)
+            if (clientWasCreated && approvalData.checkNumber) {
                 const formatEmploymentDate = (dateString) => {
                     if (!dateString) return null;
                     const date = new Date(dateString);
