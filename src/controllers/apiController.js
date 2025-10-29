@@ -627,7 +627,18 @@ async function handleLoanFinalApproval(parsedData, res) {
                     clientWasCreated = true;
                 } else {
                     console.error('❌ MIFOS API returned error for full payload:', JSON.stringify(clientResponse, null, 2));
-                    throw new Error('Client creation failed: ' + JSON.stringify(clientResponse.response));
+
+                    // Extract specific error details
+                    const errorResponse = clientResponse.response;
+                    let errorDetails = 'Unknown validation error';
+
+                    if (errorResponse?.errors && errorResponse.errors.length > 0) {
+                        errorDetails = errorResponse.errors.map(err => err.defaultUserMessage || err.developerMessage).join('; ');
+                    } else if (errorResponse?.defaultUserMessage) {
+                        errorDetails = errorResponse.defaultUserMessage;
+                    }
+
+                    throw new Error(`Client creation failed with full payload: ${errorDetails}`);
                 }
             } catch (fullPayloadError) {
                 console.log('⚠️ Full payload failed, attempting with base fields only...');
@@ -657,16 +668,46 @@ async function handleLoanFinalApproval(parsedData, res) {
 
                         if (hasDuplicateMobileError) {
                             console.log('⚠️ Mobile number already exists');
-                            throw new Error('Mobile number already exists');
-                        } else {
-                            throw new Error('Base client creation failed: ' + JSON.stringify(clientResponse.response));
+                            throw new Error('Mobile number already exists in MIFOS');
                         }
+
+                        // Extract specific error details for other validation errors
+                        let errorDetails = 'Unknown validation error';
+                        if (errorResponse?.errors && errorResponse.errors.length > 0) {
+                            errorDetails = errorResponse.errors.map(err => err.defaultUserMessage || err.developerMessage).join('; ');
+                        } else if (errorResponse?.defaultUserMessage) {
+                            errorDetails = errorResponse.defaultUserMessage;
+                        }
+
+                        throw new Error(`Base client creation failed: ${errorDetails}`);
                     }
                 } catch (basePayloadError) {
                     console.error('❌ Both client creation attempts failed');
                     console.error('Full payload error:', fullPayloadError.message);
                     console.error('Base payload error:', basePayloadError.message);
-                    throw new Error('Failed to create client in MIFOS - check MIFOS API credentials, server connectivity, and field validation');
+
+                    // Extract actual MIFOS error details for better error reporting
+                    let errorDetails = 'Unknown error';
+                    if (basePayloadError.message && basePayloadError.message.includes('Base client creation failed:')) {
+                        // Extract the JSON error from base payload error
+                        const errorMatch = basePayloadError.message.match(/Base client creation failed: (\{.*\})/);
+                        if (errorMatch) {
+                            try {
+                                const mifosError = JSON.parse(errorMatch[1]);
+                                if (mifosError.errors && mifosError.errors.length > 0) {
+                                    errorDetails = mifosError.errors.map(err => err.defaultUserMessage || err.developerMessage).join('; ');
+                                } else if (mifosError.defaultUserMessage) {
+                                    errorDetails = mifosError.defaultUserMessage;
+                                }
+                            } catch (parseError) {
+                                errorDetails = basePayloadError.message;
+                            }
+                        }
+                    } else {
+                        errorDetails = basePayloadError.message;
+                    }
+
+                    throw new Error(`Failed to create client in MIFOS: ${errorDetails}`);
                 }
             }
 
