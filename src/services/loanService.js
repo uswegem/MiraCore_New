@@ -974,19 +974,21 @@ const CreateLoanOffer = async (data) => {
 
         console.log('Loan product validated:', productResponse.name);
 
-        // 2. Calculate loan terms (no actual creation)
+        // 2. Calculate loan terms using same method as LoanCalculate (no actual creation)
         const principal = requestedAmount;
         const numberOfRepayments = tenure || productResponse.numberOfRepayments || productResponse.maxNumberOfRepayments || 24;
-        const interestRate = productResponse.interestRatePerPeriod || 2.5;
 
-        // Calculate total amount (principal + interest)
+        // Use same interest rate source as LoanCalculate
+        const interestRate = productResponse.nominalInterestRatePerPeriod || productResponse.interestRatePerPeriod || LOAN_CONSTANTS?.DEFAULT_INTEREST_RATE || 2.5;
+
+        // Calculate using same amortization formula as LoanCalculate/eligibility service
         const monthlyRate = interestRate / 100 / 12;
         const monthlyPayment = (principal * monthlyRate * Math.pow(1 + monthlyRate, numberOfRepayments)) /
                               (Math.pow(1 + monthlyRate, numberOfRepayments) - 1);
         const totalAmount = monthlyPayment * numberOfRepayments;
         const totalInterest = totalAmount - principal;
 
-        console.log('Loan calculation:', {
+        console.log('Loan calculation (consistent with LOAN_CHARGES_REQUEST):', {
             principal,
             numberOfRepayments,
             interestRate,

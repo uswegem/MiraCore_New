@@ -379,10 +379,10 @@ async function handleLoanOfferRequest(parsedData, res) {
                 },
                 MessageDetails: {
                     ApplicationNumber: loanOfferData.applicationNumber,
-                    Reason: "Loan offer calculated successfully",
+                    Reason: "Ok",
                     FSPReferenceNumber: result.fspReferenceNumber,
                     LoanNumber: `CALC_${result.applicationNumber || Date.now()}`, // Placeholder loan number for calculation
-                    TotalAmountToPay: result.totalAmount.toString(),
+                    TotalAmountToPay: parseFloat(result.totalAmount).toFixed(2),
                     OtherCharges: "0.00",
                     Approval: result.approvalStatus
                 }
