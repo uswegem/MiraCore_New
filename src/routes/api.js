@@ -3,12 +3,11 @@ const router = express.Router();
 const apiController = require('../controllers/apiController');
 const api = require('../services/cbs.api');
 
+// Webhook endpoint for MIFOS notifications (bypass signature verification)
+router.post('/webhook/mifos', apiController.handleMifosWebhook);
 
 // Single endpoint for all frontend requests
 router.post('/loan', apiController.processRequest);
-
-// Webhook endpoint for MIFOS notifications
-router.post('/webhook/mifos', apiController.handleMifosWebhook);
 
 // Temporary endpoint to check ClientType codes
 router.get('/client-types', async (req, res) => {

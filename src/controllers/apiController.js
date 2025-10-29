@@ -525,7 +525,7 @@ async function handleLoanFinalApproval(parsedData, res) {
             // Continue processing even if mapping update fails
         }
 
-        // 1. Check if customer exists using NIN as external ID, then by mobile number
+        // 1. Check if customer exists using NIN as external ID
         let clientExists = false;
         let clientId = null;
         let clientWasCreated = false; // Track if we actually created a new client
@@ -534,29 +534,16 @@ async function handleLoanFinalApproval(parsedData, res) {
             try {
                 console.log('Checking if client exists with NIN:', approvalData.nin);
                 const clientSearch = await cbsApi.get(`/v1/clients?externalId=${approvalData.nin}`);
+                console.log('Client search response:', JSON.stringify(clientSearch, null, 2));
                 clientExists = clientSearch.status && clientSearch.response && clientSearch.response.pageItems && clientSearch.response.pageItems.length > 0;
                 if (clientExists) {
-                    clientId = clientSearch.response.pageItems[0].id;
+                    clientId = clientSearch.response.pageItems[0].id || clientSearch.response.pageItems[0].clientId;
                     console.log('✅ Client exists with ID (found by NIN):', clientId);
+                } else {
+                    console.log('Client not found by NIN');
                 }
             } catch (error) {
                 console.log('Client search by NIN failed:', error.message);
-            }
-        }
-
-        // If not found by NIN, try searching by mobile number
-        if (!clientExists && approvalData.mobileNo) {
-            try {
-                console.log('Checking if client exists with mobile number:', approvalData.mobileNo);
-                const formattedMobile = approvalData.mobileNo.startsWith('+') ? approvalData.mobileNo : `+255${approvalData.mobileNo.replace(/^0/, '')}`;
-                const mobileSearch = await cbsApi.get(`/v1/clients?mobileNo=${formattedMobile}`);
-                clientExists = mobileSearch.status && mobileSearch.response && mobileSearch.response.pageItems && mobileSearch.response.pageItems.length > 0;
-                if (clientExists) {
-                    clientId = mobileSearch.response.pageItems[0].id;
-                    console.log('✅ Client exists with ID (found by mobile):', clientId);
-                }
-            } catch (error) {
-                console.log('Client search by mobile failed:', error.message);
             }
         }
 
@@ -634,7 +621,9 @@ async function handleLoanFinalApproval(parsedData, res) {
 
                 if (clientResponse.status) {
                     console.log('✅ Client created successfully with full payload');
-                    clientId = clientResponse.response.clientId;
+                    // Try different possible field names for client ID
+                    clientId = clientResponse.response.clientId || clientResponse.response.resourceId || clientResponse.response.id;
+                    console.log('Extracted clientId from response:', clientId, 'from response:', JSON.stringify(clientResponse.response, null, 2));
                     clientWasCreated = true;
                 } else {
                     console.error('❌ MIFOS API returned error for full payload:', JSON.stringify(clientResponse, null, 2));
@@ -649,7 +638,8 @@ async function handleLoanFinalApproval(parsedData, res) {
 
                     if (clientResponse.status) {
                         console.log('✅ Client created successfully with base payload');
-                        clientId = clientResponse.response.clientId;
+                        clientId = clientResponse.response.clientId || clientResponse.response.resourceId || clientResponse.response.id;
+                        console.log('Extracted clientId from base payload response:', clientId);
                         clientWasCreated = true;
 
                         // Store datatable fields in client_onboarding datatable
@@ -666,22 +656,8 @@ async function handleLoanFinalApproval(parsedData, res) {
                         );
 
                         if (hasDuplicateMobileError) {
-                            console.log('⚠️ Mobile number already exists, attempting to find existing client...');
-
-                            // Try to find the existing client by mobile number
-                            try {
-                                const existingClientSearch = await cbsApi.get(`/v1/clients?mobileNo=${formattedMobile}`);
-                                if (existingClientSearch.status && existingClientSearch.response?.pageItems?.length > 0) {
-                                    clientId = existingClientSearch.response.pageItems[0].id;
-                                    console.log('✅ Found existing client with duplicate mobile number:', clientId);
-                                    clientExists = true; // Mark as existing so we don't try to create onboarding data
-                                } else {
-                                    throw new Error('Could not find existing client with duplicate mobile number');
-                                }
-                            } catch (searchError) {
-                                console.error('❌ Failed to find existing client with duplicate mobile:', searchError.message);
-                                throw new Error('Client creation failed due to duplicate mobile number and unable to find existing client');
-                            }
+                            console.log('⚠️ Mobile number already exists');
+                            throw new Error('Mobile number already exists');
                         } else {
                             throw new Error('Base client creation failed: ' + JSON.stringify(clientResponse.response));
                         }
@@ -698,43 +674,26 @@ async function handleLoanFinalApproval(parsedData, res) {
             console.log('MIFOS client creation response:', JSON.stringify(clientResponse.response, null, 2));
             console.log('✅ Client created successfully:', clientId);
 
-        if (clientWasCreated) {
+            // Validate clientId is not a system client ID and is a valid number
+            if (!clientId || clientId === 1 || typeof clientId !== 'number') {
+                console.error('Invalid clientId extracted:', clientId, 'Type:', typeof clientId);
+                throw new Error(`Client creation returned invalid client ID: ${clientId}. Response: ${JSON.stringify(clientResponse.response)}`);
+            }
+
+            // Verify the client was actually created by fetching it
+            console.log('Verifying client creation by fetching client details...');
+            const verifyClientResponse = await cbsApi.get(`/v1/clients/${clientId}`);
+            if (!verifyClientResponse.status) {
+                throw new Error(`Failed to verify client creation for ID ${clientId}: ${JSON.stringify(verifyClientResponse.response)}`);
+            }
+            console.log('✅ Client verification successful:', verifyClientResponse.response.id);
+
             // Update loan mapping with MIFOS client ID for new clients
             try {
                 await LoanMappingService.updateWithClientCreation(approvalData.loanNumber, clientId);
             } catch (mappingError) {
                 console.error('❌ Error updating loan mapping with client creation:', mappingError);
             }
-        } else {
-            console.log('Client already exists with NIN:', approvalData.nin, 'ID:', clientId);
-        }
-
-        // 3. Check and activate client if needed
-        console.log('Checking client activation status...');
-        const clientDetailsResponse = await cbsApi.get(`/v1/clients/${clientId}`);
-        if (!clientDetailsResponse.status) {
-            throw new Error('Failed to get client details: ' + JSON.stringify(clientDetailsResponse.response));
-        }
-
-        const clientDetails = clientDetailsResponse.response;
-        const isActive = clientDetails.active;
-
-        if (!isActive) {
-            console.log('Client is not active, activating...');
-            const activationResponse = await cbsApi.post(`/v1/clients/${clientId}?command=activate`, {
-                activationDate: new Date().toISOString().split('T')[0],
-                locale: 'en',
-                dateFormat: 'yyyy-MM-dd'
-            });
-
-            if (!activationResponse.status) {
-                console.log('⚠️ Client activation failed, but continuing:', activationResponse.message);
-            } else {
-                console.log('✅ Client activated successfully');
-            }
-        } else {
-            console.log('✅ Client is already active');
-        }
 
             // Insert client onboarding datatable data (only for newly created clients)
             if (clientWasCreated && approvalData.checkNumber) {
@@ -775,26 +734,76 @@ async function handleLoanFinalApproval(parsedData, res) {
             console.log('Client already exists with NIN:', approvalData.nin, 'ID:', clientId);
         }
 
-        // Validate that we have a clientId before proceeding
-        if (!clientId) {
-            throw new Error('Failed to obtain client ID - client creation or lookup failed');
+        // 2. Check and activate client if needed
+        console.log('Checking client activation status for clientId:', clientId);
+        const clientDetailsResponse = await cbsApi.get(`/v1/clients/${clientId}`);
+        if (!clientDetailsResponse.status) {
+            throw new Error('Failed to get client details: ' + JSON.stringify(clientDetailsResponse.response));
         }
 
-        // 5. Check if loan already exists for this LoanNumber
-        console.log('Checking if loan already exists for LoanNumber:', approvalData.loanNumber);
+        const clientDetails = clientDetailsResponse.response;
+        const isActive = clientDetails.active;
+        console.log('Client active status:', isActive);
+
+        if (!isActive) {
+            console.log('Client is not active, activating...');
+            const activationResponse = await cbsApi.post(`/v1/clients/${clientId}?command=activate`, {
+                activationDate: new Date().toISOString().split('T')[0],
+                locale: 'en',
+                dateFormat: 'yyyy-MM-dd'
+            });
+
+            if (!activationResponse.status) {
+                console.error('❌ Client activation failed:', JSON.stringify(activationResponse.response));
+                throw new Error('Failed to activate client: ' + JSON.stringify(activationResponse.response));
+            } else {
+                console.log('✅ Client activated successfully');
+            }
+        } else {
+            console.log('✅ Client is already active');
+        }
+
+        // Validate that we have a valid clientId before proceeding
+        if (!clientId || clientId === 1) {
+            throw new Error(`Invalid client ID: ${clientId}. Client creation or lookup failed, or client ID is a system client.`);
+        }
+
+        // 3. Check if loan already exists for this LoanNumber using client ID
+        console.log('Checking if loan already exists for LoanNumber:', approvalData.loanNumber, 'and Client ID:', clientId);
         let existingLoanId = null;
-        
+
         try {
+            // First check loan mapping to see if we already have a MIFOS loan ID for this ESS loan number
             const existingMapping = await LoanMappingService.getByEssLoanNumberAlias(approvalData.loanNumber);
             if (existingMapping && existingMapping.mifosLoanId) {
                 existingLoanId = existingMapping.mifosLoanId;
-                console.log('✅ Found existing loan:', existingLoanId);
+                console.log('✅ Found existing loan mapping:', existingLoanId);
             } else {
-                console.log('No existing loan found for this LoanNumber, will create new loan');
+                console.log('No existing loan mapping found for this LoanNumber, will check MIFOS directly');
             }
         } catch (error) {
             console.log('Error checking existing loan mapping:', error.message);
-            console.log('Will create new loan');
+        }
+
+        // If no mapping exists, check MIFOS directly using client loans endpoint
+        if (!existingLoanId && clientId) {
+            try {
+                const clientLoansResponse = await cbsApi.get(`/v1/clients/${clientId}/accounts`);
+                if (clientLoansResponse.status && clientLoansResponse.response?.loanAccounts) {
+                    const clientLoans = clientLoansResponse.response.loanAccounts;
+                    // Look for a loan that matches our loan number (could be in external ID or account number)
+                    const matchingLoan = clientLoans.find(loan =>
+                        loan.accountNo === approvalData.loanNumber ||
+                        loan.externalId === approvalData.loanNumber
+                    );
+                    if (matchingLoan) {
+                        existingLoanId = matchingLoan.id;
+                        console.log('✅ Found existing loan in MIFOS:', existingLoanId);
+                    }
+                }
+            } catch (error) {
+                console.log('Error checking client loans in MIFOS:', error.message);
+            }
         }
 
         let loanId;
@@ -807,19 +816,27 @@ async function handleLoanFinalApproval(parsedData, res) {
             // 6. Create Loan in MIFOS (only if it doesn't exist)
             console.log('Creating loan in MIFOS...');
 
-            // Get loan product details (use valid product ID 17)
-            const productResponse = await cbsApi.get(`/v1/loanproducts/${approvalData.productCode || 17}`);
+            // Get loan product details (use specified product or fallback to 17)
+            let productId = approvalData.productCode || 17;
+            console.log('Attempting to use product ID:', productId);
+
+            let productResponse = await cbsApi.get(`/v1/loanproducts/${productId}`);
             if (!productResponse.status) {
-                throw new Error('Loan product not found: ' + (approvalData.productCode || 17));
+                console.log('Specified product ID', productId, 'not found, falling back to product ID 17');
+                productId = 17;
+                productResponse = await cbsApi.get(`/v1/loanproducts/${productId}`);
+                if (!productResponse.status) {
+                    throw new Error('Fallback loan product 17 not found');
+                }
             }
 
             const product = productResponse.response;
-            console.log('Product details retrieved:', product.name);
+            console.log('Product details retrieved:', product.name, '(ID:', productId, ')');
 
             // Create loan payload
             const loanPayload = {
                 clientId: clientId,
-                productId: approvalData.productCode || 17, // Use valid product ID 17 as default
+                productId: productId, // Use the validated product ID
                 principal: approvalData.requestedAmount,
                 loanTermFrequency: approvalData.tenure,
                 loanTermFrequencyType: 2, // Months
@@ -837,6 +854,8 @@ async function handleLoanFinalApproval(parsedData, res) {
                 locale: 'en',
                 dateFormat: 'yyyy-MM-dd'
             };
+
+            console.log('Creating loan with payload:', JSON.stringify(loanPayload, null, 2));
 
             const loanResponse = await cbsApi.post('/v1/loans', loanPayload);
             if (!loanResponse.status) {
@@ -928,6 +947,15 @@ async function handleLoanFinalApproval(parsedData, res) {
  */
 async function handleMifosWebhook(req, res) {
     try {
+        // Validate webhook secret for security (optional - configure WEBHOOK_SECRET in production)
+        const webhookSecret = req.headers['x-webhook-secret'] || req.body.webhookSecret;
+        const expectedSecret = process.env.WEBHOOK_SECRET;
+
+        if (expectedSecret && webhookSecret !== expectedSecret) {
+            console.log('❌ Invalid webhook secret');
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+
         console.log('Received MIFOS webhook:', JSON.stringify(req.body, null, 2));
 
         const webhookData = req.body;
