@@ -378,7 +378,45 @@ async function handleLoanOfferRequest(parsedData, res) {
                     MessageType: "LOAN_INITIAL_APPROVAL_NOTIFICATION"
                 },
                 MessageDetails: {
+                    CheckNumber: loanOfferData.checkNumber,
+                    FirstName: loanOfferData.firstName,
+                    MiddleName: loanOfferData.middleName,
+                    LastName: loanOfferData.lastName,
+                    Sex: loanOfferData.sex,
+                    BankAccountNumber: loanOfferData.bankAccountNumber,
+                    EmploymentDate: loanOfferData.employmentDate,
+                    MaritalStatus: loanOfferData.maritalStatus,
+                    ConfirmationDate: loanOfferData.confirmationDate,
+                    TotalEmployeeDeduction: loanOfferData.totalEmployeeDeduction?.toString(),
+                    NearestBranchName: loanOfferData.nearestBranchName,
+                    NearestBranchCode: loanOfferData.nearestBranchCode,
+                    VoteCode: loanOfferData.voteCode,
+                    VoteName: loanOfferData.voteName,
+                    NIN: loanOfferData.nin,
+                    DesignationCode: loanOfferData.designationCode,
+                    DesignationName: loanOfferData.designationName,
+                    BasicSalary: loanOfferData.basicSalary?.toString(),
+                    NetSalary: loanOfferData.netSalary?.toString(),
+                    OneThirdAmount: loanOfferData.oneThirdAmount?.toString(),
+                    RequestedAmount: loanOfferData.requestedAmount?.toString(),
+                    DesiredDeductibleAmount: loanOfferData.desiredDeductibleAmount?.toString(),
+                    RetirementDate: loanOfferData.retirementDate,
+                    TermsOfEmployment: loanOfferData.termsOfEmployment,
+                    Tenure: loanOfferData.tenure?.toString(),
+                    ProductCode: loanOfferData.productCode?.toString(),
+                    InterestRate: result.interestRate?.toString(),
+                    ProcessingFee: "0.00", // Not calculated in current implementation
+                    Insurance: "0.00", // Not calculated in current implementation
+                    PhysicalAddress: loanOfferData.physicalAddress,
+                    EmailAddress: loanOfferData.emailAddress,
+                    MobileNumber: loanOfferData.mobileNumber,
                     ApplicationNumber: loanOfferData.applicationNumber,
+                    LoanPurpose: loanOfferData.loanPurpose,
+                    ContractStartDate: loanOfferData.contractStartDate,
+                    ContractEndDate: loanOfferData.contractEndDate,
+                    SwiftCode: loanOfferData.swiftCode,
+                    Funding: loanOfferData.funding,
+                    // Additional calculated fields
                     Reason: "Ok",
                     FSPReferenceNumber: result.fspReferenceNumber,
                     LoanNumber: `CALC_${result.applicationNumber || Date.now()}`, // Placeholder loan number for calculation
@@ -464,6 +502,20 @@ async function handleLoanFinalApproval(parsedData, res) {
         };
 
         console.log('Final approval data:', approvalData);
+
+        // Validate required fields
+        if (!approvalData.nin) {
+            throw new Error('NIN is required for client identification');
+        }
+        if (!approvalData.firstName || !approvalData.lastName) {
+            throw new Error('First name and last name are required for client creation');
+        }
+        if (!approvalData.requestedAmount || approvalData.requestedAmount <= 0) {
+            throw new Error('Valid requested amount is required');
+        }
+        if (!approvalData.loanNumber) {
+            throw new Error('Loan number is required');
+        }
 
         // Update loan mapping with final approval data
         try {
@@ -556,7 +608,7 @@ async function handleLoanFinalApproval(parsedData, res) {
             };
 
             let clientResponse;
-            let clientId;
+            // clientId already declared in outer scope
 
             try {
                 // First attempt: Try to create client with all fields
@@ -675,6 +727,11 @@ async function handleLoanFinalApproval(parsedData, res) {
             }
         } else {
             console.log('Client already exists with NIN:', approvalData.nin, 'ID:', clientId);
+        }
+
+        // Validate that we have a clientId before proceeding
+        if (!clientId) {
+            throw new Error('Failed to obtain client ID - client creation or lookup failed');
         }
 
         // 5. Check if loan already exists for this LoanNumber
