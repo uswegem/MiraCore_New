@@ -295,24 +295,10 @@ async function testLoanMessageTypesDirect() {
 
         console.log('Final approval data:', approvalData);
 
-        // Return acknowledgment response
-        const responseData = {
-            Data: {
-                Header: {
-                    Sender: process.env.FSP_NAME || "ZE DONE",
-                    Receiver: "ESS_UTUMISHI",
-                    FSPCode: parsedData.Document.Data.Header.FSPCode,
-                    MsgId: `ACK_${Date.now()}`,
-                    MessageType: "RESPONSE"
-                },
-                MessageDetails: {
-                    OriginalMessageId: parsedData.Document.Data.Header.MsgId,
-                    ResponseCode: "00",
-                    ResponseDescription: "Final approval notification processed successfully",
-                    ProcessingStatus: "SUCCESS"
-                }
-            }
-        };
+        // No immediate response for LOAN_FINAL_APPROVAL_NOTIFICATION
+        // Processing continues asynchronously
+        console.log('✅ LOAN_FINAL_APPROVAL_NOTIFICATION processing started - no immediate response required');
+        console.log('ℹ️ Manual disbursement will trigger LOAN_DISBURSEMENT_NOTIFICATION later');
 
         const signedResponse = digitalSignature.createSignedXML(responseData.Data);
         console.log(signedResponse);

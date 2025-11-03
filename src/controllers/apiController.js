@@ -5,6 +5,7 @@ const digitalSignature = require('../utils/signatureUtils');
 const { LoanCalculate, CreateTopUpLoanOffer, CreateTakeoverLoanOffer, CreateLoanOffer } = require('../services/loanService');
 const LoanMappingService = require('../services/loanMappingService');
 const cbsApi = require('../services/cbs.api');
+const { formatDateForMifos } = require('../utils/dateUtils');
 
 const parser = new xml2js.Parser({
     explicitArray: false,
@@ -460,10 +461,29 @@ async function handleLoanOfferRequest(parsedData, res) {
 
 /**
  * Handle LOAN_FINAL_APPROVAL_NOTIFICATION - Final approval from ESS
+ * According to ESS API Documentation:
+ * - No immediate response is expected
+ * - Process asynchronously
+ * - Send LOAN_DISBURSEMENT_NOTIFICATION on successful disbursement
+ * - Send LOAN_DISBURSEMENT_FAILURE_NOTIFICATION on failure
  */
 async function handleLoanFinalApproval(parsedData, res) {
+    // End request without response as per ESS API spec
+    res.end();
+
+    // Process asynchronously without waiting for completion
+    processFinalApproval(parsedData).catch(error => {
+        console.error('Async final approval processing failed:', error);
+    });
+}
+
+/**
+ * Process loan final approval asynchronously
+ * Manual disbursement or failure notification will be sent after completion
+ */
+async function processLoanFinalApproval(parsedData) {
     try {
-        console.log('Processing LOAN_FINAL_APPROVAL_NOTIFICATION...');
+        console.log('Processing LOAN_FINAL_APPROVAL_NOTIFICATION asynchronously...');
 
         const messageDetails = parsedData.Document.Data.MessageDetails;
         console.log('Raw messageDetails:', JSON.stringify(messageDetails, null, 2));
@@ -667,8 +687,26 @@ async function handleLoanFinalApproval(parsedData, res) {
                         );
 
                         if (hasDuplicateMobileError) {
-                            console.log('⚠️ Mobile number already exists');
-                            throw new Error('Mobile number already exists in MIFOS');
+                            console.log('⚠️ Mobile number already exists - checking if client exists with same NIN...');
+
+                            // Check if client exists with the same NIN despite duplicate mobile
+                            try {
+                                const existingClientSearch = await cbsApi.get(`/v1/clients?externalId=${approvalData.nin}`);
+                                const existingClientExists = existingClientSearch.status && existingClientSearch.response &&
+                                                           existingClientSearch.response.pageItems && existingClientSearch.response.pageItems.length > 0;
+
+                                if (existingClientExists) {
+                                    clientId = existingClientSearch.response.pageItems[0].id || existingClientSearch.response.pageItems[0].clientId;
+                                    clientExists = true;
+                                    clientWasCreated = false;
+                                    console.log('✅ Found existing client with same NIN despite duplicate mobile, using client ID:', clientId);
+                                } else {
+                                    throw new Error('Mobile number already exists in MIFOS but no client found with matching NIN');
+                                }
+                            } catch (existingClientError) {
+                                console.error('Failed to find existing client with NIN:', existingClientError.message);
+                                throw new Error('Mobile number already exists in MIFOS');
+                            }
                         }
 
                         // Extract specific error details for other validation errors
@@ -686,28 +724,68 @@ async function handleLoanFinalApproval(parsedData, res) {
                     console.error('Full payload error:', fullPayloadError.message);
                     console.error('Base payload error:', basePayloadError.message);
 
-                    // Extract actual MIFOS error details for better error reporting
-                    let errorDetails = 'Unknown error';
-                    if (basePayloadError.message && basePayloadError.message.includes('Base client creation failed:')) {
-                        // Extract the JSON error from base payload error
-                        const errorMatch = basePayloadError.message.match(/Base client creation failed: (\{.*\})/);
-                        if (errorMatch) {
-                            try {
-                                const mifosError = JSON.parse(errorMatch[1]);
-                                if (mifosError.errors && mifosError.errors.length > 0) {
-                                    errorDetails = mifosError.errors.map(err => err.defaultUserMessage || err.developerMessage).join('; ');
-                                } else if (mifosError.defaultUserMessage) {
-                                    errorDetails = mifosError.defaultUserMessage;
+                    // Check if client actually exists despite creation failure (e.g., duplicate mobile but same NIN)
+                    console.log('Checking if client exists despite creation failure...');
+                    try {
+                        const fallbackClientSearch = await cbsApi.get(`/v1/clients?externalId=${approvalData.nin}`);
+                        const fallbackClientExists = fallbackClientSearch.status && fallbackClientSearch.response &&
+                                                   fallbackClientSearch.response.pageItems && fallbackClientSearch.response.pageItems.length > 0;
+
+                        if (fallbackClientExists) {
+                            clientId = fallbackClientSearch.response.pageItems[0].id || fallbackClientSearch.response.pageItems[0].clientId;
+                            clientExists = true;
+                            clientWasCreated = false; // Client was not created in this request
+                            console.log('✅ Found existing client despite creation failure, using client ID:', clientId);
+                        } else {
+                            // Extract actual MIFOS error details for better error reporting
+                            let errorDetails = 'Unknown error';
+                            if (basePayloadError.message && basePayloadError.message.includes('Base client creation failed:')) {
+                                // Extract the JSON error from base payload error
+                                const errorMatch = basePayloadError.message.match(/Base client creation failed: (\{.*\})/);
+                                if (errorMatch) {
+                                    try {
+                                        const mifosError = JSON.parse(errorMatch[1]);
+                                        if (mifosError.errors && mifosError.errors.length > 0) {
+                                            errorDetails = mifosError.errors.map(err => err.defaultUserMessage || err.developerMessage).join('; ');
+                                        } else if (mifosError.defaultUserMessage) {
+                                            errorDetails = mifosError.defaultUserMessage;
+                                        }
+                                    } catch (parseError) {
+                                        errorDetails = basePayloadError.message;
+                                    }
                                 }
-                            } catch (parseError) {
+                            } else {
                                 errorDetails = basePayloadError.message;
                             }
-                        }
-                    } else {
-                        errorDetails = basePayloadError.message;
-                    }
 
-                    throw new Error(`Failed to create client in MIFOS: ${errorDetails}`);
+                            throw new Error(`Failed to create client in MIFOS: ${errorDetails}`);
+                        }
+                    } catch (fallbackError) {
+                        console.error('Fallback client search also failed:', fallbackError.message);
+
+                        // Extract actual MIFOS error details for better error reporting
+                        let errorDetails = 'Unknown error';
+                        if (basePayloadError.message && basePayloadError.message.includes('Base client creation failed:')) {
+                            // Extract the JSON error from base payload error
+                            const errorMatch = basePayloadError.message.match(/Base client creation failed: (\{.*\})/);
+                            if (errorMatch) {
+                                try {
+                                    const mifosError = JSON.parse(errorMatch[1]);
+                                    if (mifosError.errors && mifosError.errors.length > 0) {
+                                        errorDetails = mifosError.errors.map(err => err.defaultUserMessage || err.developerMessage).join('; ');
+                                    } else if (mifosError.defaultUserMessage) {
+                                        errorDetails = mifosError.defaultUserMessage;
+                                    }
+                                } catch (parseError) {
+                                    errorDetails = basePayloadError.message;
+                                }
+                            }
+                        } else {
+                            errorDetails = basePayloadError.message;
+                        }
+
+                        throw new Error(`Failed to create client in MIFOS: ${errorDetails}`);
+                    }
                 }
             }
 
@@ -840,7 +918,7 @@ async function handleLoanFinalApproval(parsedData, res) {
                     if (matchingLoan) {
                         existingLoanId = matchingLoan.id;
                         console.log('✅ Found existing loan in MIFOS:', existingLoanId);
-                    }
+                      }
                 }
             } catch (error) {
                 console.log('Error checking client loans in MIFOS:', error.message);
@@ -930,7 +1008,7 @@ async function handleLoanFinalApproval(parsedData, res) {
 
         // 8. Approve LOAN in MIFOS (if not already approved)
         let loanApproved = false;
-        if (loanStatus !== '300' && loanStatus !== '400') { // Not approved or disbursed
+        if (loanStatus !== '300') { // Not approved
             console.log('Approving loan...');
             const approvalResponse = await cbsApi.post(`/v1/loans/${loanId}?command=approve`, {
                 approvedOnDate: new Date().toISOString().split('T')[0],
@@ -946,40 +1024,45 @@ async function handleLoanFinalApproval(parsedData, res) {
             console.log('✅ Loan approved successfully');
             loanApproved = true;
         } else {
-            console.log('Loan already approved or disbursed');
+            console.log('Loan already approved');
         }
 
-        // 9. Disburse LOAN in MIFOS (if not already disbursed)
-        let loanDisbursed = false;
-        if (loanStatus !== '400') { // Not disbursed
-            console.log('Disbursing loan...');
-            const disbursementResponse = await cbsApi.post(`/v1/loans/${loanId}?command=disburse`, {
-                actualDisbursementDate: new Date().toISOString().split('T')[0],
-                transactionAmount: approvalData.requestedAmount,
-                locale: 'en',
-                dateFormat: 'yyyy-MM-dd'
-            });
-
-            if (!disbursementResponse.status) {
-                throw new Error('Failed to disburse loan: ' + JSON.stringify(disbursementResponse.response));
-            }
-
-            console.log('✅ Loan disbursed successfully');
-            loanDisbursed = true;
-        } else {
-            console.log('Loan already disbursed');
-        }
-
-        // LOAN_DISBURSEMENT_NOTIFICATION will be sent to ESS when MIFOS webhook triggers disbursement event
+        // 9. Loan approval completed - disbursement will be done manually
+        // LOAN_DISBURSEMENT_NOTIFICATION will be sent to ESS when MIFOS webhook triggers after manual disbursement
 
         // Processing complete - no response sent to ESS
-        // LOAN_DISBURSEMENT_NOTIFICATION will be sent via webhook when disbursement occurs
+        // LOAN_DISBURSEMENT_NOTIFICATION will be sent via webhook when manual disbursement occurs
 
-        console.log('✅ Final approval processing completed - awaiting disbursement notification');
+        console.log('✅ Final approval processing completed - loan ready for manual disbursement');
 
     } catch (error) {
         console.error('Error processing final approval:', error);
-        return sendErrorResponse(res, '8014', 'Error processing final approval: ' + error.message, 'xml', parsedData);
+        
+        // Send failure notification as per ESS API Documentation
+        const failureNotification = {
+            Data: {
+                Header: {
+                    Sender: process.env.FSP_NAME || "ZE DONE",
+                    Receiver: "ESS_UTUMISHI",
+                    FSPCode: parsedData.Document.Data.Header.FSPCode,
+                    MsgId: `FAIL_${Date.now()}`,
+                    MessageType: "LOAN_DISBURSEMENT_FAILURE_NOTIFICATION"
+                },
+                MessageDetails: {
+                    ApplicationNumber: messageDetails.ApplicationNumber,
+                    Reason: error.message // As per ESS API spec, only ApplicationNumber and Reason are required
+                }
+            }
+        };
+
+        try {
+            // Sign and send the failure notification
+            const signedFailureXml = digitalSignature.createSignedXML(failureNotification.Data);
+            await forwardToThirdParty(signedFailureXml, "LOAN_DISBURSEMENT_FAILURE_NOTIFICATION");
+            console.log('✅ LOAN_DISBURSEMENT_FAILURE_NOTIFICATION sent successfully');
+        } catch (notifyError) {
+            console.error('Failed to send failure notification:', notifyError);
+        }
     }
 }
 
@@ -1533,28 +1616,19 @@ async function storeClientOnboardingData(clientId, datatableFields) {
         // Prepare datatable payload with only non-null values
         const datatablePayload = {
             dateFormat: 'dd MMMM yyyy',
-            locale: 'en'
+            locale: 'en',
+            EmploymentDate: formatDateForMifos(datatableFields.employmentDate)
         };
-
-        // Format employment date if present
-        if (datatableFields.employmentDate) {
-            const formatEmploymentDate = (dateString) => {
-                if (!dateString) return null;
-                const date = new Date(dateString);
-                const day = date.getDate();
-                const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
-                                  'July', 'August', 'September', 'October', 'November', 'December'];
-                const month = monthNames[date.getMonth()];
-                const year = date.getFullYear();
-                return `${day} ${month} ${year}`;
-            };
-            datatablePayload.EmploymentDate = formatEmploymentDate(datatableFields.employmentDate);
-        }
 
         // Add other fields if they exist
         if (datatableFields.checkNumber) datatablePayload.CheckNumber = datatableFields.checkNumber;
         if (datatableFields.bankAccountNumber) datatablePayload.BankAccountNumber = datatableFields.bankAccountNumber;
         if (datatableFields.swiftCode) datatablePayload.SwiftCode = datatableFields.swiftCode;
+        if (datatableFields.sex) datatablePayload.Sex = datatableFields.sex;
+        if (datatableFields.maritalStatus) datatablePayload.MaritalStatus = datatableFields.maritalStatus;
+        if (datatableFields.physicalAddress) datatablePayload.PhysicalAddress = datatableFields.physicalAddress;
+        if (datatableFields.contractEndDate) datatablePayload.ContractEndDate = formatDateForMifos(datatableFields.contractEndDate);
+
 
         console.log('Client onboarding datatable payload:', JSON.stringify(datatablePayload, null, 2));
 
