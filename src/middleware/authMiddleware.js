@@ -67,8 +67,8 @@ const auditMiddleware = async (req, res, next) => {
     // Store original headers
     const contentType = res.get('Content-Type');
     
-    // Call original send
-    originalSend.call(this, data);
+    // Call original send and maintain chain
+    const result = originalSend.call(this, data);
     
     // Log the action after response is sent
     if (req.user) {
@@ -90,6 +90,8 @@ const auditMiddleware = async (req, res, next) => {
       
       auditLog.save().catch(console.error);
     }
+    
+    return result;
   };
   
   next();
