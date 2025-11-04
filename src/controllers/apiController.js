@@ -3,6 +3,7 @@ const { validateXML, validateMessageType } = require('../validations/xmlValidato
 const { forwardToThirdParty } = require('../services/thirdPartyService');
 const digitalSignature = require('../utils/signatureUtils');
 const { sendCallback } = require('../utils/callbackUtils');
+const { sendErrorResponse } = require('../utils/responseUtils');
 const { LoanCalculate, CreateTopUpLoanOffer, CreateTakeoverLoanOffer, CreateLoanOffer } = require('../services/loanService');
 const LoanMappingService = require('../services/loanMappingService');
 const cbsApi = require('../services/cbs.api');
@@ -347,7 +348,7 @@ async function handleLoanChargesRequest(parsedData, res) {
                     MessageType: "LOAN_CHARGES_RESPONSE"
                 },
                 MessageDetails: {
-                    DesiredDeductibleAmount: result.desiredDeductibleAmount?.toFixed(2) || "0.00",
+                    DesiredDeductibleAmount: (typeof result.desiredDeductibleAmount === 'number' ? result.desiredDeductibleAmount.toFixed(2) : "0.00"),
                     TotalInsurance: result.totalInsurance?.toFixed(2) || "0.00",
                     TotalProcessingFees: result.totalProcessingFees?.toFixed(2) || "0.00",
                     TotalInterestRateAmount: result.totalInterestRateAmount?.toFixed(2) || "0.00",
