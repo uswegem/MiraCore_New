@@ -298,6 +298,173 @@ async function handleMifosWebhook(req, res) {
     }
 }
 
+/**
+ * Handle LOAN_CHARGES_REQUEST - Calculate possible loan charges
+ */
+async function handleLoanChargesRequest(parsedData, res) {
+    try {
+        console.log('Processing LOAN_CHARGES_REQUEST...');
+
+        // Extract message details from XML
+        const messageDetails = parsedData.Document.Data.MessageDetails;
+        console.log('Message details:', JSON.stringify(messageDetails, null, 2));
+
+        // Convert XML data to format expected by LoanCalculate
+        const loanData = {
+            checkNumber: messageDetails.CheckNumber,
+            designationCode: messageDetails.DesignationCode,
+            designationName: messageDetails.DesignationName,
+            basicSalary: parseFloat(messageDetails.BasicSalary),
+            netSalary: parseFloat(messageDetails.NetSalary),
+            oneThirdAmount: parseFloat(messageDetails.OneThirdAmount),
+            deductibleAmount: parseFloat(messageDetails.DeductibleAmount),
+            retirementDate: messageDetails.RetirementDate,
+            termsOfEmployment: messageDetails.TermsOfEmployment,
+            requestedAmount: messageDetails.RequestedAmount ? parseFloat(messageDetails.RequestedAmount) : null,
+            desiredDeductibleAmount: messageDetails.DesiredDeductibleAmount ? parseFloat(messageDetails.DesiredDeductibleAmount) : null,
+            tenure: messageDetails.Tenure ? parseInt(messageDetails.Tenure) : null,
+            fspCode: parsedData.Document.Data.Header.FSPCode,
+            productCode: messageDetails.ProductCode,
+            voteCode: messageDetails.VoteCode,
+            totalEmployeeDeduction: parseFloat(messageDetails.TotalEmployeeDeduction),
+            jobClassCode: messageDetails.JobClassCode
+        };
+
+        console.log('Loan data prepared:', loanData);
+
+        // Call loan calculation service
+        const result = await LoanCalculate(loanData);
+        console.log('Calculation result:', result);
+
+        // Convert result to ESS response format
+        const responseData = {
+            Data: {
+                Header: {
+                    Sender: process.env.FSP_NAME || "ZE DONE",
+                    Receiver: "ESS_UTUMISHI",
+                    FSPCode: parsedData.Document.Data.Header.FSPCode,
+                    MsgId: `CHRG_${Date.now()}`,
+                    MessageType: "LOAN_CHARGES_RESPONSE"
+                },
+                MessageDetails: {
+                    DesiredDeductibleAmount: result.desiredDeductibleAmount?.toFixed(2) || "0.00",
+                    TotalInsurance: result.totalInsurance?.toFixed(2) || "0.00",
+                    TotalProcessingFees: result.totalProcessingFees?.toFixed(2) || "0.00",
+                    TotalInterestRateAmount: result.totalInterestRateAmount?.toFixed(2) || "0.00",
+                    OtherCharges: "0.00",
+                    NetLoanAmount: result.netLoanAmount?.toFixed(2) || "0.00",
+                    TotalAmountToPay: result.totalAmountToPay?.toFixed(2) || "0.00",
+                    Tenure: result.tenure?.toString() || "0",
+                    EligibleAmount: result.eligibleAmount?.toFixed(2) || "0.00",
+                    MonthlyReturnAmount: result.monthlyReturnAmount?.toFixed(2) || "0.00"
+                }
+            }
+        };
+
+        console.log('Preparing response:', JSON.stringify(responseData, null, 2));
+
+        // Generate signed XML response
+        const signedResponse = digitalSignature.createSignedXML(responseData.Data);
+        console.log('Response signed successfully');
+
+        res.set('Content-Type', 'application/xml');
+        res.send(signedResponse);
+
+    } catch (error) {
+        console.error('Error processing loan charges request:', error);
+
+        // Handle ApplicationException with specific error codes
+        if (error.errorCode) {
+            const errorCodeMap = {
+                '8014': '8014', // Invalid code, mismatch of supplied code on information and header (NOT_ELIGIBLE)
+                '8012': '8012'  // Request cannot be completed at this time, try later (INTERNAL_ERROR)
+            };
+
+            const responseCode = errorCodeMap[error.errorCode] || '8012';
+            return sendErrorResponse(res, responseCode, error.errorMsg || error.message, 'xml', parsedData);
+        }
+
+        return sendErrorResponse(res, '8012', 'Error calculating loan charges: ' + error.message, 'xml', parsedData);
+    }
+}
+
+/**
+ * Handle LOAN_FINAL_APPROVAL_NOTIFICATION
+ * This function processes the final loan approval notification and updates the loan status
+ */
+async function handleLoanFinalApproval(parsedData, res) {
+    try {
+        console.log('Processing LOAN_FINAL_APPROVAL_NOTIFICATION...');
+
+        // Extract message details
+        const messageDetails = parsedData.Document.Data.MessageDetails;
+        const header = parsedData.Document.Data.Header;
+
+        // Validate required fields
+        if (!messageDetails.LoanId || !messageDetails.LoanAmount || !messageDetails.ApprovalStatus) {
+            throw new Error('Missing required fields in loan final approval notification');
+        }
+
+        // Create loan mapping data
+        const loanMappingData = {
+            essLoanId: messageDetails.LoanId,
+            fspLoanId: messageDetails.FSPLoanId || null,
+            amount: parseFloat(messageDetails.LoanAmount),
+            status: messageDetails.ApprovalStatus,
+            tenure: parseInt(messageDetails.Tenure || '0'),
+            monthlyInstallment: parseFloat(messageDetails.MonthlyInstallment || '0'),
+            approvalDate: messageDetails.ApprovalDate || new Date().toISOString(),
+            disbursementDate: messageDetails.DisbursementDate || null,
+            fspCode: header.FSPCode
+        };
+
+        // Update loan mapping in database
+        await loanMappingService.updateLoanMapping(loanMappingData);
+
+        // Prepare acknowledgment response
+        const responseData = {
+            Data: {
+                Header: {
+                    Sender: process.env.FSP_NAME || "ZE DONE",
+                    Receiver: "ESS_UTUMISHI",
+                    FSPCode: header.FSPCode,
+                    MsgId: `RESP_${Date.now()}`,
+                    MessageType: "RESPONSE"
+                },
+                MessageDetails: {
+                    LoanId: messageDetails.LoanId,
+                    Status: "SUCCESS",
+                    StatusCode: "8000",
+                    StatusDesc: "Final approval notification processed successfully"
+                }
+            }
+        };
+
+        // Generate signed XML response
+        const signedResponse = digitalSignature.createSignedXML(responseData.Data);
+        
+        // Create audit log
+        await AuditLog.create({
+            messageType: 'LOAN_FINAL_APPROVAL_NOTIFICATION',
+            requestId: header.MsgId,
+            loanId: messageDetails.LoanId,
+            fspCode: header.FSPCode,
+            status: 'SUCCESS',
+            request: JSON.stringify(parsedData.Document.Data),
+            response: JSON.stringify(responseData.Data)
+        });
+
+        res.set('Content-Type', 'application/xml');
+        res.send(signedResponse);
+
+    } catch (error) {
+        console.error('Error processing loan final approval:', error);
+
+        // Prepare error response
+        return sendErrorResponse(res, '8012', 'Error processing loan final approval: ' + error.message, 'xml', parsedData);
+    }
+}
+
 // Export the module
 module.exports = {
     processRequest,
