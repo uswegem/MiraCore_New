@@ -4,6 +4,9 @@ const apiController = require('../controllers/apiController');
 const api = require('../services/cbs.api');
 const disbursementUtils = require('../utils/disbursementUtils');
 
+// Main API endpoint for loan-related requests
+router.post('/loan', apiController.processRequest);
+
 // Webhook endpoint for MIFOS notifications (bypass signature verification)
 router.post('/webhook/mifos', apiController.handleMifosWebhook);
 

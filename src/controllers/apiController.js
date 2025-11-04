@@ -137,6 +137,15 @@ async function handleLoanFinalApproval(parsedData, res) {
 }
 
 module.exports = {
+    processRequest,
     handleLoanFinalApproval,
-    // other exports...
+    handleLoanOfferRequest,
+    handleLoanChargesRequest,
+    handleLoanCancellation,
+    handleTopUpPayOffBalanceRequest,
+    handleTopUpOfferRequest,
+    handleTakeoverPayOffBalanceRequest,
+    handleLoanTakeoverOfferRequest,
+    handleTakeoverPaymentNotification,
+    handleMifosWebhook
 };
