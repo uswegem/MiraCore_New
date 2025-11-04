@@ -551,26 +551,30 @@ async function handleLoanOfferRequest(parsedData, res) {
 const { loanProcessingQueue } = require('../utils/queueUtils');
 
 async function handleLoanFinalApproval(parsedData, res) {
-    // Send acknowledgment response
-    const responseUtils = require('../utils/responseUtils');
-    const acknowledgment = await responseUtils.createSuccessResponse(
-        'LOAN_FINAL_APPROVAL_NOTIFICATION received successfully'
-    );
-    res.send(acknowledgment);
+    try {
+        // Send acknowledgment response
+        const responseUtils = require('../utils/responseUtils');
+        const acknowledgment = await responseUtils.createSuccessResponse(
+            'LOAN_FINAL_APPROVAL_NOTIFICATION received successfully'
+        );
+        res.send(acknowledgment);
 
-    // Add to processing queue with retry logic
-    const task = {
-        processor: processLoanFinalApproval,
-        data: parsedData
-    };
+        // Add to processing queue with retry logic
+        const task = {
+            processor: processLoanFinalApproval,
+            data: parsedData
+        };
 
-    loanProcessingQueue.addTask(task)
-        .catch(error => {
-            console.error('Final approval processing failed after all retries:', error);
-            sendFailureNotification(parsedData, error).catch(notifyError => {
-                console.error('Failed to send failure notification:', notifyError);
-            });
-        });
+        await loanProcessingQueue.addTask(task);
+    } catch (error) {
+        console.error('Final approval processing failed:', error);
+        try {
+            await sendFailureNotification(parsedData, error);
+        } catch (notifyError) {
+            console.error('Failed to send failure notification:', notifyError);
+        }
+    }
+};
 }
 
 /**
