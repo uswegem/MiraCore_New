@@ -64,6 +64,12 @@ const auditMiddleware = async (req, res, next) => {
   const originalSend = res.send;
   
   res.send = function(data) {
+    // Store original headers
+    const contentType = res.get('Content-Type');
+    
+    // Call original send
+    originalSend.call(this, data);
+    
     // Log the action after response is sent
     if (req.user) {
       const auditLog = new AuditLog({
@@ -77,14 +83,13 @@ const auditMiddleware = async (req, res, next) => {
         status: res.statusCode >= 400 ? 'failed' : 'success',
         metadata: {
           statusCode: res.statusCode,
-          userAgent: req.get('User-Agent')
+          userAgent: req.get('User-Agent'),
+          contentType: contentType
         }
       });
       
       auditLog.save().catch(console.error);
     }
-    
-    originalSend.call(this, data);
   };
   
   next();
