@@ -332,7 +332,7 @@ async function handleLoanOfferRequest(parsedData, res) {
                     MessageType: "RESPONSE"
                 },
                 MessageDetails: {
-                    ResponseCode: "0000",
+                    ResponseCode: "8000",
                     Description: "Request received successfully"
                 }
             }
@@ -398,8 +398,7 @@ async function handleLoanOfferRequest(parsedData, res) {
         // Process the request asynchronously
         setImmediate(async () => {
             try {
-
-        const messageDetails = parsedData.Document.Data.MessageDetails;
+                const messageDetails = parsedData.Document.Data.MessageDetails;
 
         // Extract all loan offer data
         const loanOfferData = {
@@ -548,8 +547,6 @@ async function handleLoanOfferRequest(parsedData, res) {
  * - Send LOAN_DISBURSEMENT_NOTIFICATION on successful disbursement
  * - Send LOAN_DISBURSEMENT_FAILURE_NOTIFICATION on failure
  */
-const { loanProcessingQueue } = require('../utils/queueUtils');
-
 async function handleLoanFinalApproval(parsedData, res) {
     try {
         // Send acknowledgment response
@@ -574,7 +571,6 @@ async function handleLoanFinalApproval(parsedData, res) {
             console.error('Failed to send failure notification:', notifyError);
         }
     }
-};
 }
 
 /**
