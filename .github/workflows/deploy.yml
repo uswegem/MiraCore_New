@@ -80,12 +80,17 @@ jobs:
           # Install production dependencies
           npm ci --production
           
-          # Gracefully restart the service
-          if pm2 list | grep -q "ess-app"; then
-            pm2 reload ess-app --update-env
-          else
-            pm2 start server.js --name ess-app
-          fi
+          # Stop any existing instance
+          pm2 delete ess-app || true
+          
+          # Start using ecosystem config
+          pm2 start ecosystem.config.js
+          
+          # Wait for the service to be ready
+          sleep 10
+          
+          # Verify health check
+          curl -f http://localhost:3002/health || (echo "❌ Health check failed" && exit 1)
           
           # Save PM2 state
           pm2 save

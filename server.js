@@ -22,6 +22,15 @@ console.log('=== SERVER STARTING AT', new Date().toISOString(), '===');
 // Clear require cache for development
 delete require.cache[require.resolve('./src/services/loanService')];
 
+// Health check endpoint
+app.get('/health', (req, res) => {
+    res.status(200).json({ 
+        status: 'healthy',
+        time: new Date().toISOString(),
+        uptime: process.uptime()
+    });
+});
+
 
 
 const app = express();
@@ -241,11 +250,52 @@ app.use('*', (req, res) => {
     }
 });
 
-app.listen(PORT, () => {
+// Create server with proper error handling
+const server = app.listen(PORT, () => {
     console.log(`Miracore Backend running on port ${PORT}`);
     console.log(`Supports: XML & JSON`);
     console.log(`Authentication: Enabled`);
     console.log(`Database: MongoDB`);
     console.log(`Initial Super Admin: superadmin / SuperAdmin123!`);
     console.log(`Digital signature: ${process.env.PRIVATE_KEY_PATH ? 'Enabled' : 'Disabled'}`);
+    
+    // Write PID file for process management
+    const fs = require('fs');
+    fs.writeFileSync('server.pid', process.pid.toString());
+}).on('error', (err) => {
+    console.error('❌ Server failed to start:', err.message);
+    if (err.code === 'EADDRINUSE') {
+        console.error(`Port ${PORT} is already in use. Trying to terminate existing process...`);
+        try {
+            const fs = require('fs');
+            if (fs.existsSync('server.pid')) {
+                const pid = parseInt(fs.readFileSync('server.pid', 'utf8'));
+                if (pid) {
+                    process.kill(pid, 'SIGTERM');
+                    console.log(`Terminated process ${pid}`);
+                    startServer();
+                }
+            }
+        } catch (e) {
+            console.error('Failed to terminate existing process:', e.message);
+        }
+    }
+    process.exit(1);
+});
+
+// Graceful shutdown handling
+process.on('SIGTERM', () => {
+    console.log('Received SIGTERM. Performing graceful shutdown...');
+    server.close(() => {
+        console.log('Server closed. Exiting process...');
+        process.exit(0);
+    });
+});
+
+process.on('SIGINT', () => {
+    console.log('Received SIGINT. Performing graceful shutdown...');
+    server.close(() => {
+        console.log('Server closed. Exiting process...');
+        process.exit(0);
+    });
 });
