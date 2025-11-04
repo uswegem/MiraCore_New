@@ -410,19 +410,23 @@ async function handleLoanFinalApproval(parsedData, res) {
         const header = parsedData.Document.Data.Header;
 
         // Validate required fields
-        if (!messageDetails.LoanNumber || !messageDetails.Approval) {
-            throw new Error('Missing required fields: LoanNumber and Approval are required');
+        if (!messageDetails.LoanNumber || !messageDetails.Approval || !messageDetails.ApplicationNumber) {
+            throw new Error('Missing required fields: LoanNumber, Approval, and ApplicationNumber are required');
+        }
+
+        // Validate Approval value
+        if (!['APPROVED', 'REJECTED'].includes(messageDetails.Approval)) {
+            throw new Error('Invalid Approval value: Must be either "APPROVED" or "REJECTED"');
         }
 
         // Create loan mapping data
         const loanMappingData = {
-            essLoanId: messageDetails.LoanNumber,  // Using LoanNumber instead of LoanId
-            fspLoanId: messageDetails.FSPReferenceNumber || null,  // Using FSPReferenceNumber
-            status: messageDetails.Approval,  // Using Approval instead of ApprovalStatus
-            applicationNumber: messageDetails.ApplicationNumber,
-            reason: messageDetails.Reason || null,
-            approvalDate: new Date().toISOString(),
-            fspCode: header.FSPCode
+            essLoanNumberAlias: messageDetails.LoanNumber,
+            fspReferenceNumber: messageDetails.FSPReferenceNumber || null,
+            status: messageDetails.Approval === 'APPROVED' ? 'FINAL_APPROVAL_RECEIVED' : 'FAILED',
+            essApplicationNumber: messageDetails.ApplicationNumber,
+            reason: messageDetails.Reason || (messageDetails.Approval === 'REJECTED' ? 'Application rejected' : null),
+            finalApprovalReceivedAt: new Date().toISOString() // Always set the timestamp for both APPROVED and REJECTED
         };
 
         // Update loan mapping in database
@@ -444,8 +448,13 @@ async function handleLoanFinalApproval(parsedData, res) {
                     FSPReferenceNumber: messageDetails.FSPReferenceNumber,
                     Status: "SUCCESS",
                     StatusCode: "8000",
-                    StatusDesc: "Final approval notification processed successfully",
-                    Reason: messageDetails.Reason || "Request processed successfully"
+                    StatusDesc: messageDetails.Approval === 'APPROVED' ? 
+                        "Final approval notification processed successfully" : 
+                        "Application rejection processed successfully",
+                    Reason: messageDetails.Reason || 
+                        (messageDetails.Approval === 'APPROVED' ? 
+                            "Application approved successfully" : 
+                            "Application rejected")
                 }
             }
         };
