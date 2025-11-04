@@ -148,6 +148,10 @@ class LoanMappingService {
       await mapping.save();
       console.log(`✅ Updated loan mapping with disbursement for loan ID: ${mifosLoanId}`);
       return mapping;
+    } catch (error) {
+      console.error('❌ Error updating loan mapping with disbursement:', error);
+      throw error;
+    }
   }
 
   /**
@@ -192,10 +196,6 @@ class LoanMappingService {
     } catch (error) {
         console.error('❌ Error updating loan mapping:', error);
         throw error;
-    }
-    } catch (error) {
-      console.error('❌ Error updating loan mapping with disbursement:', error);
-      throw error;
     }
   }
 
