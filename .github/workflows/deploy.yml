@@ -83,8 +83,11 @@ jobs:
           # Stop any existing instance
           pm2 delete ess-app || true
           
+          # Create logs directory
+          mkdir -p logs
+          
           # Start using ecosystem config
-          pm2 start ecosystem.config.js
+          pm2 start ecosystem.config.js --env production
           
           # Wait for the service to be ready
           sleep 10
