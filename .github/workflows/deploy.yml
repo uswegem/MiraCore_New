@@ -105,7 +105,7 @@ jobs:
         sleep 5
         
         # Test service health endpoint
-        curl --fail http://${{ secrets.REMOTE_HOST }}:9802/health || {
+        curl --fail http://${{ secrets.REMOTE_HOST }}:3002/health || {
           echo "❌ Health check failed"
           exit 1
         }
