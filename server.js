@@ -276,6 +276,10 @@ const server = app.listen(PORT, async () => {
         });
 
         console.log('✅ Server ready and database connected');
+    } catch (error) {
+        console.error('❌ Error during server startup:', error);
+        process.exit(1);
+    }
 }).on('error', (err) => {
     console.error('❌ Server failed to start:', err.message);
     if (err.code === 'EADDRINUSE') {
