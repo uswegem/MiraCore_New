@@ -337,6 +337,13 @@ async function handleLoanChargesRequest(parsedData, res) {
         const result = await LoanCalculate(loanData);
         console.log('Calculation result:', result);
 
+        // Helper function to safely format number values
+        const formatNumber = (value) => {
+            if (typeof value === 'number') return value.toFixed(2);
+            if (typeof value === 'string' && !isNaN(parseFloat(value))) return parseFloat(value).toFixed(2);
+            return "0.00";
+        };
+
         // Convert result to ESS response format
         const responseData = {
             Data: {
@@ -348,16 +355,16 @@ async function handleLoanChargesRequest(parsedData, res) {
                     MessageType: "LOAN_CHARGES_RESPONSE"
                 },
                 MessageDetails: {
-                    DesiredDeductibleAmount: (typeof result.desiredDeductibleAmount === 'number' ? result.desiredDeductibleAmount.toFixed(2) : "0.00"),
-                    TotalInsurance: result.totalInsurance?.toFixed(2) || "0.00",
-                    TotalProcessingFees: result.totalProcessingFees?.toFixed(2) || "0.00",
-                    TotalInterestRateAmount: result.totalInterestRateAmount?.toFixed(2) || "0.00",
+                    DesiredDeductibleAmount: formatNumber(result.desiredDeductibleAmount),
+                    TotalInsurance: formatNumber(result.totalInsurance),
+                    TotalProcessingFees: formatNumber(result.totalProcessingFees),
+                    TotalInterestRateAmount: formatNumber(result.totalInterestRateAmount),
                     OtherCharges: "0.00",
-                    NetLoanAmount: result.netLoanAmount?.toFixed(2) || "0.00",
-                    TotalAmountToPay: result.totalAmountToPay?.toFixed(2) || "0.00",
+                    NetLoanAmount: formatNumber(result.netLoanAmount),
+                    TotalAmountToPay: formatNumber(result.totalAmountToPay),
                     Tenure: result.tenure?.toString() || "0",
-                    EligibleAmount: result.eligibleAmount?.toFixed(2) || "0.00",
-                    MonthlyReturnAmount: result.monthlyReturnAmount?.toFixed(2) || "0.00"
+                    EligibleAmount: formatNumber(result.eligibleAmount),
+                    MonthlyReturnAmount: formatNumber(result.monthlyReturnAmount)
                 }
             }
         };
