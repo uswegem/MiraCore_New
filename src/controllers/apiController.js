@@ -423,7 +423,7 @@ async function handleLoanFinalApproval(parsedData, res) {
         const loanMappingData = {
             essLoanNumberAlias: messageDetails.LoanNumber,
             fspReferenceNumber: messageDetails.FSPReferenceNumber || null,
-            status: messageDetails.Approval === 'APPROVED' ? 'FINAL_APPROVAL_RECEIVED' : 'FAILED',
+            status: messageDetails.Approval === 'APPROVED' ? 'FINAL_APPROVAL_RECEIVED' : 'REJECTED',
             essApplicationNumber: messageDetails.ApplicationNumber,
             reason: messageDetails.Reason || (messageDetails.Approval === 'REJECTED' ? 'Application rejected' : null),
             finalApprovalReceivedAt: new Date().toISOString() // Always set the timestamp for both APPROVED and REJECTED
