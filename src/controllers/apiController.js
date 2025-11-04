@@ -419,21 +419,8 @@ async function handleLoanFinalApproval(parsedData, res) {
             throw new Error('Invalid Approval value: Must be either "APPROVED" or "REJECTED"');
         }
 
-        // Create loan mapping data
-        const loanMappingData = {
-            essLoanNumberAlias: messageDetails.LoanNumber,
-            fspReferenceNumber: messageDetails.FSPReferenceNumber || null,
-            status: messageDetails.Approval === 'APPROVED' ? 'FINAL_APPROVAL_RECEIVED' : 'REJECTED',
-            essApplicationNumber: messageDetails.ApplicationNumber,
-            reason: messageDetails.Reason || (messageDetails.Approval === 'REJECTED' ? 'Application rejected' : null),
-            finalApprovalReceivedAt: new Date().toISOString() // Always set the timestamp for both APPROVED and REJECTED
-        };
-
-        // Update loan mapping in database
-        await LoanMappingService.updateLoanMapping(loanMappingData);
-
-        // Prepare acknowledgment response
-        const responseData = {
+        // Send immediate acknowledgment
+        const ackResponse = {
             Data: {
                 Header: {
                     Sender: process.env.FSP_NAME || "ZE DONE",
@@ -448,13 +435,77 @@ async function handleLoanFinalApproval(parsedData, res) {
                     FSPReferenceNumber: messageDetails.FSPReferenceNumber,
                     Status: "SUCCESS",
                     StatusCode: "8000",
-                    StatusDesc: messageDetails.Approval === 'APPROVED' ? 
-                        "Final approval notification processed successfully" : 
-                        "Application rejection processed successfully",
-                    Reason: messageDetails.Reason || 
-                        (messageDetails.Approval === 'APPROVED' ? 
-                            "Application approved successfully" : 
-                            "Application rejected")
+                    StatusDesc: "Final approval notification received successfully"
+                }
+            }
+        };
+
+        // Send acknowledgment response
+        res.status(200).send(builder.buildObject(ackResponse));
+
+        // Process the request asynchronously
+        setImmediate(async () => {
+            try {
+                // Create loan mapping data
+                const loanMappingData = {
+                    essLoanNumberAlias: messageDetails.LoanNumber,
+                    fspReferenceNumber: messageDetails.FSPReferenceNumber || null,
+                    status: messageDetails.Approval === 'APPROVED' ? 'FINAL_APPROVAL_RECEIVED' : 'REJECTED',
+                    essApplicationNumber: messageDetails.ApplicationNumber,
+                    reason: messageDetails.Reason || (messageDetails.Approval === 'REJECTED' ? 'Application rejected' : null),
+                    finalApprovalReceivedAt: new Date().toISOString()
+                };
+
+                // Update loan mapping in database
+                await LoanMappingService.updateLoanMapping(loanMappingData);
+
+                if (messageDetails.Approval === 'APPROVED') {
+                    // Prepare LOAN_DISBURSMENT_NOTIFICATION callback
+                    const callbackData = {
+                        Data: {
+                            Header: {
+                                Sender: process.env.FSP_NAME || "ZE DONE",
+                                Receiver: "ESS_UTUMISHI",
+                                FSPCode: header.FSPCode,
+                                MsgId: `DISB_${Date.now()}`,
+                                MessageType: "LOAN_DISBURSMENT_NOTIFICATION"
+                            },
+                            MessageDetails: {
+                                ApplicationNumber: messageDetails.ApplicationNumber,
+                                LoanNumber: messageDetails.LoanNumber,
+                                FSPReferenceNumber: messageDetails.FSPReferenceNumber,
+                                DisbursementDate: new Date().toISOString(),
+                                DisbursementAmount: loanMappingData.requestedAmount,
+                                Status: "DISBURSED"
+                            }
+                        }
+                    };
+
+                    // Send callback notification
+                    await sendCallback(callbackData);
+
+                    // Update loan status to DISBURSED
+                    await LoanMappingService.updateLoanMapping({
+                        ...loanMappingData,
+                        status: 'DISBURSED',
+                        disbursedAt: new Date().toISOString()
+                    });
+                }
+            } catch (error) {
+                console.error('Error in async processing:', error);
+                // Log the error but don't send response since we already sent acknowledgment
+                await AuditLog.create({
+                    eventType: 'LOAN_FINAL_APPROVAL_ERROR',
+                    data: {
+                        error: error.message,
+                        loanNumber: messageDetails.LoanNumber,
+                        applicationNumber: messageDetails.ApplicationNumber
+                    }
+                });
+            }
+        });
+                    StatusDesc: "Request received successfully",
+                    Reason: "Notification is being processed"
                 }
             }
         };
