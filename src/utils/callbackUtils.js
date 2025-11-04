@@ -14,11 +14,8 @@ async function sendCallback(callbackData) {
             const signedCallback = digitalSignature.createSignedXML(callbackData);
             console.log(`📤 Attempt ${retryCount + 1}/${MAX_RETRIES} to send callback`);
         
-        // Get callback URL from environment or use a default
-        const callbackUrl = process.env.ESS_CALLBACK_URL || 'http://localhost:3000/api/callback';
-        
-        // Use THIRD_PARTY_BASE_URL from environment
-        const callbackUrl = process.env.THIRD_PARTY_BASE_URL;
+        // Get callback URL from environment variables
+        const callbackUrl = process.env.THIRD_PARTY_BASE_URL || process.env.ESS_CALLBACK_URL || 'http://localhost:3000/api/callback';
         if (!callbackUrl) {
             throw new Error('THIRD_PARTY_BASE_URL is not configured in environment');
         }
