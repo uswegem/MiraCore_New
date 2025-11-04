@@ -22,6 +22,8 @@ console.log('=== SERVER STARTING AT', new Date().toISOString(), '===');
 // Clear require cache for development
 delete require.cache[require.resolve('./src/services/loanService')];
 
+const app = express();
+
 // Health check endpoint
 app.get('/health', (req, res) => {
     res.status(200).json({ 
@@ -30,10 +32,6 @@ app.get('/health', (req, res) => {
         uptime: process.uptime()
     });
 });
-
-
-
-const app = express();
 const PORT = process.env.PORT || 3003;
 
 // Connect to MongoDB
