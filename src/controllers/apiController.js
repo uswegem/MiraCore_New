@@ -410,20 +410,18 @@ async function handleLoanFinalApproval(parsedData, res) {
         const header = parsedData.Document.Data.Header;
 
         // Validate required fields
-        if (!messageDetails.LoanId || !messageDetails.LoanAmount || !messageDetails.ApprovalStatus) {
-            throw new Error('Missing required fields in loan final approval notification');
+        if (!messageDetails.LoanNumber || !messageDetails.Approval) {
+            throw new Error('Missing required fields: LoanNumber and Approval are required');
         }
 
         // Create loan mapping data
         const loanMappingData = {
-            essLoanId: messageDetails.LoanId,
-            fspLoanId: messageDetails.FSPLoanId || null,
-            amount: parseFloat(messageDetails.LoanAmount),
-            status: messageDetails.ApprovalStatus,
-            tenure: parseInt(messageDetails.Tenure || '0'),
-            monthlyInstallment: parseFloat(messageDetails.MonthlyInstallment || '0'),
-            approvalDate: messageDetails.ApprovalDate || new Date().toISOString(),
-            disbursementDate: messageDetails.DisbursementDate || null,
+            essLoanId: messageDetails.LoanNumber,  // Using LoanNumber instead of LoanId
+            fspLoanId: messageDetails.FSPReferenceNumber || null,  // Using FSPReferenceNumber
+            status: messageDetails.Approval,  // Using Approval instead of ApprovalStatus
+            applicationNumber: messageDetails.ApplicationNumber,
+            reason: messageDetails.Reason || null,
+            approvalDate: new Date().toISOString(),
             fspCode: header.FSPCode
         };
 
@@ -441,10 +439,13 @@ async function handleLoanFinalApproval(parsedData, res) {
                     MessageType: "RESPONSE"
                 },
                 MessageDetails: {
-                    LoanId: messageDetails.LoanId,
+                    ApplicationNumber: messageDetails.ApplicationNumber,
+                    LoanNumber: messageDetails.LoanNumber,
+                    FSPReferenceNumber: messageDetails.FSPReferenceNumber,
                     Status: "SUCCESS",
                     StatusCode: "8000",
-                    StatusDesc: "Final approval notification processed successfully"
+                    StatusDesc: "Final approval notification processed successfully",
+                    Reason: messageDetails.Reason || "Request processed successfully"
                 }
             }
         };
