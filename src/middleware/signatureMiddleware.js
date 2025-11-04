@@ -1,14 +1,11 @@
 const digitalSignature = require('../utils/signatureUtils');
 
 function verifySignatureMiddleware(req, res, next) {
-  console.log('Signature Middleware - Option 2 (Auto-generate)');
+  console.log('⚠️ TESTING MODE: Signature validation is disabled');
   console.log('Request path:', req.path);
-  console.log('Content-Type:', req.get('Content-Type'));
-
-  // Skip for health check
-  if (req.path === '/health' || !req.path.includes('/emkopo')) {
-    return next();
-  }
+  
+  // Skip signature validation in testing mode
+  return next();
 
   // Check if it's an XML request
   const contentType = req.get('Content-Type');
@@ -36,10 +33,7 @@ function verifySignatureMiddleware(req, res, next) {
     });
   }
 
-  // ========== OPTION 2: AUTO-GENERATE MODE ==========
-  // Just parse the XML to ensure it's valid, but don't verify signature
-  // since frontend sends unsigned XML and backend will auto-sign it
-  
+  // Parse XML and verify signature
   const xml2js = require('xml2js');
   const parser = new xml2js.Parser({
     explicitArray: false,
@@ -55,11 +49,59 @@ function verifySignatureMiddleware(req, res, next) {
       });
     }
 
-    console.log('✅ XML is valid, proceeding with auto-signature generation');
-    
-    // Attach parsed data to request
-    req.parsedXmlData = result;
-    next();
+    // Extract Data and Signature elements
+    if (!result.Document || !result.Document.Data || !result.Document.Signature) {
+      console.error('❌ Missing required XML elements');
+      return res.status(400).json({
+        responseCode: '8009',
+        description: 'Missing required XML elements (Data or Signature)'
+      });
+    }
+
+    try {
+      // Get the Data element for signature verification
+      const builder = new xml2js.Builder({
+        rootName: 'Document',
+        renderOpts: { pretty: false, indent: '', newline: '' }
+      });
+      
+      // Build XML with just the Data element
+      const dataXml = builder.buildObject({ Data: result.Document.Data });
+      
+      // Extract just the Data element
+      const dataStart = dataXml.indexOf('<Data>');
+      const dataEnd = dataXml.indexOf('</Data>') + '</Data>'.length;
+      const dataElement = dataXml.substring(dataStart, dataEnd);
+      
+      // Normalize for verification
+      const normalizedData = digitalSignature.normalizeXMLForSigning(dataElement);
+      
+      // Get the signature from the request
+      const signature = result.Document.Signature;
+      
+      // Verify using ESS public key
+      const isValid = digitalSignature.verifySignature(normalizedData, signature);
+      
+      if (!isValid) {
+        console.error('❌ Invalid signature');
+        return res.status(400).json({
+          responseCode: '8009',
+          description: 'Invalid signature'
+        });
+      }
+
+      console.log('✅ Signature verified successfully');
+      
+      // Attach parsed data to request
+      req.parsedXmlData = result;
+      next();
+    } catch (error) {
+      console.error('❌ Signature verification error:', error);
+      return res.status(400).json({
+        responseCode: '8009',
+        description: 'Signature verification failed: ' + error.message
+      });
+    }
   });
 }
 

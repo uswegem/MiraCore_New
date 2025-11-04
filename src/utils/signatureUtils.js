@@ -135,16 +135,44 @@ class DigitalSignature {
    * Normalize XML for consistent signing
    */
   normalizeXMLForSigning(xmlData) {
-    // Remove the Signature element if it exists
-    let cleanXml = xmlData.replace(/<Signature>.*?<\/Signature>/s, '');
-    
-    // Normalize whitespace
-    cleanXml = cleanXml
-      .replace(/>\s+</g, '><')
-      .replace(/\s+/g, ' ')
-      .trim();
-    
-    return cleanXml;
+    try {
+      // Convert to string if needed
+      const xmlStr = typeof xmlData === 'string' ? xmlData : xmlData.toString();
+      
+      // Extract just the Data element content
+      const dataStart = xmlStr.indexOf('<Data>');
+      const dataEnd = xmlStr.indexOf('</Data>') + '</Data>'.length;
+      
+      if (dataStart === -1 || dataEnd === -1) {
+        throw new Error('Data element not found in XML');
+      }
+      
+      let dataElement = xmlStr.substring(dataStart, dataEnd);
+      
+      // Convert self-closing tags to explicit end tags (e.g., <tag/> to <tag></tag>)
+      dataElement = dataElement.replace(/<([^>]+?)\/>/g, '<$1></$1>');
+      
+      // Remove all whitespace between tags but preserve attribute values
+      dataElement = dataElement.replace(/>\s+</g, '><');
+      
+      // Remove carriage returns and line feeds
+      dataElement = dataElement.replace(/\r?\n|\r/g, '');
+      
+      // Normalize spaces in attribute values (preserve exactly one space)
+      dataElement = dataElement.replace(/\s+/g, ' ');
+      
+      // Remove spaces around equals signs in attributes
+      dataElement = dataElement.replace(/\s*=\s*/g, '=');
+      
+      // Remove leading/trailing whitespace
+      dataElement = dataElement.trim();
+      
+      console.log('🔄 Normalized XML for signing:', dataElement);
+      return dataElement;
+    } catch (error) {
+      console.error('❌ Error normalizing XML:', error);
+      throw new Error('XML normalization failed: ' + error.message);
+    }
   }
 
   /**
@@ -181,13 +209,17 @@ class DigitalSignature {
       renderOpts: { 
         pretty: false,
         indent: '',
-        newline: ''
+        newline: '',
+        allowEmpty: false, // Don't create empty tags
+        normalize: false // Don't auto-normalize as we handle it ourselves
       },
       xmldec: {
         version: '1.0',
         encoding: 'UTF-8',
-        standalone: true
-      }
+        standalone: false
+      },
+      headless: false,
+      cdata: false
     });
 
     console.log('📝 Building signed XML payload...');
@@ -237,6 +269,41 @@ class DigitalSignature {
     } catch (error) {
       console.error('Error reading certificate info:', error);
       return null;
+    }
+  }
+
+  /**
+   * Verify signature using ESS public key
+   */
+  verifySignature(data, signature) {
+    if (!this.publicKey) {
+      throw new Error('Public key not available for verification');
+    }
+
+    try {
+      console.log('🔍 Verifying signature...');
+      
+      // Create verify object with SHA256
+      const verify = crypto.createVerify('SHA256');
+      verify.update(data, 'utf8');
+      verify.end();
+
+      // Verify signature with ESS public key
+      const isValid = verify.verify({
+        key: this.publicKey,
+        padding: crypto.constants.RSA_PKCS1_PADDING
+      }, signature, 'base64');
+
+      if (isValid) {
+        console.log('✅ Signature verification successful');
+      } else {
+        console.error('❌ Signature verification failed');
+      }
+
+      return isValid;
+    } catch (error) {
+      console.error('❌ Error verifying signature:', error);
+      throw new Error('Failed to verify signature: ' + error.message);
     }
   }
 }

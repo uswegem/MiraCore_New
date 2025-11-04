@@ -2,6 +2,7 @@ const xml2js = require('xml2js');
 const { validateXML, validateMessageType } = require('../validations/xmlValidator');
 const { forwardToThirdParty } = require('../services/thirdPartyService');
 const digitalSignature = require('../utils/signatureUtils');
+const { sendFailureNotification } = require('../utils/notificationUtils');
 const { LoanCalculate, CreateTopUpLoanOffer, CreateTakeoverLoanOffer, CreateLoanOffer } = require('../services/loanService');
 const LoanMappingService = require('../services/loanMappingService');
 const cbsApi = require('../services/cbs.api');
@@ -314,9 +315,89 @@ async function handleLoanChargesRequest(parsedData, res) {
 /**
  * Handle LOAN_OFFER_REQUEST - Process loan application
  */
+const { sendCallback } = require('../utils/callbackUtils');
+
 async function handleLoanOfferRequest(parsedData, res) {
     try {
         console.log('Processing LOAN_OFFER_REQUEST...');
+        
+        // Send immediate acknowledgment
+        const ackResponse = {
+            Data: {
+                Header: {
+                    Sender: process.env.FSP_NAME || "FSP_SYSTEM",
+                    Receiver: "ESS_UTUMISHI",
+                    FSPCode: parsedData.Document.Data.Header.FSPCode,
+                    MsgId: `ACK_${Date.now()}`,
+                    MessageType: "RESPONSE"
+                },
+                MessageDetails: {
+                    ResponseCode: "0000",
+                    Description: "Request received successfully"
+                }
+            }
+        };
+        
+        // Send acknowledgment response immediately
+        const signedAck = digitalSignature.createSignedXML(ackResponse.Data);
+        res.set('Content-Type', 'application/xml');
+        res.send(signedAck);
+
+        // Process the request and send callback asynchronously
+        setImmediate(async () => {
+            try {
+                const messageDetails = parsedData.Document.Data.MessageDetails;
+                
+                // Prepare callback data
+                const callbackData = {
+                    Header: {
+                        Sender: process.env.FSP_NAME || "FSP_SYSTEM",
+                        Receiver: "ESS_UTUMISHI",
+                        FSPCode: parsedData.Document.Data.Header.FSPCode,
+                        MsgId: `CALLBACK_${Date.now()}`,
+                        MessageType: "LOAN_INITIAL_APPROVAL_NOTIFICATION"
+                    },
+                    MessageDetails: {
+                        CheckNumber: messageDetails.CheckNumber,
+                        FirstName: messageDetails.FirstName,
+                        LastName: messageDetails.LastName,
+                        Sex: messageDetails.Sex,
+                        BankAccountNumber: messageDetails.BankAccountNumber,
+                        EmploymentDate: messageDetails.EmploymentDate,
+                        TotalEmployeeDeduction: messageDetails.TotalEmployeeDeduction,
+                        NIN: messageDetails.NIN,
+                        BasicSalary: messageDetails.BasicSalary,
+                        NetSalary: messageDetails.NetSalary,
+                        OneThirdAmount: messageDetails.OneThirdAmount,
+                        RequestedAmount: messageDetails.RequestedAmount,
+                        RetirementDate: messageDetails.RetirementDate,
+                        TermsOfEmployment: messageDetails.TermsOfEmployment,
+                        Tenure: messageDetails.Tenure,
+                        ProductCode: messageDetails.ProductCode,
+                        InterestRate: messageDetails.InterestRate,
+                        ProcessingFee: messageDetails.ProcessingFee,
+                        Insurance: messageDetails.Insurance,
+                        SwiftCode: messageDetails.SwiftCode,
+                        Reason: "Ok",
+                        FSPReferenceNumber: `FSPREF${Date.now()}`,
+                        LoanNumber: `LOAN${Date.now()}`,
+                        TotalAmountToPay: (parseFloat(messageDetails.RequestedAmount) * 1.28).toString(),
+                        OtherCharges: "0.00",
+                        Approval: "APPROVED"
+                    }
+                };
+
+                // Send the callback
+                await sendCallback(callbackData);
+                console.log('✅ LOAN_INITIAL_APPROVAL_NOTIFICATION callback sent successfully');
+            } catch (error) {
+                console.error('❌ Error in async callback processing:', error);
+            }
+        });
+
+        // Process the request asynchronously
+        setImmediate(async () => {
+            try {
 
         const messageDetails = parsedData.Document.Data.MessageDetails;
 
@@ -463,18 +544,33 @@ async function handleLoanOfferRequest(parsedData, res) {
  * Handle LOAN_FINAL_APPROVAL_NOTIFICATION - Final approval from ESS
  * According to ESS API Documentation:
  * - No immediate response is expected
- * - Process asynchronously
+ * - Process asynchronously with retries and queuing
  * - Send LOAN_DISBURSEMENT_NOTIFICATION on successful disbursement
  * - Send LOAN_DISBURSEMENT_FAILURE_NOTIFICATION on failure
  */
-async function handleLoanFinalApproval(parsedData, res) {
-    // End request without response as per ESS API spec
-    res.end();
+const { loanProcessingQueue } = require('../utils/queueUtils');
 
-    // Process asynchronously without waiting for completion
-    processFinalApproval(parsedData).catch(error => {
-        console.error('Async final approval processing failed:', error);
-    });
+async function handleLoanFinalApproval(parsedData, res) {
+    // Send acknowledgment response
+    const responseUtils = require('../utils/responseUtils');
+    const acknowledgment = await responseUtils.createSuccessResponse(
+        'LOAN_FINAL_APPROVAL_NOTIFICATION received successfully'
+    );
+    res.send(acknowledgment);
+
+    // Add to processing queue with retry logic
+    const task = {
+        processor: processLoanFinalApproval,
+        data: parsedData
+    };
+
+    loanProcessingQueue.addTask(task)
+        .catch(error => {
+            console.error('Final approval processing failed after all retries:', error);
+            sendFailureNotification(parsedData, error).catch(notifyError => {
+                console.error('Failed to send failure notification:', notifyError);
+            });
+        });
 }
 
 /**

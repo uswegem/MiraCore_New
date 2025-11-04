@@ -1,0 +1,74 @@
+const digitalSignature = require('./src/utils/signatureUtils');
+const { processRequest } = require('./src/controllers/apiController');
+const cbsApi = require('./src/services/cbs.api');
+
+async function simulateLoanRestructureFlow() {
+    console.log('🚀 Simulating Loan Restructure Flow\n');
+
+    try {
+        // Step 1: LOAN_RESTRUCTURE_REQUEST
+        console.log('📋 STEP 1: LOAN_RESTRUCTURE_REQUEST');
+        console.log('--------------------------------------------------');
+        const restructureRequest = {
+            Document: {
+                Data: {
+                    Header: {
+                        Sender: 'ESS_UTUMISHI',
+                        Receiver: 'ZE DONE',
+                        FSPCode: 'FL8090',
+                        MsgId: `RESTRUCTURE_${Date.now()}`,
+                        MessageType: 'LOAN_RESTRUCTURE_REQUEST'
+                    },
+                    MessageDetails: {
+                        CheckNumber: 'CHK001',
+                        LoanNumber: 'LOAN001',
+                        FirstName: 'John',
+                        LastName: 'Doe',
+                        Sex: 'M',
+                        EmploymentDate: '2020-01-01',
+                        BankAccountNumber: '1234567890',
+                        SwiftCode: 'TESTSWFT',
+                        NIN: '1234567890123456',
+                        BasicSalary: '1500000',
+                        NetSalary: '1400000',
+                        OneThirdAmount: '500000',
+                        TotalEmployeeDeduction: '100000',
+                        RetirementDate: '2050-01-01',
+                        TermsOfEmployment: 'PERMANENT',
+                        CurrentLoanBalance: '5000000',
+                        AdditionalAmount: '1000000',
+                        NewLoanAmount: '6000000',
+                        ProductCode: '17',
+                        InterestRate: '28',
+                        ProcessingFee: '500',
+                        Insurance: '200',
+                        Tenure: '84'
+                    }
+                }
+            }
+        };
+
+        // Sign and send restructure request
+        console.log('\n📊 Using Request Data:');
+        console.log('--------------------------------------------------');
+        console.log('Current Loan Balance:', restructureRequest.Document.Data.MessageDetails.CurrentLoanBalance);
+        console.log('Additional Amount:', restructureRequest.Document.Data.MessageDetails.AdditionalAmount);
+        console.log('New Loan Amount:', restructureRequest.Document.Data.MessageDetails.NewLoanAmount);
+        console.log('Client:', restructureRequest.Document.Data.MessageDetails.FirstName + ' ' + restructureRequest.Document.Data.MessageDetails.LastName);
+        console.log('NIN:', restructureRequest.Document.Data.MessageDetails.NIN);
+        console.log('Product Code:', restructureRequest.Document.Data.MessageDetails.ProductCode);
+
+        // Sign the request
+        const signedRestructureRequest = digitalSignature.createSignedXML(restructureRequest.Document.Data);
+        console.log('\n📤 RESTRUCTURE REQUEST XML:');
+        console.log(signedRestructureRequest);
+
+        console.log('\n✅ Loan restructure simulation completed successfully!');
+        
+    } catch (error) {
+        console.error('❌ Error during loan restructure flow:', error);
+    }
+}
+
+// Run the simulation
+simulateLoanRestructureFlow().catch(console.error);

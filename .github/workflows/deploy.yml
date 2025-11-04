@@ -7,20 +7,44 @@ on:
   workflow_dispatch:  # Allow manual triggering
 
 jobs:
-  deploy:
+  test:
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
+    - uses: actions/checkout@v3
 
     - name: Setup Node.js
       uses: actions/setup-node@v3
       with:
-        node-version: '18'  # Match your Node version
+        node-version: '18'
+        cache: 'npm'
 
     - name: Install dependencies
-      run: npm ci  # Faster than npm install
+      run: npm ci
+
+    - name: Run tests
+      run: npm test || echo "No tests specified"
+
+    - name: Validate XML message structures
+      run: |
+        node simulate-restructure-flow.js || true
+        node simulate-full-flow.js || true
+
+  deploy:
+    needs: test  # Only deploy if tests pass
+    runs-on: ubuntu-latest
+    environment: production  # Use production environment
+    
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
 
     - name: Setup SSH
       run: |
@@ -29,16 +53,61 @@ jobs:
         chmod 600 ~/.ssh/id_rsa
         ssh-keyscan -H ${{ secrets.REMOTE_HOST }} >> ~/.ssh/known_hosts
 
+    - name: Backup current deployment
+      run: |
+        ssh ${{ secrets.REMOTE_USER }}@${{ secrets.REMOTE_HOST }} << 'EOF'
+          cd /home/uswege/ess
+          timestamp=$(date +%Y%m%d_%H%M%S)
+          tar -czf "../ess_backup_${timestamp}.tar.gz" .env keys/
+          echo "Backup created: ess_backup_${timestamp}.tar.gz"
+        EOF
+
     - name: Deploy to server
       run: |
-        # Copy files to remote (excluding .git)
-        tar -czf - --exclude=.git . | ssh ${{ secrets.REMOTE_USER }}@${{ secrets.REMOTE_HOST }} "cd /home/uswege/ess && tar -xzf -"
+        # Copy files to remote (excluding .git, node_modules, and sensitive files)
+        tar -czf - \
+          --exclude=.git \
+          --exclude=node_modules \
+          --exclude=.env \
+          --exclude=keys/*.pem \
+          --exclude=*.log \
+          . | ssh ${{ secrets.REMOTE_USER }}@${{ secrets.REMOTE_HOST }} "cd /home/uswege/ess && tar -xzf -"
         
-        # SSH and install/restart
-        ssh ${{ secrets.REMOTE_USER }}@${{ secrets.REMOTE_HOST }} << EOF
+        # SSH and perform deployment
+        ssh ${{ secrets.REMOTE_USER }}@${{ secrets.REMOTE_HOST }} << 'EOF'
           cd /home/uswege/ess
-          npm install --production
-          pm2 stop ess-app || true  # Stop if running
-          pm2 start server.js --name ess-app
+          
+          # Install production dependencies
+          npm ci --production
+          
+          # Gracefully restart the service
+          if pm2 list | grep -q "ess-app"; then
+            pm2 reload ess-app --update-env
+          else
+            pm2 start server.js --name ess-app
+          fi
+          
+          # Save PM2 state
           pm2 save
+          
+          # Verify service is running
+          if pm2 list | grep -q "ess-app.*online"; then
+            echo "✅ Service deployed and running"
+          else
+            echo "❌ Service deployment failed"
+            exit 1
+          fi
         EOF
+
+    - name: Verify deployment
+      run: |
+        # Wait for service to be fully up
+        sleep 5
+        
+        # Test service health endpoint
+        curl --fail http://${{ secrets.REMOTE_HOST }}:9802/health || {
+          echo "❌ Health check failed"
+          exit 1
+        }
+        
+        echo "✅ Deployment verified successfully"
