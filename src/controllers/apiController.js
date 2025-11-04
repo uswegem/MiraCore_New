@@ -8,6 +8,7 @@ const { LoanCalculate, CreateTopUpLoanOffer, CreateTakeoverLoanOffer, CreateLoan
 const LoanMappingService = require('../services/loanMappingService');
 const cbsApi = require('../services/cbs.api');
 const { formatDateForMifos } = require('../utils/dateUtils');
+const { AuditLog } = require('../models/AuditLog');
 
 const parser = new xml2js.Parser({
     explicitArray: false,
@@ -427,7 +428,7 @@ async function handleLoanFinalApproval(parsedData, res) {
         };
 
         // Update loan mapping in database
-        await loanMappingService.updateLoanMapping(loanMappingData);
+        await LoanMappingService.updateLoanMapping(loanMappingData);
 
         // Prepare acknowledgment response
         const responseData = {
