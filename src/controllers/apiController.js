@@ -221,6 +221,83 @@ async function handleLoanOfferRequest(parsedData, res) {
     }
 }
 
+/**
+ * Handle MIFOS webhooks for loan events
+ */
+async function handleMifosWebhook(req, res) {
+    try {
+        // Validate webhook secret
+        const webhookSecret = req.headers['x-webhook-secret'] || req.body.webhookSecret;
+        if (process.env.WEBHOOK_SECRET && webhookSecret !== process.env.WEBHOOK_SECRET) {
+            console.log('❌ Invalid webhook secret');
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+
+        console.log('Received MIFOS webhook:', JSON.stringify(req.body, null, 2));
+        const webhookData = req.body;
+
+        if (webhookData.entityName === 'LOAN' && webhookData.action === 'DISBURSE') {
+            console.log('Processing loan disbursement webhook...');
+            const loanId = webhookData.entityId;
+
+            // Get loan mapping
+            const loanMapping = await LoanMappingService.getByMifosLoanId(loanId);
+            if (!loanMapping) {
+                return res.status(404).json({ error: 'Loan mapping not found' });
+            }
+
+            // Get loan details from MIFOS
+            const loanDetailsResponse = await cbsApi.get(`/v1/loans/${loanId}`);
+            if (!loanDetailsResponse.status) {
+                return res.status(500).json({ error: 'Failed to get loan details' });
+            }
+
+            const loan = loanDetailsResponse.response;
+            // Send disbursement notification to ESS
+            const disbursementNotification = {
+                Data: {
+                    Header: {
+                        Sender: process.env.FSP_NAME || "ZE DONE",
+                        Receiver: "ESS_UTUMISHI",
+                        FSPCode: process.env.FSP_CODE || "FL8090",
+                        MsgId: `WEBHOOK_DISBURSE_${Date.now()}`,
+                        MessageType: "LOAN_DISBURSEMENT_NOTIFICATION"
+                    },
+                    MessageDetails: {
+                        ApplicationNumber: loanMapping.essApplicationNumber,
+                        FSPReferenceNumber: loanMapping.fspReferenceNumber,
+                        LoanNumber: loanMapping.essLoanNumberAlias,
+                        ClientId: loan.clientId,
+                        LoanId: loanId,
+                        DisbursedAmount: loan.principal,
+                        DisbursementDate: new Date().toISOString().split('T')[0],
+                        Status: "DISBURSED"
+                    }
+                }
+            };
+
+            const signedDisbursementXml = digitalSignature.createSignedXML(disbursementNotification.Data);
+            console.log('Sending LOAN_DISBURSEMENT_NOTIFICATION to ESS...');
+
+            try {
+                await forwardToThirdParty(signedDisbursementXml, "LOAN_DISBURSEMENT_NOTIFICATION");
+                console.log('✅ LOAN_DISBURSEMENT_NOTIFICATION sent successfully to ESS');
+                await LoanMappingService.updateWithDisbursement(loanId);
+                res.status(200).json({ status: 'success', message: 'Webhook processed, disbursement notification sent' });
+            } catch (sendError) {
+                console.error('❌ Failed to send LOAN_DISBURSEMENT_NOTIFICATION to ESS:', sendError.message);
+                res.status(500).json({ error: 'Failed to send disbursement notification' });
+            }
+        } else {
+            console.log('Ignoring non-disbursement webhook event');
+            res.status(200).json({ status: 'ignored', message: 'Event not processed' });
+        }
+    } catch (error) {
+        console.error('Error processing MIFOS webhook:', error);
+        res.status(500).json({ error: 'Webhook processing failed' });
+    }
+}
+
 // Export the module
 module.exports = {
     processRequest,
