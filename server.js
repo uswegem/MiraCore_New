@@ -251,17 +251,31 @@ app.use('*', (req, res) => {
 });
 
 // Create server with proper error handling
-const server = app.listen(PORT, () => {
-    console.log(`Miracore Backend running on port ${PORT}`);
-    console.log(`Supports: XML & JSON`);
-    console.log(`Authentication: Enabled`);
-    console.log(`Database: MongoDB`);
-    console.log(`Initial Super Admin: superadmin / SuperAdmin123!`);
-    console.log(`Digital signature: ${process.env.PRIVATE_KEY_PATH ? 'Enabled' : 'Disabled'}`);
-    
-    // Write PID file for process management
-    const fs = require('fs');
-    fs.writeFileSync('server.pid', process.pid.toString());
+const server = app.listen(PORT, async () => {
+    try {
+        console.log(`Miracore Backend running on port ${PORT}`);
+        console.log(`Supports: XML & JSON`);
+        console.log(`Authentication: Enabled`);
+        console.log(`Database: MongoDB`);
+        console.log(`Initial Super Admin: superadmin / SuperAdmin123!`);
+        console.log(`Digital signature: ${process.env.PRIVATE_KEY_PATH ? 'Enabled' : 'Disabled'}`);
+        
+        // Write PID file for process management
+        const fs = require('fs');
+        fs.writeFileSync('server.pid', process.pid.toString());
+
+        // Verify database connection
+        await new Promise((resolve, reject) => {
+            const mongoose = require('mongoose');
+            if (mongoose.connection.readyState === 1) {
+                resolve();
+            } else {
+                mongoose.connection.once('connected', resolve);
+                mongoose.connection.once('error', reject);
+            }
+        });
+
+        console.log('✅ Server ready and database connected');
 }).on('error', (err) => {
     console.error('❌ Server failed to start:', err.message);
     if (err.code === 'EADDRINUSE') {

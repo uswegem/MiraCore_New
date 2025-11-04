@@ -89,11 +89,24 @@ jobs:
           # Start using ecosystem config
           pm2 start ecosystem.config.js --env production
           
-          # Wait for the service to be ready
-          sleep 10
+          # Wait for the service to be ready and perform health checks
+          for i in {1..30}; do
+            echo "Attempt $i: Checking if service is up..."
+            if curl -s http://localhost:3002/health | grep -q "healthy"; then
+              echo "✅ Service is up and healthy"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "❌ Service failed to start after 30 attempts"
+              pm2 logs ess-app --lines 50
+              exit 1
+            fi
+            sleep 2
+          done
           
-          # Verify health check
-          curl -f http://localhost:3002/health || (echo "❌ Health check failed" && exit 1)
+          # Final verification
+          pm2 list
+          pm2 show ess-app
           
           # Save PM2 state
           pm2 save
