@@ -536,7 +536,7 @@ async function handleLoanOfferRequest(parsedData, res) {
 
     } catch (error) {
         console.error('Error processing loan offer request:', error);
-    return sendErrorResponse(res, '8013', 'Error processing loan offer: ' + error.message, 'xml', parsedData);
+        return sendErrorResponse(res, '8013', 'Error processing loan offer: ' + error.message, 'xml', parsedData);
     }
 }
 
