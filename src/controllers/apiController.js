@@ -347,16 +347,15 @@ const handleLoanOfferRequest = async (parsedData, res) => {
 
         // Send LOAN_INITIAL_APPROVAL_NOTIFICATION immediately
         const responseData = {
-            Document: {
-                Data: {
-                    Header: {
-                        "Sender": process.env.FSP_NAME || "ZE DONE",
-                        "Receiver": "ESS_UTUMISHI",
-                        "FSPCode": header.FSPCode,
-                        "MsgId": getMessageId("LOAN_INITIAL_APPROVAL_NOTIFICATION"),
-                        "MessageType": "LOAN_INITIAL_APPROVAL_NOTIFICATION"
-                    },
-                    MessageDetails: {
+            Data: {
+                Header: {
+                    "Sender": process.env.FSP_NAME || "ZE DONE",
+                    "Receiver": "ESS_UTUMISHI",
+                    "FSPCode": header.FSPCode,
+                    "MsgId": getMessageId("LOAN_INITIAL_APPROVAL_NOTIFICATION"),
+                    "MessageType": "LOAN_INITIAL_APPROVAL_NOTIFICATION"
+                },
+                MessageDetails: {
                     "ApplicationNumber": messageDetails.ApplicationNumber,
                     "FSPReferenceNumber": header.FSPReferenceNumber,
                     "ApprovedAmount": loanOffer.LoanAmount,
@@ -536,24 +535,24 @@ const handleLoanFinalApproval = async (parsedData, res) => {
             throw new Error('Invalid Approval value: Must be either "APPROVED" or "REJECTED"');
         }
 
-                // Send immediate acknowledgment for LOAN_FINAL_APPROVAL_NOTIFICATION
+        // Send immediate acknowledgment for LOAN_FINAL_APPROVAL_NOTIFICATION
         const responseData = {
-            Document: {
-                Data: {
-                    Header: {
-                        "Sender": process.env.FSP_NAME || "ZE DONE",
-                        "Receiver": "ESS_UTUMISHI",
-                        "FSPCode": header.FSPCode,
-                        "MsgId": getMessageId("RESPONSE"),
-                        "MessageType": "RESPONSE"
-                    },
-                    MessageDetails: {
-                        "ResponseCode": "8000",
-                        "Description": "Success"
-                    }
+            Data: {
+                Header: {
+                    "Sender": process.env.FSP_NAME || "ZE DONE",
+                    "Receiver": "ESS_UTUMISHI",
+                    "FSPCode": header.FSPCode,
+                    "MsgId": getMessageId("RESPONSE"),
+                    "MessageType": "RESPONSE"
+                },
+                MessageDetails: {
+                    "ResponseCode": "8000",
+                    "Description": "Success"
                 }
             }
-        };        // Send acknowledgment response
+        };
+        
+        // Send acknowledgment response
         const signedResponse = digitalSignature.createSignedXML(responseData.Data);
         res.status(200).send(signedResponse);
 
