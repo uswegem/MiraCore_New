@@ -33,6 +33,31 @@ class ClientService {
             console.log('🔵 Creating client in CBS:', payload);
             const response = await cbsApi.post(API_ENDPOINTS.CLIENTS, payload);
             console.log('🟢 CBS client creation response:', JSON.stringify(response, null, 2));
+            
+            // If client creation was successful, create datatable entry
+            if (response.status && response.response && response.response.clientId) {
+                try {
+                    const datatablePayload = {
+                        CheckNumber: clientData.checkNumber || clientData.applicationNumber,
+                        EmploymentDate: clientData.employmentDate || null,
+                        SwiftCode: clientData.swiftCode || null,
+                        BankAccountNumber: clientData.bankAccountNumber || null,
+                        locale: "en",
+                        dateFormat: "yyyy-MM-dd"
+                    };
+                    
+                    console.log('🔵 Creating client datatable entry:', datatablePayload);
+                    const datatableResponse = await cbsApi.post(
+                        `${API_ENDPOINTS.CLIENTS}/${response.response.clientId}/datatables/client_onboarding`, 
+                        datatablePayload
+                    );
+                    console.log('🟢 Datatable creation response:', datatableResponse);
+                } catch (datatableError) {
+                    console.error('🔴 Error creating datatable entry:', datatableError);
+                    // Don't throw here, as client was already created
+                }
+            }
+            
             return response;
         } catch (error) {
             console.error('🔴 Error creating client:', error);

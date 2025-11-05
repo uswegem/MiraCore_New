@@ -268,26 +268,30 @@ const handleLoanOfferRequest = async (parsedData, res) => {
         const messageDetails = parsedData.Document.Data.MessageDetails;
 
         // Store client data for later use during final approval
-        const clientData = {
-            checkNumber: messageDetails.CheckNumber,
-            firstName: messageDetails.FirstName,
-            middleName: messageDetails.MiddleName,
-            lastName: messageDetails.LastName,
-            fullName: `${messageDetails.FirstName || ''} ${messageDetails.MiddleName || ''} ${messageDetails.LastName || ''}`.trim(),
-            sex: messageDetails.Sex,
-            nin: messageDetails.NIN,
-            bankAccountNumber: messageDetails.BankAccountNumber,
-            employmentDate: messageDetails.EmploymentDate,
-            maritalStatus: messageDetails.MaritalStatus,
-            confirmationDate: messageDetails.ConfirmationDate,
-            physicalAddress: messageDetails.PhysicalAddress,
-            emailAddress: messageDetails.EmailAddress,
-            mobileNumber: messageDetails.MobileNumber,
-            applicationNumber: messageDetails.ApplicationNumber,
-            swiftCode: messageDetails.SwiftCode
-        };
-
-        // Store loan and employment data
+            // Extract all client data fields with logging
+            console.log('Extracting client data from request...');
+            console.log('NIN from request:', messageDetails.NIN);
+            
+            const clientData = {
+                checkNumber: messageDetails.CheckNumber,
+                firstName: messageDetails.FirstName,
+                middleName: messageDetails.MiddleName,
+                lastName: messageDetails.LastName,
+                fullName: `${messageDetails.FirstName || ''} ${messageDetails.MiddleName || ''} ${messageDetails.LastName || ''}`.trim(),
+                sex: messageDetails.Sex,
+                nin: messageDetails.NIN || messageDetails.Nin || messageDetails.NationalId, // Try multiple possible field names
+                bankAccountNumber: messageDetails.BankAccountNumber,
+                employmentDate: messageDetails.EmploymentDate,
+                maritalStatus: messageDetails.MaritalStatus,
+                confirmationDate: messageDetails.ConfirmationDate,
+                physicalAddress: messageDetails.PhysicalAddress,
+                emailAddress: messageDetails.EmailAddress,
+                mobileNumber: messageDetails.MobileNumber,
+                applicationNumber: messageDetails.ApplicationNumber,
+                swiftCode: messageDetails.SwiftCode
+            };
+            
+            console.log('Extracted client data:', JSON.stringify(clientData, null, 2));        // Store loan and employment data
         const loanData = {
             requestedAmount: messageDetails.RequestedAmount,
             desiredDeductibleAmount: messageDetails.DesiredDeductibleAmount,
@@ -575,24 +579,58 @@ const handleLoanFinalApproval = async (parsedData, res) => {
                 // If approved and client data exists, create client in CBS
                 if (messageDetails.Approval === 'APPROVED' && existingMapping && existingMapping.metadata && existingMapping.metadata.clientData) {
                     const clientData = existingMapping.metadata.clientData;
+                    console.log('Retrieved client data from loan mapping:', JSON.stringify(clientData, null, 2));
                     
                     try {
-                        // Check if client already exists
-                        const existingClient = await ClientService.searchClientByExternalId(messageDetails.ApplicationNumber);
+                        const potentialNIN = clientData?.NIN || clientData?.nin || clientData?.nationalId;
+                        console.log('Potential NIN values:', {
+                            fromNIN: clientData?.NIN,
+                            fromNin: clientData?.nin,
+                            fromNationalId: clientData?.nationalId,
+                            selected: potentialNIN
+                        });
+
+                        // Ensure we have NIN
+                        if (!potentialNIN) {
+                            console.warn('⚠️ No NIN found in client data');
+                            throw new Error('National ID Number (NIN) is required for client creation');
+                        }
+
+                        // First check if client exists by NIN
+                        console.log('🔍 Checking if client exists with NIN:', potentialNIN);
+                        const existingClientByNin = await ClientService.searchClientByExternalId(potentialNIN);
+                        console.log('Search result:', JSON.stringify(existingClientByNin, null, 2));
                         
                         let clientId;
-                        if (!existingClient.status || !existingClient.response || !existingClient.response.pageItems || existingClient.response.pageItems.length === 0) {
+                        if (!existingClientByNin?.status || !existingClientByNin?.response?.pageItems?.length) {
                             // Create new client in CBS
-                            console.log(`Creating new client: ${clientData.fullName}`);
-                            const newClient = await ClientService.createClient({
-                                fullname: clientData.fullName,
-                                externalId: messageDetails.ApplicationNumber,
-                                mobileNo: clientData.mobileNumber,
+                            console.log(`Creating new client: ${clientData.fullName || clientData.firstName + ' ' + clientData.lastName}`);
+                            
+                            // Prepare client creation payload
+                            const fullName = clientData.fullName || `${clientData.firstName || ''} ${clientData.middleName || ''} ${clientData.lastName || ''}`.trim();
+                            const mobileNumber = clientData.mobileNumber || clientData.mobileNo || clientData.MobileNumber;
+                            
+                            const clientPayload = {
+                                fullname: fullName,
+                                externalId: potentialNIN,
+                                mobileNo: mobileNumber,
+                                officeId: 1,
+                                legalFormId: 1, // Person
                                 dateFormat: "dd MMMM yyyy",
                                 locale: "en",
                                 active: true,
-                                activationDate: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })
-                            });
+                                activationDate: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }),
+                                // Additional fields for datatable
+                                checkNumber: clientData.ApplicationNumber || clientData.applicationNumber || clientData.CheckNumber || clientData.checkNumber,
+                                employmentDate: clientData.EmploymentDate || clientData.employmentDate,
+                                swiftCode: clientData.SwiftCode || clientData.swiftCode,
+                                bankAccountNumber: clientData.BankAccountNumber || clientData.bankAccountNumber
+                            };
+                            
+                            console.log('📄 Creating client with payload:', JSON.stringify(clientPayload, null, 2));
+
+                            console.log('Creating client with payload:', JSON.stringify(clientPayload, null, 2));
+                            const newClient = await ClientService.createClient(clientPayload);
 
                             if (newClient.status && newClient.response) {
                                 clientId = newClient.response.clientId;
