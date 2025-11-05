@@ -252,106 +252,50 @@ const handleLoanOfferRequest = async (parsedData, res) => {
         const header = parsedData.Document.Data.Header;
         const messageDetails = parsedData.Document.Data.MessageDetails;
 
-        // Send immediate acknowledgment
+        // Calculate loan offer immediately
+        const loanOffer = {
+            LoanAmount: messageDetails.RequestedAmount,
+            InterestRate: 15.0, // 15% per annum
+            Tenure: messageDetails.RequestedTenure || 12, // Default to 12 months
+            MonthlyInstallment: calculateMonthlyInstallment(
+                messageDetails.RequestedAmount,
+                15.0,
+                messageDetails.RequestedTenure || 12
+            )
+        };
+
+        // Send LOAN_INITIAL_APPROVAL_NOTIFICATION immediately
         const responseData = {
             Data: {
                 Header: {
                     "Sender": process.env.FSP_NAME || "ZE DONE",
                     "Receiver": "ESS_UTUMISHI",
                     "FSPCode": header.FSPCode,
-                    "MsgId": `RESP_${Date.now()}`,
-                    "MessageType": "RESPONSE"
+                    "MsgId": `LIAN_${Date.now()}`,
+                    "MessageType": "LOAN_INITIAL_APPROVAL_NOTIFICATION"
                 },
                 MessageDetails: {
                     "ApplicationNumber": messageDetails.ApplicationNumber,
+                    "FSPReferenceNumber": header.FSPReferenceNumber,
+                    "ApprovedAmount": loanOffer.LoanAmount,
+                    "ApprovedTenure": loanOffer.Tenure,
+                    "InterestRate": loanOffer.InterestRate,
+                    "MonthlyInstallment": loanOffer.MonthlyInstallment,
                     "Status": "SUCCESS",
                     "StatusCode": "8000",
-                    "StatusDesc": "Loan offer request is being processed"
+                    "StatusDesc": "Loan initially approved"
                 }
             }
         };
-        
-        // Send acknowledgment response
+
+        // Sign and send the response
         const signedResponse = digitalSignature.createSignedXML(responseData.Data);
         res.status(200).send(signedResponse);
 
-        // Process loan offer asynchronously
-        setImmediate(async () => {
-            try {
-                // TODO: Implement actual loan offer calculation logic
-                const loanOffer = {
-                    LoanAmount: messageDetails.RequestedAmount,
-                    InterestRate: 15.0, // 15% per annum
-                    Tenure: messageDetails.RequestedTenure || 12, // Default to 12 months
-                    MonthlyInstallment: calculateMonthlyInstallment(
-                        messageDetails.RequestedAmount,
-                        15.0,
-                        messageDetails.RequestedTenure || 12
-                    )
-                };
-
-                // Prepare callback data
-                const callbackData = {
-                    Data: {
-                        Header: {
-                            "Sender": process.env.FSP_NAME || "ZE DONE",
-                            "Receiver": "ESS_UTUMISHI",
-                            "FSPCode": header.FSPCode,
-                            "MsgId": `LOFF_${Date.now()}`,
-                            "MessageType": "LOAN_OFFER_NOTIFICATION"
-                        },
-                        MessageDetails: {
-                            "ApplicationNumber": messageDetails.ApplicationNumber,
-                            "LoanNumber": generateLoanNumber(),
-                            "FSPReferenceNumber": messageDetails.FSPReferenceNumber,
-                            "CustomerIDNumber": messageDetails.CustomerIDNumber,
-                            "LoanAmount": loanOffer.LoanAmount,
-                            "InterestRate": loanOffer.InterestRate,
-                            "Tenure": loanOffer.Tenure,
-                            "MonthlyInstallment": loanOffer.MonthlyInstallment,
-                            "ProcessingFee": loanOffer.LoanAmount * 0.02, // 2% processing fee
-                            "InsuranceFee": loanOffer.LoanAmount * 0.01, // 1% insurance fee
-                            "LegalFee": 50000, // Fixed legal fee
-                            "Status": "APPROVED",
-                            "StatusCode": "8000",
-                            "StatusDesc": "Loan offer generated successfully",
-                            "OfferExpiryDate": new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() // 7 days from now
-                        }
-                    }
-                };
-
-                // Send callback notification
-                await sendCallback(callbackData);
-
-                // Log the successful processing
-                await AuditLog.create({
-                    eventType: 'LOAN_OFFER_PROCESSED',
-                    data: {
-                        applicationNumber: messageDetails.ApplicationNumber,
-                        customerIDNumber: messageDetails.CustomerIDNumber,
-                        requestedAmount: messageDetails.RequestedAmount,
-                        offeredAmount: loanOffer.LoanAmount
-                    }
-                });
-
-            } catch (error) {
-                console.error('Error processing loan offer:', error);
-                await AuditLog.create({
-                    eventType: 'LOAN_OFFER_ERROR',
-                    data: {
-                        error: error.message,
-                        applicationNumber: messageDetails.ApplicationNumber,
-                        customerIDNumber: messageDetails.CustomerIDNumber
-                    }
-                });
-            }
-        });
-
     } catch (error) {
-        console.error('Error handling loan offer request:', error);
+        console.error('Error processing loan offer request:', error);
         return sendErrorResponse(res, '8012', error.message, 'xml', parsedData);
     }
-};
 };
 
 const handleTopUpPayOffBalanceRequest = async (parsedData, res) => {
