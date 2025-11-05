@@ -478,13 +478,8 @@ const handleLoanFinalApproval = async (parsedData, res) => {
                     "MessageType": "RESPONSE"
                 },
                 MessageDetails: {
-                    "ApplicationNumber": messageDetails.ApplicationNumber,
-                    "LoanNumber": messageDetails.LoanNumber,
-                    "FSPReferenceNumber": messageDetails.FSPReferenceNumber,
-                    "Status": "SUCCESS",
-                    "StatusCode": "8000",
-                    "StatusDesc": "Request received successfully",
-                    "Reason": "Notification is being processed"
+                    "ResponseCode": "8000",
+                    "Description": "Success"
                 }
             }
         };
