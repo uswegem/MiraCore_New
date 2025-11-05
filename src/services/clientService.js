@@ -37,13 +37,24 @@ class ClientService {
             // If client creation was successful, create datatable entry
             if (response.status && response.response && response.response.clientId) {
                 try {
+                    // Convert employment date to required format
+                    let formattedEmploymentDate = null;
+                    if (clientData.employmentDate) {
+                        const date = new Date(clientData.employmentDate);
+                        formattedEmploymentDate = date.toLocaleDateString('en-GB', { 
+                            day: '2-digit',
+                            month: 'long',
+                            year: 'numeric'
+                        });
+                    }
+                    
                     const datatablePayload = {
                         CheckNumber: clientData.checkNumber || clientData.applicationNumber,
-                        EmploymentDate: clientData.employmentDate || null,
+                        EmploymentDate: formattedEmploymentDate,
                         SwiftCode: clientData.swiftCode || null,
                         BankAccountNumber: clientData.bankAccountNumber || null,
                         locale: "en",
-                        dateFormat: "yyyy-MM-dd"
+                        dateFormat: "dd MMMM yyyy"
                     };
                     
                     console.log('🔵 Creating client datatable entry:', datatablePayload);

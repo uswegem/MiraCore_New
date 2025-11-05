@@ -610,6 +610,13 @@ const handleLoanFinalApproval = async (parsedData, res) => {
                             const fullName = clientData.fullName || `${clientData.firstName || ''} ${clientData.middleName || ''} ${clientData.lastName || ''}`.trim();
                             const mobileNumber = clientData.mobileNumber || clientData.mobileNo || clientData.MobileNumber;
                             
+                            const date = new Date();
+                            const formattedDate = date.toLocaleDateString('en-GB', { 
+                                day: '2-digit', 
+                                month: 'long', 
+                                year: 'numeric' 
+                            });
+                            
                             const clientPayload = {
                                 fullname: fullName,
                                 externalId: potentialNIN,
@@ -619,7 +626,7 @@ const handleLoanFinalApproval = async (parsedData, res) => {
                                 dateFormat: "dd MMMM yyyy",
                                 locale: "en",
                                 active: true,
-                                activationDate: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }),
+                                activationDate: formattedDate,
                                 // Additional fields for datatable
                                 checkNumber: clientData.ApplicationNumber || clientData.applicationNumber || clientData.CheckNumber || clientData.checkNumber,
                                 employmentDate: clientData.EmploymentDate || clientData.employmentDate,
