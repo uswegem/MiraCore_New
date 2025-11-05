@@ -19,8 +19,8 @@ const loanMappingSchema = new mongoose.Schema({
   // FSP generated identifiers
   fspReferenceNumber: {
     type: String,
-    required: true,
-    unique: true,
+    required: false,  // Not required initially, added during final approval
+    sparse: true,     // Allow multiple nulls
     index: true
   },
 
