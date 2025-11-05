@@ -184,26 +184,51 @@ const handleMifosWebhook = async (req, res) => {
 };
 
 const handleLoanChargesRequest = async (parsedData, res) => {
-    // Implement loan charges request
-    console.log('Processing loan charges request...');
-    const header = parsedData.Document.Data.Header;
-    const responseData = {
-        Data: {
-            Header: {
-                "Sender": process.env.FSP_NAME || "ZE DONE",
-                "Receiver": "ESS_UTUMISHI",
-                "FSPCode": header.FSPCode,
-                "MessageType": "RESPONSE"
-            },
-            MessageDetails: {
-                "Status": "SUCCESS",
-                "StatusCode": "8000",
-                "StatusDesc": "Request received and being processed"
+    try {
+        console.log('Processing LOAN_CHARGES_REQUEST...');
+        const header = parsedData.Document.Data.Header;
+        const messageDetails = parsedData.Document.Data.MessageDetails;
+
+        // Extract loan details from request
+        const { LoanNumber, LoanAmount } = messageDetails;
+
+        // TODO: Calculate actual charges based on loan amount
+        const charges = {
+            ProcessingFee: LoanAmount * 0.02, // 2% processing fee
+            InsuranceFee: LoanAmount * 0.01,  // 1% insurance
+            LegalFee: 50000                   // Fixed legal fee
+        };
+
+        const responseData = {
+            Data: {
+                Header: {
+                    "Sender": process.env.FSP_NAME || "ZE DONE",
+                    "Receiver": "ESS_UTUMISHI",
+                    "FSPCode": header.FSPCode,
+                    "MsgId": `LCHRG_${Date.now()}`,
+                    "MessageType": "LOAN_CHARGES_RESPONSE"
+                },
+                MessageDetails: {
+                    "ApplicationNumber": messageDetails.ApplicationNumber,
+                    "LoanNumber": LoanNumber,
+                    "FSPReferenceNumber": header.FSPReferenceNumber,
+                    "ProcessingFee": charges.ProcessingFee,
+                    "InsuranceFee": charges.InsuranceFee,
+                    "LegalFee": charges.LegalFee,
+                    "TotalCharges": charges.ProcessingFee + charges.InsuranceFee + charges.LegalFee,
+                    "Status": "SUCCESS",
+                    "StatusCode": "8000",
+                    "StatusDesc": "Charges calculated successfully"
+                }
             }
-        }
-    };
-    const signedResponse = digitalSignature.createSignedXML(responseData.Data);
-    res.status(200).send(signedResponse);
+        };
+        
+        const signedResponse = digitalSignature.createSignedXML(responseData.Data);
+        res.status(200).send(signedResponse);
+    } catch (error) {
+        console.error('Error processing loan charges request:', error);
+        return sendErrorResponse(res, '8012', error.message, 'xml', parsedData);
+    }
 };
 
 const handleLoanOfferRequest = async (parsedData, res) => {
