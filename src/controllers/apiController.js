@@ -581,7 +581,7 @@ const handleLoanFinalApproval = async (parsedData, res) => {
                         const existingClient = await ClientService.searchClientByExternalId(messageDetails.ApplicationNumber);
                         
                         let clientId;
-                        if (!existingClient.status || !existingClient.response || existingClient.response.length === 0) {
+                        if (!existingClient.status || !existingClient.response || !existingClient.response.pageItems || existingClient.response.pageItems.length === 0) {
                             // Create new client in CBS
                             console.log(`Creating new client: ${clientData.fullName}`);
                             const newClient = await ClientService.createClient({
@@ -599,7 +599,7 @@ const handleLoanFinalApproval = async (parsedData, res) => {
                                 console.log(`✅ Client created in CBS with ID: ${clientId}`);
                             }
                         } else {
-                            clientId = existingClient.response[0].id;
+                            clientId = existingClient.response.pageItems[0].id;
                             console.log(`✅ Existing client found with ID: ${clientId}`);
                         }
 
