@@ -23,6 +23,7 @@ class ClientService {
                 externalId: clientData.externalId || null,
                 mobileNo: clientData.mobileNo || null,
                 officeId: clientData.officeId || 1, // Default office ID
+                legalFormId: clientData.legalFormId || 1, // 1 = Person, 2 = Entity
                 dateFormat: clientData.dateFormat || "dd MMMM yyyy",
                 locale: clientData.locale || "en",
                 active: clientData.active !== undefined ? clientData.active : true,
