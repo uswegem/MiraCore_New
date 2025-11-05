@@ -31,7 +31,7 @@ class ClientService {
 
             console.log('🔵 Creating client in CBS:', payload);
             const response = await cbsApi.post(API_ENDPOINTS.CLIENTS, payload);
-            console.log('🟢 CBS client creation response:', response);
+            console.log('🟢 CBS client creation response:', JSON.stringify(response, null, 2));
             return response;
         } catch (error) {
             console.error('🔴 Error creating client:', error);
