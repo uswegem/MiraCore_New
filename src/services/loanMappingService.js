@@ -1,4 +1,5 @@
 const LoanMapping = require('../models/LoanMapping');
+const ClientService = require('./clientService');
 
 class LoanMappingService {
   /**
@@ -16,6 +17,46 @@ class LoanMappingService {
     const unique = String(now.getMilliseconds()).padStart(3, '0').slice(-3);
 
     return `${year}${month}${day}${hours}${minutes}${unique}`;
+  }
+
+  /**
+   * Create or update loan mapping with client data from LOAN_OFFER_REQUEST
+   */
+  static async createOrUpdateWithClientData(applicationNumber, checkNumber, clientData, loanData, employmentData) {
+    try {
+      const filter = {
+        essApplicationNumber: applicationNumber
+      };
+
+      const update = {
+        essApplicationNumber: applicationNumber,
+        essCheckNumber: checkNumber,
+        productCode: loanData.productCode,
+        requestedAmount: loanData.requestedAmount,
+        tenure: loanData.tenure,
+        status: 'OFFER_SUBMITTED',
+        metadata: {
+          clientData: clientData,
+          loanData: loanData,
+          employmentData: employmentData,
+          offerReceivedAt: new Date().toISOString()
+        },
+        updatedAt: new Date()
+      };
+
+      const options = {
+        new: true,
+        upsert: true,
+        setDefaultsOnInsert: true
+      };
+
+      const mapping = await LoanMapping.findOneAndUpdate(filter, update, options);
+      console.log(`✅ Stored client data for application: ${applicationNumber}`);
+      return mapping;
+    } catch (error) {
+      console.error('❌ Error storing client data:', error);
+      throw error;
+    }
   }
 
   /**

@@ -9,6 +9,11 @@ const parser = new xml2js.Parser({
     trim: true
 });
 
+// Generate unique identifiers for the entire simulation session
+const timestamp = Date.now();
+const applicationNumber = `APP${timestamp}`;
+const checkNumber = `CHK${timestamp}`;
+
 async function simulateLoanFlowDirect() {
     console.log('🚀 Simulating Complete Loan Flow (Direct Handler Simulation)\n');
     console.log('='.repeat(70) + '\n');
@@ -134,22 +139,44 @@ async function simulateLoanFlowDirect() {
             <MessageType>LOAN_OFFER_REQUEST</MessageType>
         </Header>
         <MessageDetails>
-            <CheckNumber>CHK${Date.now()}</CheckNumber>
+            <CheckNumber>${checkNumber}</CheckNumber>
+            <FirstName>Pelagia</FirstName>
+            <MiddleName></MiddleName>
+            <LastName>Ngowi</LastName>
+            <Sex>F</Sex>
+            <BankAccountNumber>1234567890</BankAccountNumber>
+            <EmploymentDate>2015-01-01</EmploymentDate>
+            <MaritalStatus>Single</MaritalStatus>
+            <ConfirmationDate>2015-06-01</ConfirmationDate>
+            <TotalEmployeeDeduction>100000</TotalEmployeeDeduction>
+            <NearestBranchName>Dar es Salaam Branch</NearestBranchName>
+            <NearestBranchCode>DSM001</NearestBranchCode>
+            <VoteCode>V001</VoteCode>
+            <VoteName>Education Vote</VoteName>
+            <NIN>19900101123456789012</NIN>
             <DesignationCode>D001</DesignationCode>
             <DesignationName>Teacher</DesignationName>
             <BasicSalary>1500000</BasicSalary>
             <NetSalary>1400000</NetSalary>
             <OneThirdAmount>500000</OneThirdAmount>
-            <DeductibleAmount>100000</DeductibleAmount>
-            <RetirementDate>2050-01-01</RetirementDate>
-            <TermsOfEmployment>PERMANENT</TermsOfEmployment>
             <RequestedAmount>5000000</RequestedAmount>
             <DesiredDeductibleAmount>150000</DesiredDeductibleAmount>
+            <RetirementDate>2050-01-01</RetirementDate>
+            <TermsOfEmployment>PERMANENT</TermsOfEmployment>
             <Tenure>24</Tenure>
             <ProductCode>17</ProductCode>
-            <VoteCode>V001</VoteCode>
-            <TotalEmployeeDeduction>100000</TotalEmployeeDeduction>
-            <JobClassCode>J001</JobClassCode>
+            <InterestRate>24</InterestRate>
+            <ProcessingFee>2</ProcessingFee>
+            <Insurance>1.5</Insurance>
+            <PhysicalAddress>Kinondoni, Dar es Salaam</PhysicalAddress>
+            <EmailAddress>pelagia.ngowi@example.com</EmailAddress>
+            <MobileNumber>255712345678</MobileNumber>
+            <ApplicationNumber>${applicationNumber}</ApplicationNumber>
+            <LoanPurpose>Personal Development</LoanPurpose>
+            <ContractStartDate>2015-01-01</ContractStartDate>
+            <ContractEndDate>2050-12-31</ContractEndDate>
+            <SwiftCode>CRDBTZTZ</SwiftCode>
+            <Funding>Government</Funding>
         </MessageDetails>
     </Data>
 </Document>`;
@@ -229,26 +256,11 @@ async function simulateLoanFlowDirect() {
             <MessageType>LOAN_FINAL_APPROVAL_NOTIFICATION</MessageType>
         </Header>
         <MessageDetails>
-            <ApplicationNumber>APP${Date.now()}</ApplicationNumber>
-            <FSPReferenceNumber>FSP${Date.now()}</FSPReferenceNumber>
-            <LoanNumber>LOAN${Date.now()}</LoanNumber>
+            <ApplicationNumber>${applicationNumber}</ApplicationNumber>
+            <Reason>N</Reason>
+            <FSPReferenceNumber>FSP${timestamp}</FSPReferenceNumber>
+            <LoanNumber>LOAN${timestamp}</LoanNumber>
             <Approval>APPROVED</Approval>
-            <NIN>1234567890123456</NIN>
-            <FirstName>John</FirstName>
-            <LastName>Doe</LastName>
-            <MobileNo>0712345678</MobileNo>
-            <Sex>M</Sex>
-            <DateOfBirth>1990-01-01</DateOfBirth>
-            <EmploymentDate>2020-01-01</EmploymentDate>
-            <BankAccountNumber>1234567890</BankAccountNumber>
-            <SwiftCode>TESTSWFT</SwiftCode>
-            <CheckNumber>CHK${Date.now()}</CheckNumber>
-            <RequestedAmount>5000000</RequestedAmount>
-            <ProductCode>17</ProductCode>
-            <Tenure>24</Tenure>
-            <InterestRate>28</InterestRate>
-            <ProcessingFee>500</ProcessingFee>
-            <Insurance>200</Insurance>
         </MessageDetails>
     </Data>
 </Document>`;

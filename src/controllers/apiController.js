@@ -6,6 +6,7 @@ const { sendCallback } = require('../utils/callbackUtils');
 const { sendErrorResponse } = require('../utils/responseUtils');
 const { LoanCalculate, CreateTopUpLoanOffer, CreateTakeoverLoanOffer, CreateLoanOffer } = require('../services/loanService');
 const LoanMappingService = require('../services/loanMappingService');
+const ClientService = require('../services/clientService');
 const cbsApi = require('../services/cbs.api');
 const { formatDateForMifos } = require('../utils/dateUtils');
 const { AuditLog } = require('../models/AuditLog');
@@ -266,29 +267,96 @@ const handleLoanOfferRequest = async (parsedData, res) => {
         const header = parsedData.Document.Data.Header;
         const messageDetails = parsedData.Document.Data.MessageDetails;
 
+        // Store client data for later use during final approval
+        const clientData = {
+            checkNumber: messageDetails.CheckNumber,
+            firstName: messageDetails.FirstName,
+            middleName: messageDetails.MiddleName,
+            lastName: messageDetails.LastName,
+            fullName: `${messageDetails.FirstName || ''} ${messageDetails.MiddleName || ''} ${messageDetails.LastName || ''}`.trim(),
+            sex: messageDetails.Sex,
+            nin: messageDetails.NIN,
+            bankAccountNumber: messageDetails.BankAccountNumber,
+            employmentDate: messageDetails.EmploymentDate,
+            maritalStatus: messageDetails.MaritalStatus,
+            confirmationDate: messageDetails.ConfirmationDate,
+            physicalAddress: messageDetails.PhysicalAddress,
+            emailAddress: messageDetails.EmailAddress,
+            mobileNumber: messageDetails.MobileNumber,
+            applicationNumber: messageDetails.ApplicationNumber,
+            swiftCode: messageDetails.SwiftCode
+        };
+
+        // Store loan and employment data
+        const loanData = {
+            requestedAmount: messageDetails.RequestedAmount,
+            desiredDeductibleAmount: messageDetails.DesiredDeductibleAmount,
+            tenure: messageDetails.Tenure,
+            productCode: messageDetails.ProductCode,
+            interestRate: messageDetails.InterestRate,
+            processingFee: messageDetails.ProcessingFee,
+            insurance: messageDetails.Insurance,
+            loanPurpose: messageDetails.LoanPurpose,
+            contractStartDate: messageDetails.ContractStartDate,
+            contractEndDate: messageDetails.ContractEndDate,
+            funding: messageDetails.Funding
+        };
+
+        const employmentData = {
+            designationCode: messageDetails.DesignationCode,
+            designationName: messageDetails.DesignationName,
+            basicSalary: messageDetails.BasicSalary,
+            netSalary: messageDetails.NetSalary,
+            oneThirdAmount: messageDetails.OneThirdAmount,
+            totalEmployeeDeduction: messageDetails.TotalEmployeeDeduction,
+            retirementDate: messageDetails.RetirementDate,
+            termsOfEmployment: messageDetails.TermsOfEmployment,
+            voteCode: messageDetails.VoteCode,
+            voteName: messageDetails.VoteName,
+            nearestBranchName: messageDetails.NearestBranchName,
+            nearestBranchCode: messageDetails.NearestBranchCode
+        };
+
         // Calculate loan offer immediately
         const loanOffer = {
             LoanAmount: messageDetails.RequestedAmount,
             InterestRate: 15.0, // 15% per annum
-            Tenure: messageDetails.RequestedTenure || 12, // Default to 12 months
+            Tenure: messageDetails.Tenure || 12, // Use requested tenure or default to 12 months
             MonthlyInstallment: calculateMonthlyInstallment(
                 messageDetails.RequestedAmount,
                 15.0,
-                messageDetails.RequestedTenure || 12
+                messageDetails.Tenure || 12
             )
         };
 
+        // Store in loan mapping with all client, loan, and employment data
+        console.log('💾 Storing client data for application:', messageDetails.ApplicationNumber);
+        try {
+            await LoanMappingService.createOrUpdateWithClientData(
+                messageDetails.ApplicationNumber,
+                messageDetails.CheckNumber,
+                clientData,
+                loanData,
+                employmentData
+            );
+            console.log('✅ Client data stored successfully');
+        } catch (storageError) {
+            console.error('❌ Error storing client data:', storageError);
+            // Continue with response even if storage fails
+        }
+
         // Send LOAN_INITIAL_APPROVAL_NOTIFICATION immediately
         const responseData = {
-            Data: {
-                Header: {
-                    "Sender": process.env.FSP_NAME || "ZE DONE",
-                    "Receiver": "ESS_UTUMISHI",
-                    "FSPCode": header.FSPCode,
-                    "MsgId": getMessageId("LOAN_INITIAL_APPROVAL_NOTIFICATION"),
-                    "MessageType": "LOAN_INITIAL_APPROVAL_NOTIFICATION"
-                },
-                MessageDetails: {
+            Document: {
+                Data: {
+                    Header: {
+                        "Sender": process.env.FSP_NAME || "ZE DONE",
+                        "Receiver": "ESS_UTUMISHI",
+                        "FSPCode": header.FSPCode,
+                        "MsgId": getMessageId("LOAN_INITIAL_APPROVAL_NOTIFICATION"),
+                        "MessageType": "LOAN_INITIAL_APPROVAL_NOTIFICATION"
+                    },
+                    MessageDetails: {
                     "ApplicationNumber": messageDetails.ApplicationNumber,
                     "FSPReferenceNumber": header.FSPReferenceNumber,
                     "ApprovedAmount": loanOffer.LoanAmount,
@@ -468,30 +536,33 @@ const handleLoanFinalApproval = async (parsedData, res) => {
             throw new Error('Invalid Approval value: Must be either "APPROVED" or "REJECTED"');
         }
 
-        // Send immediate acknowledgment for LOAN_FINAL_APPROVAL_NOTIFICATION
+                // Send immediate acknowledgment for LOAN_FINAL_APPROVAL_NOTIFICATION
         const responseData = {
-            Data: {
-                Header: {
-                    "Sender": process.env.FSP_NAME || "ZE DONE",
-                    "Receiver": "ESS_UTUMISHI",
-                    "FSPCode": header.FSPCode,
-                    "MsgId": getMessageId("RESPONSE"),
-                    "MessageType": "RESPONSE"
-                },
-                MessageDetails: {
-                    "ResponseCode": "8000",
-                    "Description": "Success"
+            Document: {
+                Data: {
+                    Header: {
+                        "Sender": process.env.FSP_NAME || "ZE DONE",
+                        "Receiver": "ESS_UTUMISHI",
+                        "FSPCode": header.FSPCode,
+                        "MsgId": getMessageId("RESPONSE"),
+                        "MessageType": "RESPONSE"
+                    },
+                    MessageDetails: {
+                        "ResponseCode": "8000",
+                        "Description": "Success"
+                    }
                 }
             }
-        };
-
-        // Send acknowledgment response
+        };        // Send acknowledgment response
         const signedResponse = digitalSignature.createSignedXML(responseData.Data);
         res.status(200).send(signedResponse);
 
         // Process the request asynchronously
         setImmediate(async () => {
             try {
+                // Retrieve the loan mapping with client data
+                const existingMapping = await LoanMappingService.getByEssApplicationNumber(messageDetails.ApplicationNumber);
+                
                 // Create loan mapping data
                 const loanMappingData = {
                     essLoanNumberAlias: messageDetails.LoanNumber,
@@ -502,7 +573,54 @@ const handleLoanFinalApproval = async (parsedData, res) => {
                     finalApprovalReceivedAt: new Date().toISOString()
                 };
 
+                // If approved and client data exists, create client in CBS
+                if (messageDetails.Approval === 'APPROVED' && existingMapping && existingMapping.metadata && existingMapping.metadata.clientData) {
+                    const clientData = existingMapping.metadata.clientData;
+                    
+                    try {
+                        // Check if client already exists
+                        const existingClient = await ClientService.searchClientByExternalId(messageDetails.ApplicationNumber);
+                        
+                        let clientId;
+                        if (!existingClient.status || !existingClient.response || existingClient.response.length === 0) {
+                            // Create new client in CBS
+                            console.log(`Creating new client: ${clientData.fullName}`);
+                            const newClient = await ClientService.createClient({
+                                fullname: clientData.fullName,
+                                externalId: messageDetails.ApplicationNumber,
+                                mobileNo: clientData.mobileNumber,
+                                dateFormat: "dd MMMM yyyy",
+                                locale: "en",
+                                active: true,
+                                activationDate: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })
+                            });
+
+                            if (newClient.status && newClient.response) {
+                                clientId = newClient.response.clientId;
+                                console.log(`✅ Client created in CBS with ID: ${clientId}`);
+                            }
+                        } else {
+                            clientId = existingClient.response[0].id;
+                            console.log(`✅ Existing client found with ID: ${clientId}`);
+                        }
+
+                        // Add client ID to loan mapping metadata
+                        if (clientId) {
+                            loanMappingData.mifosClientId = clientId;
+                            loanMappingData.metadata = {
+                                ...existingMapping.metadata,
+                                clientId: clientId,
+                                clientCreatedAt: new Date().toISOString()
+                            };
+                        }
+                    } catch (clientError) {
+                        console.error('Error creating/fetching client:', clientError);
+                        // Continue with loan mapping update even if client creation fails
+                    }
+                }
+
                 // Update loan mapping in database
+                // Client data should have been stored during LOAN_OFFER_REQUEST
                 await LoanMappingService.updateLoanMapping(loanMappingData);
 
                 if (messageDetails.Approval === 'APPROVED') {
@@ -513,7 +631,7 @@ const handleLoanFinalApproval = async (parsedData, res) => {
                                 "Sender": process.env.FSP_NAME || "ZE DONE",
                                 "Receiver": "ESS_UTUMISHI",
                                 "FSPCode": header.FSPCode,
-                                "MsgId": `DISB_${Date.now()}`,
+                                "MsgId": getMessageId("LOAN_DISBURSMENT_NOTIFICATION"),
                                 "MessageType": "LOAN_DISBURSMENT_NOTIFICATION"
                             },
                             MessageDetails: {
