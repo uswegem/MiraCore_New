@@ -165,55 +165,206 @@ const processRequest = async (req, res) => {
 const handleMifosWebhook = async (req, res) => {
     // Implement webhook handling
     console.log('Processing Mifos webhook...');
-    res.status(200).json({ status: 'received' });
+    const responseData = {
+        Data: {
+            Header: {
+                "Sender": process.env.FSP_NAME || "ZE DONE",
+                "Receiver": "ESS_UTUMISHI",
+                "MessageType": "RESPONSE"
+            },
+            MessageDetails: {
+                "Status": "SUCCESS",
+                "StatusCode": "8000",
+                "StatusDesc": "Webhook received successfully"
+            }
+        }
+    };
+    const signedResponse = digitalSignature.createSignedXML(responseData.Data);
+    res.status(200).send(signedResponse);
 };
 
 const handleLoanChargesRequest = async (parsedData, res) => {
     // Implement loan charges request
     console.log('Processing loan charges request...');
-    res.status(200).json({ status: 'processing' });
+    const header = parsedData.Document.Data.Header;
+    const responseData = {
+        Data: {
+            Header: {
+                "Sender": process.env.FSP_NAME || "ZE DONE",
+                "Receiver": "ESS_UTUMISHI",
+                "FSPCode": header.FSPCode,
+                "MessageType": "RESPONSE"
+            },
+            MessageDetails: {
+                "Status": "SUCCESS",
+                "StatusCode": "8000",
+                "StatusDesc": "Request received and being processed"
+            }
+        }
+    };
+    const signedResponse = digitalSignature.createSignedXML(responseData.Data);
+    res.status(200).send(signedResponse);
 };
 
 const handleLoanOfferRequest = async (parsedData, res) => {
     // Implement loan offer request
     console.log('Processing loan offer request...');
-    res.status(200).json({ status: 'processing' });
+    const header = parsedData.Document.Data.Header;
+    const responseData = {
+        Data: {
+            Header: {
+                "Sender": process.env.FSP_NAME || "ZE DONE",
+                "Receiver": "ESS_UTUMISHI",
+                "FSPCode": header.FSPCode,
+                "MessageType": "RESPONSE"
+            },
+            MessageDetails: {
+                "Status": "SUCCESS",
+                "StatusCode": "8000",
+                "StatusDesc": "Request received and being processed"
+            }
+        }
+    };
+    const signedResponse = digitalSignature.createSignedXML(responseData.Data);
+    res.status(200).send(signedResponse);
 };
 
 const handleTopUpPayOffBalanceRequest = async (parsedData, res) => {
     // Implement top up pay off balance request
     console.log('Processing top up pay off balance request...');
-    res.status(200).json({ status: 'processing' });
+    const header = parsedData.Document.Data.Header;
+    const responseData = {
+        Data: {
+            Header: {
+                "Sender": process.env.FSP_NAME || "ZE DONE",
+                "Receiver": "ESS_UTUMISHI",
+                "FSPCode": header.FSPCode,
+                "MessageType": "RESPONSE"
+            },
+            MessageDetails: {
+                "Status": "SUCCESS",
+                "StatusCode": "8000",
+                "StatusDesc": "Request received and being processed"
+            }
+        }
+    };
+    const signedResponse = digitalSignature.createSignedXML(responseData.Data);
+    res.status(200).send(signedResponse);
 };
 
 const handleTopUpOfferRequest = async (parsedData, res) => {
     // Implement top up offer request
     console.log('Processing top up offer request...');
-    res.status(200).json({ status: 'processing' });
+    const header = parsedData.Document.Data.Header;
+    const responseData = {
+        Data: {
+            Header: {
+                "Sender": process.env.FSP_NAME || "ZE DONE",
+                "Receiver": "ESS_UTUMISHI",
+                "FSPCode": header.FSPCode,
+                "MessageType": "RESPONSE"
+            },
+            MessageDetails: {
+                "Status": "SUCCESS",
+                "StatusCode": "8000",
+                "StatusDesc": "Request received and being processed"
+            }
+        }
+    };
+    const signedResponse = digitalSignature.createSignedXML(responseData.Data);
+    res.status(200).send(signedResponse);
 };
 
 const handleTakeoverPayOffBalanceRequest = async (parsedData, res) => {
     // Implement takeover pay off balance request
     console.log('Processing takeover pay off balance request...');
-    res.status(200).json({ status: 'processing' });
+    const header = parsedData.Document.Data.Header;
+    const responseData = {
+        Data: {
+            Header: {
+                "Sender": process.env.FSP_NAME || "ZE DONE",
+                "Receiver": "ESS_UTUMISHI",
+                "FSPCode": header.FSPCode,
+                "MessageType": "RESPONSE"
+            },
+            MessageDetails: {
+                "Status": "SUCCESS",
+                "StatusCode": "8000",
+                "StatusDesc": "Request received and being processed"
+            }
+        }
+    };
+    const signedResponse = digitalSignature.createSignedXML(responseData.Data);
+    res.status(200).send(signedResponse);
 };
 
 const handleLoanTakeoverOfferRequest = async (parsedData, res) => {
     // Implement loan takeover offer request
     console.log('Processing loan takeover offer request...');
-    res.status(200).json({ status: 'processing' });
+    const header = parsedData.Document.Data.Header;
+    const responseData = {
+        Data: {
+            Header: {
+                "Sender": process.env.FSP_NAME || "ZE DONE",
+                "Receiver": "ESS_UTUMISHI",
+                "FSPCode": header.FSPCode,
+                "MessageType": "RESPONSE"
+            },
+            MessageDetails: {
+                "Status": "SUCCESS",
+                "StatusCode": "8000",
+                "StatusDesc": "Request received and being processed"
+            }
+        }
+    };
+    const signedResponse = digitalSignature.createSignedXML(responseData.Data);
+    res.status(200).send(signedResponse);
 };
 
 const handleTakeoverPaymentNotification = async (parsedData, res) => {
     // Implement takeover payment notification
     console.log('Processing takeover payment notification...');
-    res.status(200).json({ status: 'processing' });
+    const header = parsedData.Document.Data.Header;
+    const responseData = {
+        Data: {
+            Header: {
+                "Sender": process.env.FSP_NAME || "ZE DONE",
+                "Receiver": "ESS_UTUMISHI",
+                "FSPCode": header.FSPCode,
+                "MessageType": "RESPONSE"
+            },
+            MessageDetails: {
+                "Status": "SUCCESS",
+                "StatusCode": "8000",
+                "StatusDesc": "Request received and being processed"
+            }
+        }
+    };
+    const signedResponse = digitalSignature.createSignedXML(responseData.Data);
+    res.status(200).send(signedResponse);
 };
 
 const handleLoanCancellation = async (parsedData, res) => {
     // Implement loan cancellation
     console.log('Processing loan cancellation...');
-    res.status(200).json({ status: 'processing' });
+    const header = parsedData.Document.Data.Header;
+    const responseData = {
+        Data: {
+            Header: {
+                "Sender": process.env.FSP_NAME || "ZE DONE",
+                "Receiver": "ESS_UTUMISHI",
+                "FSPCode": header.FSPCode,
+                "MessageType": "RESPONSE"
+            },
+            MessageDetails: {
+                "Status": "SUCCESS",
+                "StatusCode": "8000",
+                "StatusDesc": "Request received and being processed"
+            }
+        }
+    };
+    const signedResponse = digitalSignature.createSignedXML(responseData.Data);
+    res.status(200).send(signedResponse);
 };
 
 const handleLoanFinalApproval = async (parsedData, res) => {
