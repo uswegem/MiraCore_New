@@ -205,14 +205,27 @@ const handleLoanChargesRequest = async (parsedData, res) => {
         const messageDetails = parsedData.Document.Data.MessageDetails;
 
         // Extract loan details from request
-        const { LoanNumber, LoanAmount } = messageDetails;
+        const requestedAmount = parseFloat(messageDetails.RequestedAmount || messageDetails.LoanAmount);
+        const requestedTenure = parseInt(messageDetails.RequestedTenure || messageDetails.Tenure || 12);
+        const interestRate = 15.0; // 15% per annum
 
-        // TODO: Calculate actual charges based on loan amount
-        const charges = {
-            ProcessingFee: LoanAmount * 0.02, // 2% processing fee
-            InsuranceFee: LoanAmount * 0.01,  // 1% insurance
-            LegalFee: 50000                   // Fixed legal fee
-        };
+        // Calculate charges
+        const totalProcessingFees = requestedAmount * 0.02; // 2% processing fee
+        const totalInsurance = requestedAmount * 0.01; // 1% insurance
+        const otherCharges = 50000; // Other charges (e.g., legal fees)
+        
+        // Calculate interest for the entire tenure
+        const totalInterestRateAmount = (requestedAmount * interestRate * requestedTenure) / (12 * 100);
+        
+        // Net amount after deducting charges
+        const desiredDeductibleAmount = totalProcessingFees + totalInsurance + otherCharges;
+        const netLoanAmount = requestedAmount - desiredDeductibleAmount;
+        
+        // Total amount to pay back (principal + interest)
+        const totalAmountToPay = requestedAmount + totalInterestRateAmount;
+        
+        // Monthly installment
+        const monthlyReturnAmount = calculateMonthlyInstallment(requestedAmount, interestRate, requestedTenure);
 
         const responseData = {
             Data: {
@@ -224,16 +237,16 @@ const handleLoanChargesRequest = async (parsedData, res) => {
                     "MessageType": "LOAN_CHARGES_RESPONSE"
                 },
                 MessageDetails: {
-                    "ApplicationNumber": messageDetails.ApplicationNumber,
-                    "LoanNumber": LoanNumber,
-                    "FSPReferenceNumber": header.FSPReferenceNumber,
-                    "ProcessingFee": charges.ProcessingFee,
-                    "InsuranceFee": charges.InsuranceFee,
-                    "LegalFee": charges.LegalFee,
-                    "TotalCharges": charges.ProcessingFee + charges.InsuranceFee + charges.LegalFee,
-                    "Status": "SUCCESS",
-                    "StatusCode": "8000",
-                    "StatusDesc": "Charges calculated successfully"
+                    "DesiredDeductibleAmount": desiredDeductibleAmount,
+                    "TotalInsurance": totalInsurance,
+                    "TotalProcessingFees": totalProcessingFees,
+                    "TotalInterestRateAmount": totalInterestRateAmount,
+                    "OtherCharges": otherCharges,
+                    "NetLoanAmount": netLoanAmount,
+                    "TotalAmountToPay": totalAmountToPay,
+                    "Tenure": requestedTenure,
+                    "EligibleAmount": requestedAmount,
+                    "MonthlyReturnAmount": monthlyReturnAmount
                 }
             }
         };
