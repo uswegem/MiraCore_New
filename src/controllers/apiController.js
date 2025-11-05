@@ -294,9 +294,9 @@ const handleLoanOfferRequest = async (parsedData, res) => {
                     "ApprovedTenure": loanOffer.Tenure,
                     "InterestRate": loanOffer.InterestRate,
                     "MonthlyInstallment": loanOffer.MonthlyInstallment,
-                    "Status": "SUCCESS",
+                    "Status": "APPROVED",
                     "StatusCode": "8000",
-                    "StatusDesc": "Loan initially approved"
+                    "StatusDesc": "Loan request approved"
                 }
             }
         };
@@ -467,7 +467,7 @@ const handleLoanFinalApproval = async (parsedData, res) => {
             throw new Error('Invalid Approval value: Must be either "APPROVED" or "REJECTED"');
         }
 
-        // Send immediate acknowledgment
+        // Send immediate acknowledgment for LOAN_FINAL_APPROVAL_NOTIFICATION
         const responseData = {
             Data: {
                 Header: {

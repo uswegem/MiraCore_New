@@ -32,7 +32,7 @@ app.get('/health', (req, res) => {
         uptime: process.uptime()
     });
 });
-const PORT = process.env.PORT || 3003;
+const PORT = process.env.PORT || 3002;
 
 // Connect to MongoDB
 connectDB();
