@@ -9,6 +9,7 @@ const LoanMappingService = require('../services/loanMappingService');
 const cbsApi = require('../services/cbs.api');
 const { formatDateForMifos } = require('../utils/dateUtils');
 const { AuditLog } = require('../models/AuditLog');
+const { getMessageId } = require('../utils/messageIdGenerator');
 
 // Export all functions before they are used
 exports.processRequest = async (req, res) => {
@@ -233,7 +234,7 @@ const handleLoanChargesRequest = async (parsedData, res) => {
                     "Sender": process.env.FSP_NAME || "ZE DONE",
                     "Receiver": "ESS_UTUMISHI",
                     "FSPCode": header.FSPCode,
-                    "MsgId": `LCHRG_${Date.now()}`,
+                    "MsgId": getMessageId("LOAN_CHARGES_RESPONSE"),
                     "MessageType": "LOAN_CHARGES_RESPONSE"
                 },
                 MessageDetails: {
@@ -284,7 +285,7 @@ const handleLoanOfferRequest = async (parsedData, res) => {
                     "Sender": process.env.FSP_NAME || "ZE DONE",
                     "Receiver": "ESS_UTUMISHI",
                     "FSPCode": header.FSPCode,
-                    "MsgId": `LIAN_${Date.now()}`,
+                    "MsgId": getMessageId("LOAN_INITIAL_APPROVAL_NOTIFICATION"),
                     "MessageType": "LOAN_INITIAL_APPROVAL_NOTIFICATION"
                 },
                 MessageDetails: {
@@ -474,7 +475,7 @@ const handleLoanFinalApproval = async (parsedData, res) => {
                     "Sender": process.env.FSP_NAME || "ZE DONE",
                     "Receiver": "ESS_UTUMISHI",
                     "FSPCode": header.FSPCode,
-                    "MsgId": `RESP_${Date.now()}`,
+                    "MsgId": getMessageId("RESPONSE"),
                     "MessageType": "RESPONSE"
                 },
                 MessageDetails: {
