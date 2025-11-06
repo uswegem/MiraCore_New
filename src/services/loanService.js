@@ -6,6 +6,7 @@ const PossibleLoanCharges = require("../models/PossibleLoanCharges");
 const eligibilityService = require("./eligibilityService");
 const activeLoanProvider = require("./activeLoanProvider");
 const customerService = require("./customerService");
+const LoanCalculations = require("../utils/loanCalculations");
 const {
   validateRetirementAge,
   calculateMonthsUntilRetirement,
@@ -54,10 +55,7 @@ async function getProductDetails(productCode) {
 }
 
 function calculateForwardLoan(principal, annualInterestRate, tenure) {
-    const monthlyRate = annualInterestRate / 100 / 12;
-    const monthlyEMI = (principal * monthlyRate * Math.pow(1 + monthlyRate, tenure)) /
-                      (Math.pow(1 + monthlyRate, tenure) - 1);
-
+    const monthlyEMI = LoanCalculations.calculateEMI(principal, annualInterestRate, tenure);
     const totalAmount = monthlyEMI * tenure;
     const totalInterest = totalAmount - principal;
 
@@ -71,10 +69,7 @@ function calculateForwardLoan(principal, annualInterestRate, tenure) {
 }
 
 function calculateReverseLoan(monthlyEMI, annualInterestRate, tenure) {
-    const monthlyRate = annualInterestRate / 100 / 12;
-    const principal = (monthlyEMI * (Math.pow(1 + monthlyRate, tenure) - 1)) /
-                     (monthlyRate * Math.pow(1 + monthlyRate, tenure));
-
+    const principal = LoanCalculations.calculateMaxLoanFromEMI(monthlyEMI, annualInterestRate, tenure);
     const totalAmount = monthlyEMI * tenure;
     const totalInterest = totalAmount - principal;
 
@@ -637,9 +632,7 @@ const CreateTopUpLoanOffer = async (data) => {
         const annualInterestRate = interestRate;
         const numberOfInstallments = tenure;
 
-        const monthlyRate = annualInterestRate / 100 / 12;
-        const monthlyInstallment = (principal * monthlyRate * Math.pow(1 + monthlyRate, numberOfInstallments)) / 
-                                  (Math.pow(1 + monthlyRate, numberOfInstallments) - 1);
+        const monthlyInstallment = LoanCalculations.calculateEMI(principal, annualInterestRate, numberOfInstallments);
 
         const totalPayable = monthlyInstallment * numberOfInstallments;
         const totalInterest = totalPayable - principal;
@@ -819,8 +812,7 @@ const CreateTakeoverLoanOffer = async (data) => {
         const numberOfInstallments = tenure;
 
         const monthlyRate = annualInterestRate / 100 / 12;
-        const monthlyInstallment = (principal * monthlyRate * Math.pow(1 + monthlyRate, numberOfInstallments)) / 
-                                  (Math.pow(1 + monthlyRate, numberOfInstallments) - 1);
+        const monthlyInstallment = LoanCalculations.calculateEMI(principal, annualInterestRate, numberOfInstallments);
 
         const totalPayable = monthlyInstallment * numberOfInstallments;
         const totalInterest = totalPayable - principal;
@@ -1005,8 +997,7 @@ const CreateLoanOffer = async (data) => {
 
         // Calculate using same amortization formula as LoanCalculate/eligibility service
         const monthlyRate = interestRate / 100 / 12;
-        const monthlyPayment = (principal * monthlyRate * Math.pow(1 + monthlyRate, numberOfRepayments)) /
-                              (Math.pow(1 + monthlyRate, numberOfRepayments) - 1);
+        const monthlyPayment = LoanCalculations.calculateEMI(principal, interestRate, numberOfRepayments);
         const totalAmount = monthlyPayment * numberOfRepayments;
         const totalInterest = totalAmount - principal;
 

@@ -1,6 +1,7 @@
 const LOAN_CONSTANTS = require('../utils/loanConstants');
 const { ApplicationException } = require('../utils/loanUtils');
 const logger = require('../utils/logger');
+const LoanCalculations = require('../utils/loanCalculations');
 
 // Mock Eligibility Service
 class EligibilityService {
@@ -58,7 +59,7 @@ class EligibilityService {
         const targetEMI = loanOfferDTO.centralRegAffordability;
         logger.info(`Reverse calculation: Using ${targetEMI} as target EMI`);
         // Calculate minimum EMI required for MIN_LOAN_AMOUNT
-        const minEMI = this.calculateEMI(LOAN_CONSTANTS.MIN_LOAN_AMOUNT, interestRate, tenure);
+        const minEMI = LoanCalculations.calculateEMI(LOAN_CONSTANTS.MIN_LOAN_AMOUNT, interestRate, tenure);
         const effectiveEMI = Math.max(targetEMI, minEMI);
         logger.info(`Min required EMI: ${minEMI}, Using effective EMI: ${effectiveEMI}`);
         adjustedLoanAmount = this.calculateMaxLoanAmount(effectiveEMI, interestRate, tenure);
@@ -66,10 +67,10 @@ class EligibilityService {
         logger.info(`Calculated max loan amount: ${adjustedLoanAmount} for EMI: ${calculatedEMI}`);
       } else {
         // For forward calculation: check if requested amount fits within affordability
-        const maxAffordableEMI = loanOfferDTO.centralRegAffordability || this.calculateEMI(requestedAmount, interestRate, tenure);
+        const maxAffordableEMI = loanOfferDTO.centralRegAffordability || LoanCalculations.calculateEMI(requestedAmount, interestRate, tenure);
 
         // Calculate EMI for requested amount
-        calculatedEMI = this.calculateEMI(requestedAmount, interestRate, tenure);
+        calculatedEMI = LoanCalculations.calculateEMI(requestedAmount, interestRate, tenure);
 
         // If calculated EMI exceeds maximum affordable EMI, adjust the loan amount
         adjustedLoanAmount = requestedAmount;
@@ -118,38 +119,12 @@ class EligibilityService {
   }
 
   /**
-   * Calculate EMI using standard formula
-   */
-  calculateEMI(principal, annualInterestRate, tenureMonths) {
-    const monthlyRate = annualInterestRate / 100 / 12;
-    const emi = (principal * monthlyRate * Math.pow(1 + monthlyRate, tenureMonths)) /
-                (Math.pow(1 + monthlyRate, tenureMonths) - 1);
-    return Math.round(emi * 100) / 100; // Round to 2 decimal places
-  }
-
-  /**
    * Calculate maximum loan amount for a given EMI, interest rate, and tenure
+   * @deprecated Use LoanCalculations.calculateMaxLoanFromEMI instead
    */
   calculateMaxLoanAmount(targetEMI, annualInterestRate, tenureMonths) {
-    // Minimum loan amount validation
-    const MIN_LOAN_AMOUNT = 100000; // 100,000 minimum
-
-    const monthlyRate = annualInterestRate / 100 / 12;
-    const maxAmount = (targetEMI * (Math.pow(1 + monthlyRate, tenureMonths) - 1)) /
-                      (monthlyRate * Math.pow(1 + monthlyRate, tenureMonths));
-                      
-    // Ensure calculated amount meets minimum requirement
-    const calculatedAmount = Math.max(MIN_LOAN_AMOUNT, Math.round(maxAmount * 100) / 100);
-    
-    // If amount is less than minimum, throw an error
-    if (maxAmount < MIN_LOAN_AMOUNT) {
-      throw new ApplicationException(
-        'LOAN_AMOUNT_TOO_LOW',
-        `Calculated loan amount ${maxAmount} is below minimum ${MIN_LOAN_AMOUNT}`
-      );
-    }
-    
-    return calculatedAmount; // Return amount that meets minimum requirement
+    // Delegate to centralized utility
+    return LoanCalculations.calculateMaxLoanFromEMI(targetEMI, annualInterestRate, tenureMonths);
   }
 }
 

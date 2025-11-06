@@ -14,6 +14,7 @@ const { formatDateForMifos } = require('../utils/dateUtils');
 const { AuditLog } = require('../models/AuditLog');
 const { getMessageId } = require('../utils/messageIdGenerator');
 const LOAN_CONSTANTS = require('../utils/loanConstants');
+const LoanCalculations = require('../utils/loanCalculations');
 
 // Export all functions before they are used
 exports.processRequest = async (req, res) => {
@@ -100,11 +101,9 @@ const builder = new xml2js.Builder({
 });
 
 // Helper function to calculate monthly installment
+// DEPRECATED: Use LoanCalculations.calculateEMI instead
 function calculateMonthlyInstallment(principal, annualRate, termMonths) {
-    const monthlyRate = (annualRate / 100) / 12;
-    const installment = principal * monthlyRate * Math.pow(1 + monthlyRate, termMonths) / 
-                       (Math.pow(1 + monthlyRate, termMonths) - 1);
-    return Math.ceil(installment); // Round up to nearest whole number
+    return LoanCalculations.calculateEMI(principal, annualRate, termMonths);
 }
 
 // Helper function to generate loan number
@@ -249,9 +248,7 @@ const handleLoanChargesRequest = async (parsedData, res) => {
             
             if (targetEMI > 0 && requestedTenure > 0) {
                 // Calculate maximum loan amount from target EMI (reverse calculation)
-                const monthlyRate = interestRate / 100 / 12;
-                const maxAmount = (targetEMI * (Math.pow(1 + monthlyRate, requestedTenure) - 1)) /
-                                  (monthlyRate * Math.pow(1 + monthlyRate, requestedTenure));
+                const maxAmount = LoanCalculations.calculateMaxLoanFromEMI(targetEMI, interestRate, requestedTenure);
                 requestedAmount = Math.max(MIN_LOAN_AMOUNT, Math.round(maxAmount));
                 logger.info(`Calculated maximum eligible loan amount: ${requestedAmount} (EMI will be: ${targetEMI})`);
             } else {
@@ -268,9 +265,7 @@ const handleLoanChargesRequest = async (parsedData, res) => {
                 
                 if (calculatedEMI > deductibleAmount) {
                     // Adjust loan amount downward to fit within customer's maximum capacity
-                    const monthlyRate = interestRate / 100 / 12;
-                    const adjustedAmount = (deductibleAmount * (Math.pow(1 + monthlyRate, requestedTenure) - 1)) /
-                                          (monthlyRate * Math.pow(1 + monthlyRate, requestedTenure));
+                    const adjustedAmount = LoanCalculations.calculateMaxLoanFromEMI(deductibleAmount, interestRate, requestedTenure);
                     requestedAmount = Math.max(MIN_LOAN_AMOUNT, Math.round(adjustedAmount));
                     logger.info(`⚠️ Requested amount exceeds capacity. Adjusted to: ${requestedAmount} (EMI: ${deductibleAmount})`);
                 }
