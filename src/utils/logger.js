@@ -1,4 +1,3 @@
-const logger = require('./logger');
 const winston = require('winston');
 const DailyRotateFile = require('winston-daily-rotate-file');
 
