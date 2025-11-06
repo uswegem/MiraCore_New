@@ -106,15 +106,16 @@ function generateLoanChargesErrorResponse({ msgId, checkNumber, errorMessage }) 
     <Data>
         <Header>
             <Sender>FSP_SYSTEM</Sender>
-            <Receiver>LOAN_CONSTANTS.EXTERNAL_SYSTEM</Receiver>
-            <FSPCode>LOAN_CONSTANTS.FSP_CODE</FSPCode>
+            <Receiver>${process.env.EXTERNAL_SYSTEM || 'ESS_UTUMISHI'}</Receiver>
+            <FSPCode>${process.env.FSP_CODE || 'FL8090'}</FSPCode>
             <MsgId>${msgId}</MsgId>
             <MessageType>LOAN_CHARGES_RESPONSE</MessageType>
         </Header>
         <MessageDetails>
             <CheckNumber>${checkNumber}</CheckNumber>
-            <ResponseCode>422</ResponseCode>
-            <Description>${errorMessage}</Description>
+            <ResponseCode>9005</ResponseCode>
+            <Description>Exception occurred while requesting loan charges to FSP. Please try again later</Description>
+            <ErrorDetail>${errorMessage}</ErrorDetail>
         </MessageDetails>
     </Data>
 </Document>`;
@@ -123,6 +124,10 @@ function generateLoanChargesErrorResponse({ msgId, checkNumber, errorMessage }) 
 const LoanCalculate = async (data) => {
     try {
         console.log('🔄 Processing ESS LOAN_CHARGES_REQUEST with enhanced affordability logic');
+
+        if (!data || typeof data !== 'object') {
+            throw new Error('Invalid loan charges request data');
+        }
 
         const {
             checkNumber,
@@ -143,6 +148,11 @@ const LoanCalculate = async (data) => {
             totalEmployeeDeduction,
             jobClassCode
         } = data;
+
+        // Validate required fields
+        if (!checkNumber) {
+            throw new Error('Check number is required');
+        }
 
         // Create UtumishiOfferRequest object for persistence
         const utumishiRequest = {

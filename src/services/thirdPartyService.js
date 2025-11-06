@@ -47,6 +47,12 @@ async function forwardToThirdParty(signedXml, messageType) {
     console.log(`ESS Response Status: ${response.status}`);
     console.log('ESS Response Headers:', JSON.stringify(response.headers));
     
+    // Handle specific error codes in response data
+    if (response.status !== 200 || (response.data && response.data.ResponseCode === '9005')) {
+      console.error('ESS returned error response:', response.data);
+      throw new Error('ESS returned error: ' + (response.data.Description || 'Unknown error'));
+    }
+    
     if (response.data) {
       console.log('ESS Response Body Length:', response.data.length, 'characters');
       console.log('ESS Response Body (first 500 chars):', response.data.substring(0, 500));
