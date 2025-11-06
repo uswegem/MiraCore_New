@@ -1,5 +1,6 @@
 const LOAN_CONSTANTS = require('../utils/loanConstants');
 const { ApplicationException } = require('../utils/loanUtils');
+const logger = require('../utils/logger');
 
 // Mock Eligibility Service
 class EligibilityService {
@@ -8,7 +9,7 @@ class EligibilityService {
    */
   async isActiveCBSCustomer(country, customerNumber) {
     // Mock implementation - in real scenario, this would call CBS API
-    console.log(`Checking if customer ${customerNumber} is active in CBS for ${country}`);
+    logger.info(`Checking if customer ${customerNumber} is active in CBS for ${country}`);
 
     // For demo purposes, assume customer is active
     // In real implementation, this would validate against CBS
@@ -19,7 +20,7 @@ class EligibilityService {
    * Get loan offer from eligibility engine
    */
   async getOffer(loanOfferDTO, isPossibleCharges = false) {
-    console.log('Getting loan offer from eligibility service:', loanOfferDTO);
+    logger.info('Getting loan offer from eligibility service:', loanOfferDTO);
 
     try {
       const requestedAmount = loanOfferDTO.loanAmount || LOAN_CONSTANTS.DEFAULT_LOAN_AMOUNT;
@@ -41,7 +42,7 @@ class EligibilityService {
         );
       }
 
-      console.log('Using product parameters:', {
+      logger.info('Using product parameters:', {
         interestRate,
         maxPrincipal,
         minPrincipal,
@@ -55,14 +56,14 @@ class EligibilityService {
       if (affordabilityType === 'REVERSE') {
         // For reverse calculation: use centralRegAffordability as target EMI
         const targetEMI = loanOfferDTO.centralRegAffordability;
-        console.log(`Reverse calculation: Using ${targetEMI} as target EMI`);
+        logger.info(`Reverse calculation: Using ${targetEMI} as target EMI`);
         // Calculate minimum EMI required for MIN_LOAN_AMOUNT
         const minEMI = this.calculateEMI(LOAN_CONSTANTS.MIN_LOAN_AMOUNT, interestRate, tenure);
         const effectiveEMI = Math.max(targetEMI, minEMI);
-        console.log(`Min required EMI: ${minEMI}, Using effective EMI: ${effectiveEMI}`);
+        logger.info(`Min required EMI: ${minEMI}, Using effective EMI: ${effectiveEMI}`);
         adjustedLoanAmount = this.calculateMaxLoanAmount(effectiveEMI, interestRate, tenure);
         calculatedEMI = effectiveEMI;
-        console.log(`Calculated max loan amount: ${adjustedLoanAmount} for EMI: ${calculatedEMI}`);
+        logger.info(`Calculated max loan amount: ${adjustedLoanAmount} for EMI: ${calculatedEMI}`);
       } else {
         // For forward calculation: check if requested amount fits within affordability
         const maxAffordableEMI = loanOfferDTO.centralRegAffordability || this.calculateEMI(requestedAmount, interestRate, tenure);
@@ -73,13 +74,13 @@ class EligibilityService {
         // If calculated EMI exceeds maximum affordable EMI, adjust the loan amount
         adjustedLoanAmount = requestedAmount;
         if (calculatedEMI > maxAffordableEMI) {
-          console.log(`Calculated EMI ${calculatedEMI} exceeds max affordable EMI ${maxAffordableEMI}, adjusting loan amount`);
+          logger.info(`Calculated EMI ${calculatedEMI} exceeds max affordable EMI ${maxAffordableEMI}, adjusting loan amount`);
           // Calculate maximum loan amount that fits within maxAffordableEMI
           adjustedLoanAmount = this.calculateMaxLoanAmount(maxAffordableEMI, interestRate, tenure);
           calculatedEMI = maxAffordableEMI;
-          console.log(`Adjusted loan amount from ${requestedAmount} to ${adjustedLoanAmount} to fit EMI constraint`);
+          logger.info(`Adjusted loan amount from ${requestedAmount} to ${adjustedLoanAmount} to fit EMI constraint`);
         } else {
-          console.log(`Requested amount ${requestedAmount} fits within affordability (EMI: ${calculatedEMI})`);
+          logger.info(`Requested amount ${requestedAmount} fits within affordability (EMI: ${calculatedEMI})`);
         }
       }
 
@@ -111,7 +112,7 @@ class EligibilityService {
 
       return mockOffer;
     } catch (error) {
-      console.error('Error getting offer from eligibility service:', error);
+      logger.error('Error getting offer from eligibility service:', error);
       throw new ApplicationException(LOAN_CONSTANTS.ERROR_CODES.INTERNAL_ERROR, 'Eligibility service error');
     }
   }

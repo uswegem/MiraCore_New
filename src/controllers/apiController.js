@@ -3,6 +3,7 @@ const api = require("../services/cbs.api").maker;
 const { validateXML, validateMessageType } = require('../validations/xmlValidator');
 const { forwardToThirdParty } = require('../services/thirdPartyService');
 const digitalSignature = require('../utils/signatureUtils');
+const logger = require('../utils/logger');
 const { sendCallback } = require('../utils/callbackUtils');
 const { sendErrorResponse } = require('../utils/responseUtils');
 const { LoanCalculate, CreateTopUpLoanOffer, CreateTakeoverLoanOffer, CreateLoanOffer } = require('../services/loanService');
@@ -17,17 +18,19 @@ const LOAN_CONSTANTS = require('../utils/loanConstants');
 // Export all functions before they are used
 exports.processRequest = async (req, res) => {
     const contentType = req.get('Content-Type');
-    console.log('Processing request in AUTO-SIGNATURE mode');
-    console.log('Content-Type:', contentType);
-    console.log('Raw body type:', typeof req.body);
-    console.log('Raw body:', req.body);
+    logger.info('Processing request in AUTO-SIGNATURE mode', { contentType });
+    logger.debug('Request details', { 
+        contentType, 
+        bodyType: typeof req.body, 
+        body: req.body 
+    });
 
     try {
         let xmlData;
         let parsedData;
 
         if (contentType && contentType.includes('application/json')) {
-            console.log('🔄 Converting JSON to XML...');
+            logger.info('🔄 Converting JSON to XML...');
             if (!req.body || typeof req.body !== 'object') {
                 return sendErrorResponse(res, '8001', 'Invalid JSON data', 'json', null);
             }
@@ -38,7 +41,7 @@ exports.processRequest = async (req, res) => {
                 return sendErrorResponse(res, '8001', 'Failed to convert JSON to XML: ' + parseError.message, 'json', null);
             }
         } else if (contentType && (contentType.includes('application/xml') || contentType.includes('text/xml'))) {
-            console.log('Processing XML directly...');
+            logger.info('Processing XML directly...');
             xmlData = req.body;
             if (!xmlData) {
                 return sendErrorResponse(res, '8001', 'XML data is required', 'xml', parsedData);
@@ -46,7 +49,7 @@ exports.processRequest = async (req, res) => {
             try {
                 parsedData = await parser.parseStringPromise(xmlData);
                 const debugSender = parsedData?.Document?.Data?.Header?.Sender;
-                console.log('DEBUG: Parsed <Sender> from request:', debugSender);
+                logger.info('DEBUG: Parsed <Sender> from request:', debugSender);
                 const TypeMessage = parsedData?.Document?.Data.Header?.MessageType;
                 
                 switch (TypeMessage) {
@@ -78,7 +81,7 @@ exports.processRequest = async (req, res) => {
             return sendErrorResponse(res, '8001', 'Unsupported Content-Type. Use application/json or application/xml', 'json', null);
         }
     } catch (error) {
-        console.error('Controller error:', error);
+        logger.error('Controller error:', error);
         const contentType = req.get('Content-Type');
         return sendErrorResponse(res, '8011', 'Error processing request: ' + error.message, contentType.includes('json') ? 'json' : 'xml', null);
     }
@@ -114,17 +117,17 @@ function generateLoanNumber() {
 // Main request processor
 const processRequest = async (req, res) => {
     const contentType = req.get('Content-Type');
-    console.log('Processing request in AUTO-SIGNATURE mode');
-    console.log('Content-Type:', contentType);
-    console.log('Raw body type:', typeof req.body);
-    console.log('Raw body:', req.body);
+    logger.info('Processing request in AUTO-SIGNATURE mode');
+    logger.info('Content-Type:', contentType);
+    logger.info('Raw body type:', typeof req.body);
+    logger.info('Raw body:', req.body);
 
     try {
         let xmlData;
         let parsedData;
 
         if (contentType && contentType.includes('application/json')) {
-            console.log('🔄 Converting JSON to XML...');
+            logger.info('🔄 Converting JSON to XML...');
             if (!req.body || typeof req.body !== 'object') {
                 return sendErrorResponse(res, '8001', 'Invalid JSON data', 'json', null);
             }
@@ -135,7 +138,7 @@ const processRequest = async (req, res) => {
                 return sendErrorResponse(res, '8001', 'Failed to convert JSON to XML: ' + parseError.message, 'json', null);
             }
         } else if (contentType && (contentType.includes('application/xml') || contentType.includes('text/xml'))) {
-            console.log('Processing XML directly...');
+            logger.info('Processing XML directly...');
             xmlData = req.body;
             if (!xmlData) {
                 return sendErrorResponse(res, '8001', 'XML data is required', 'xml', parsedData);
@@ -143,7 +146,7 @@ const processRequest = async (req, res) => {
             try {
                 parsedData = await parser.parseStringPromise(xmlData);
                 const debugSender = parsedData?.Document?.Data?.Header?.Sender;
-                console.log('DEBUG: Parsed <Sender> from request:', debugSender);
+                logger.info('DEBUG: Parsed <Sender> from request:', debugSender);
                 const TypeMessage = parsedData?.Document?.Data.Header?.MessageType;
                 
                 switch (TypeMessage) {
@@ -175,7 +178,7 @@ const processRequest = async (req, res) => {
             return sendErrorResponse(res, '8001', 'Unsupported Content-Type. Use application/json or application/xml', 'json', null);
         }
     } catch (error) {
-        console.error('Controller error:', error);
+        logger.error('Controller error:', error);
         const contentType = req.get('Content-Type');
         return sendErrorResponse(res, '8011', 'Error processing request: ' + error.message, contentType.includes('json') ? 'json' : 'xml', null);
     }
@@ -183,7 +186,7 @@ const processRequest = async (req, res) => {
 
 const handleMifosWebhook = async (req, res) => {
     // Implement webhook handling
-    console.log('Processing Mifos webhook...');
+    logger.info('Processing Mifos webhook...');
     const responseData = {
         Data: {
             Header: {
@@ -204,7 +207,7 @@ const handleMifosWebhook = async (req, res) => {
 
 const handleLoanChargesRequest = async (parsedData, res) => {
     try {
-        console.log('Processing LOAN_CHARGES_REQUEST...');
+        logger.info('Processing LOAN_CHARGES_REQUEST...');
         const header = parsedData.Document.Data.Header;
         const messageDetails = parsedData.Document.Data.MessageDetails;
 
@@ -214,7 +217,7 @@ const handleLoanChargesRequest = async (parsedData, res) => {
         let requestedTenure = parseInt(messageDetails.RequestedTenure || messageDetails.Tenure);
         if (!requestedTenure || requestedTenure === 0) {
             requestedTenure = LOAN_CONSTANTS.MAX_TENURE;
-            console.log(`Tenure not provided or is 0, defaulting to maximum tenure: ${requestedTenure} months`);
+            logger.info(`Tenure not provided or is 0, defaulting to maximum tenure: ${requestedTenure} months`);
         }
         const interestRate = 15.0; // 15% per annum
         
@@ -229,20 +232,20 @@ const handleLoanChargesRequest = async (parsedData, res) => {
         let targetEMI = 0;
         if (desiredDeductibleAmount > 0) {
             targetEMI = desiredDeductibleAmount;
-            console.log(`Using DesiredDeductibleAmount as target EMI: ${targetEMI}`);
+            logger.info(`Using DesiredDeductibleAmount as target EMI: ${targetEMI}`);
         } else if (deductibleAmount > 0) {
             targetEMI = deductibleAmount;
-            console.log(`Using DeductibleAmount as maximum capacity EMI: ${targetEMI}`);
+            logger.info(`Using DeductibleAmount as maximum capacity EMI: ${targetEMI}`);
         } else if (oneThirdAmount > 0) {
             targetEMI = oneThirdAmount;
-            console.log(`Using OneThirdAmount as fallback EMI: ${targetEMI}`);
+            logger.info(`Using OneThirdAmount as fallback EMI: ${targetEMI}`);
         }
         
-        console.log(`Customer repayment capacity - DesiredDeductibleAmount: ${desiredDeductibleAmount}, DeductibleAmount: ${deductibleAmount}, OneThirdAmount: ${oneThirdAmount}, Target EMI: ${targetEMI}`);
+        logger.info(`Customer repayment capacity - DesiredDeductibleAmount: ${desiredDeductibleAmount}, DeductibleAmount: ${deductibleAmount}, OneThirdAmount: ${oneThirdAmount}, Target EMI: ${targetEMI}`);
         
         // If requested amount is 0, calculate maximum loan amount based on target EMI
         if (!requestedAmount || requestedAmount === 0) {
-            console.log(`RequestedAmount is 0, calculating maximum loan from target EMI: ${targetEMI}`);
+            logger.info(`RequestedAmount is 0, calculating maximum loan from target EMI: ${targetEMI}`);
             
             if (targetEMI > 0 && requestedTenure > 0) {
                 // Calculate maximum loan amount from target EMI (reverse calculation)
@@ -250,18 +253,18 @@ const handleLoanChargesRequest = async (parsedData, res) => {
                 const maxAmount = (targetEMI * (Math.pow(1 + monthlyRate, requestedTenure) - 1)) /
                                   (monthlyRate * Math.pow(1 + monthlyRate, requestedTenure));
                 requestedAmount = Math.max(MIN_LOAN_AMOUNT, Math.round(maxAmount));
-                console.log(`Calculated maximum eligible loan amount: ${requestedAmount} (EMI will be: ${targetEMI})`);
+                logger.info(`Calculated maximum eligible loan amount: ${requestedAmount} (EMI will be: ${targetEMI})`);
             } else {
                 // Default to minimum loan amount if no affordability data
                 requestedAmount = MIN_LOAN_AMOUNT;
-                console.log(`No affordability data, using minimum loan amount: ${requestedAmount}`);
+                logger.info(`No affordability data, using minimum loan amount: ${requestedAmount}`);
             }
         } else {
             // If requested amount is provided, validate it doesn't exceed customer's repayment capacity
             // Use DeductibleAmount (max capacity) for validation
             if (deductibleAmount > 0) {
                 const calculatedEMI = calculateMonthlyInstallment(requestedAmount, interestRate, requestedTenure);
-                console.log(`Requested amount: ${requestedAmount}, Calculated EMI: ${calculatedEMI}, Max capacity: ${deductibleAmount}`);
+                logger.info(`Requested amount: ${requestedAmount}, Calculated EMI: ${calculatedEMI}, Max capacity: ${deductibleAmount}`);
                 
                 if (calculatedEMI > deductibleAmount) {
                     // Adjust loan amount downward to fit within customer's maximum capacity
@@ -269,7 +272,7 @@ const handleLoanChargesRequest = async (parsedData, res) => {
                     const adjustedAmount = (deductibleAmount * (Math.pow(1 + monthlyRate, requestedTenure) - 1)) /
                                           (monthlyRate * Math.pow(1 + monthlyRate, requestedTenure));
                     requestedAmount = Math.max(MIN_LOAN_AMOUNT, Math.round(adjustedAmount));
-                    console.log(`⚠️ Requested amount exceeds capacity. Adjusted to: ${requestedAmount} (EMI: ${deductibleAmount})`);
+                    logger.info(`⚠️ Requested amount exceeds capacity. Adjusted to: ${requestedAmount} (EMI: ${deductibleAmount})`);
                 }
             }
         }
@@ -322,21 +325,21 @@ const handleLoanChargesRequest = async (parsedData, res) => {
         const signedResponse = digitalSignature.createSignedXML(responseData.Data);
         res.status(200).send(signedResponse);
     } catch (error) {
-        console.error('Error processing loan charges request:', error);
+        logger.error('Error processing loan charges request:', error);
         return sendErrorResponse(res, '8012', error.message, 'xml', parsedData);
     }
 };
 
 const handleLoanOfferRequest = async (parsedData, res) => {
     try {
-        console.log('Processing LOAN_OFFER_REQUEST...');
+        logger.info('Processing LOAN_OFFER_REQUEST...');
         const header = parsedData.Document.Data.Header;
         const messageDetails = parsedData.Document.Data.MessageDetails;
 
         // Store client data for later use during final approval
             // Extract all client data fields with logging
-            console.log('Extracting client data from request...');
-            console.log('NIN from request:', messageDetails.NIN);
+            logger.info('Extracting client data from request...');
+            logger.info('NIN from request:', messageDetails.NIN);
             
             const clientData = {
                 checkNumber: messageDetails.CheckNumber,
@@ -357,7 +360,7 @@ const handleLoanOfferRequest = async (parsedData, res) => {
                 swiftCode: messageDetails.SwiftCode
             };
             
-            console.log('Extracted client data:', JSON.stringify(clientData, null, 2));        // Store loan and employment data
+            logger.info('Extracted client data:', JSON.stringify(clientData, null, 2));        // Store loan and employment data
         const loanData = {
             requestedAmount: messageDetails.RequestedAmount,
             desiredDeductibleAmount: messageDetails.DesiredDeductibleAmount,
@@ -391,7 +394,7 @@ const handleLoanOfferRequest = async (parsedData, res) => {
         let offerTenure = parseInt(messageDetails.Tenure);
         if (!offerTenure || offerTenure === 0) {
             offerTenure = LOAN_CONSTANTS.MAX_TENURE;
-            console.log(`Tenure not provided or is 0, defaulting to maximum tenure: ${offerTenure} months`);
+            logger.info(`Tenure not provided or is 0, defaulting to maximum tenure: ${offerTenure} months`);
         }
         
         const loanOffer = {
@@ -406,7 +409,7 @@ const handleLoanOfferRequest = async (parsedData, res) => {
         };
 
         // Store in loan mapping with all client, loan, and employment data
-        console.log('💾 Storing client data for application:', messageDetails.ApplicationNumber);
+        logger.info('💾 Storing client data for application:', messageDetails.ApplicationNumber);
         try {
             await LoanMappingService.createOrUpdateWithClientData(
                 messageDetails.ApplicationNumber,
@@ -415,9 +418,9 @@ const handleLoanOfferRequest = async (parsedData, res) => {
                 loanData,
                 employmentData
             );
-            console.log('✅ Client data stored successfully');
+            logger.info('✅ Client data stored successfully');
         } catch (storageError) {
-            console.error('❌ Error storing client data:', storageError);
+            logger.error('❌ Error storing client data:', storageError);
             // Continue with response even if storage fails
         }
 
@@ -450,14 +453,14 @@ const handleLoanOfferRequest = async (parsedData, res) => {
         res.status(200).send(signedResponse);
 
     } catch (error) {
-        console.error('Error processing loan offer request:', error);
+        logger.error('Error processing loan offer request:', error);
         return sendErrorResponse(res, '8012', error.message, 'xml', parsedData);
     }
 };
 
 const handleTopUpPayOffBalanceRequest = async (parsedData, res) => {
     // Implement top up pay off balance request
-    console.log('Processing top up pay off balance request...');
+    logger.info('Processing top up pay off balance request...');
     const header = parsedData.Document.Data.Header;
     const responseData = {
         Data: {
@@ -480,7 +483,7 @@ const handleTopUpPayOffBalanceRequest = async (parsedData, res) => {
 
 const handleTopUpOfferRequest = async (parsedData, res) => {
     // Implement top up offer request
-    console.log('Processing top up offer request...');
+    logger.info('Processing top up offer request...');
     const header = parsedData.Document.Data.Header;
     const responseData = {
         Data: {
@@ -503,7 +506,7 @@ const handleTopUpOfferRequest = async (parsedData, res) => {
 
 const handleTakeoverPayOffBalanceRequest = async (parsedData, res) => {
     // Implement takeover pay off balance request
-    console.log('Processing takeover pay off balance request...');
+    logger.info('Processing takeover pay off balance request...');
     const header = parsedData.Document.Data.Header;
     const responseData = {
         Data: {
@@ -526,7 +529,7 @@ const handleTakeoverPayOffBalanceRequest = async (parsedData, res) => {
 
 const handleLoanTakeoverOfferRequest = async (parsedData, res) => {
     // Implement loan takeover offer request
-    console.log('Processing loan takeover offer request...');
+    logger.info('Processing loan takeover offer request...');
     const header = parsedData.Document.Data.Header;
     const responseData = {
         Data: {
@@ -549,7 +552,7 @@ const handleLoanTakeoverOfferRequest = async (parsedData, res) => {
 
 const handleTakeoverPaymentNotification = async (parsedData, res) => {
     // Implement takeover payment notification
-    console.log('Processing takeover payment notification...');
+    logger.info('Processing takeover payment notification...');
     const header = parsedData.Document.Data.Header;
     const responseData = {
         Data: {
@@ -572,7 +575,7 @@ const handleTakeoverPaymentNotification = async (parsedData, res) => {
 
 const handleLoanCancellation = async (parsedData, res) => {
     // Implement loan cancellation
-    console.log('Processing loan cancellation...');
+    logger.info('Processing loan cancellation...');
     const header = parsedData.Document.Data.Header;
     const responseData = {
         Data: {
@@ -596,7 +599,7 @@ const handleLoanCancellation = async (parsedData, res) => {
 const handleLoanFinalApproval = async (parsedData, res) => {
     let responseSent = false;
     try {
-        console.log('Processing LOAN_FINAL_APPROVAL_NOTIFICATION...');
+        logger.info('Processing LOAN_FINAL_APPROVAL_NOTIFICATION...');
 
         // Extract message details
         const messageDetails = parsedData.Document.Data.MessageDetails;
@@ -636,7 +639,7 @@ const handleLoanFinalApproval = async (parsedData, res) => {
             responseSent = true;
 
             // Log the client creation attempt
-            console.log('Creating client in CBS with data:', {
+            logger.info('Creating client in CBS with data:', {
                 firstname: messageDetails.FirstName,
                 middlename: messageDetails.MiddleName,
                 lastname: messageDetails.LastName,
@@ -683,11 +686,11 @@ const handleLoanFinalApproval = async (parsedData, res) => {
                                 applicationNumber: messageDetails.ApplicationNumber,
                                 checkNumber: messageDetails.CheckNumber
                             };
-                            console.log('Retrieved client data from loan mapping:', JSON.stringify(clientData, null, 2));
+                            logger.info('Retrieved client data from loan mapping:', JSON.stringify(clientData, null, 2));
                             
                             try {
                                 const potentialNIN = clientData?.NIN || clientData?.nin || clientData?.nationalId;
-                                console.log('Potential NIN values:', {
+                                logger.info('Potential NIN values:', {
                                     fromNIN: clientData?.NIN,
                                     fromNin: clientData?.nin,
                                     fromNationalId: clientData?.nationalId,
@@ -696,19 +699,19 @@ const handleLoanFinalApproval = async (parsedData, res) => {
 
                                 // Ensure we have NIN
                                 if (!potentialNIN) {
-                                    console.warn('⚠️ No NIN found in client data');
+                                    logger.warn('⚠️ No NIN found in client data');
                                     throw new Error('National ID Number (NIN) is required for client creation');
                                 }
 
                                 // First check if client exists by NIN
-                                console.log('🔍 Checking if client exists with NIN:', potentialNIN);
+                                logger.info('🔍 Checking if client exists with NIN:', potentialNIN);
                                 const existingClientByNin = await ClientService.searchClientByExternalId(potentialNIN);
-                                console.log('Search result:', JSON.stringify(existingClientByNin, null, 2));
+                                logger.info('Search result:', JSON.stringify(existingClientByNin, null, 2));
                                 
                                 let clientId;
                                 if (!existingClientByNin?.status || !existingClientByNin?.response?.pageItems?.length) {
                                     // Create new client in CBS
-                                    console.log(`Creating new client: ${clientData.fullName || clientData.firstName + ' ' + clientData.lastName}`);
+                                    logger.info(`Creating new client: ${clientData.fullName || clientData.firstName + ' ' + clientData.lastName}`);
                                     
                                     // Prepare client creation payload
                                     const fullName = clientData.fullName || `${clientData.firstName || ''} ${clientData.middleName || ''} ${clientData.lastName || ''}`.trim();
@@ -739,16 +742,16 @@ const handleLoanFinalApproval = async (parsedData, res) => {
                                         legalFormId: 1
                                     };
                                     
-                                    console.log('📄 Creating client with payload:', JSON.stringify(clientPayload, null, 2));
+                                    logger.info('📄 Creating client with payload:', JSON.stringify(clientPayload, null, 2));
                                     const newClient = await ClientService.createClient(clientPayload);
 
                                     if (newClient.status && newClient.response) {
                                         clientId = newClient.response.clientId;
-                                        console.log(`✅ Client created in CBS with ID: ${clientId}`);
+                                        logger.info(`✅ Client created in CBS with ID: ${clientId}`);
                                     }
                                 } else {
                                     clientId = existingClientByNin.response.pageItems[0].id;
-                                    console.log(`✅ Existing client found with ID: ${clientId}`);
+                                    logger.info(`✅ Existing client found with ID: ${clientId}`);
                                 }
 
                                 if (clientId) {
@@ -774,15 +777,15 @@ const handleLoanFinalApproval = async (parsedData, res) => {
                                         locale: "en"
                                     };
                                     
-                                    console.log('Creating loan with payload:', JSON.stringify(loanPayload, null, 2));
+                                    logger.info('Creating loan with payload:', JSON.stringify(loanPayload, null, 2));
 
                                     // Create loan
-                                    console.log('Creating loan with payload:', JSON.stringify(loanPayload, null, 2));
+                                    logger.info('Creating loan with payload:', JSON.stringify(loanPayload, null, 2));
                                     const loanResponse = await api.post('/v1/loans', loanPayload);
 
                                     if (loanResponse.status && loanResponse.response?.loanId) {
                                         const loanId = loanResponse.response.loanId;
-                                        console.log(`Loan created successfully with ID: ${loanId}`);
+                                        logger.info(`Loan created successfully with ID: ${loanId}`);
 
                                         // Approve loan
                                         const approvePayload = {
@@ -792,7 +795,7 @@ const handleLoanFinalApproval = async (parsedData, res) => {
                                         };
 
                                         await api.post(`/v1/loans/${loanId}?command=approve`, approvePayload);
-                                        console.log(`Loan ${loanId} approved successfully`);
+                                        logger.info(`Loan ${loanId} approved successfully`);
 
                                         // Disburse loan
                                         const disbursePayload = {
@@ -802,7 +805,7 @@ const handleLoanFinalApproval = async (parsedData, res) => {
                                         };
 
                                         await api.post(`/v1/loans/${loanId}?command=disburse`, disbursePayload);
-                                        console.log(`Loan ${loanId} disbursed successfully`);
+                                        logger.info(`Loan ${loanId} disbursed successfully`);
 
                                         // Update loan mapping with loan details
                                         loanMappingData.mifosClientId = clientId;
@@ -818,14 +821,14 @@ const handleLoanFinalApproval = async (parsedData, res) => {
                                     }
                                 }
                             } catch (error) {
-                                console.error('Error in loan creation process:', error);
+                                logger.error('Error in loan creation process:', error);
                                 // Continue with loan mapping update even if process fails
                             }
                         }                // Get existing loan mapping data
                 const existingLoanData = await LoanMappingService.getByEssApplicationNumber(messageDetails.ApplicationNumber);
                 
                 if (!existingLoanData) {
-                    console.warn('⚠️ No existing loan mapping found for application:', messageDetails.ApplicationNumber);
+                    logger.warn('⚠️ No existing loan mapping found for application:', messageDetails.ApplicationNumber);
                 } else {
                     // Keep the requested amount from existing data
                     loanMappingData.requestedAmount = existingLoanData.requestedAmount;
@@ -851,7 +854,7 @@ const handleLoanFinalApproval = async (parsedData, res) => {
                 
                 // Update loan mapping in database
                 const savedMapping = await LoanMappingService.updateLoanMapping(loanMappingData);
-                console.log('✅ Updated loan mapping:', {
+                logger.info('✅ Updated loan mapping:', {
                     applicationNumber: savedMapping.essApplicationNumber,
                     loanNumber: savedMapping.essLoanNumberAlias,
                     requestedAmount: savedMapping.requestedAmount,
@@ -863,7 +866,7 @@ const handleLoanFinalApproval = async (parsedData, res) => {
                     try {
                         // Update loan status to DISBURSED
                         const disbursementAmount = messageDetails.DisbursementAmount || messageDetails.LoanAmount || savedMapping.requestedAmount;
-                        console.log('💰 Disbursement amount:', disbursementAmount);
+                        logger.info('💰 Disbursement amount:', disbursementAmount);
                         
                         const updatedMapping = await LoanMappingService.updateLoanMapping({
                             essApplicationNumber: savedMapping.essApplicationNumber,
@@ -882,7 +885,7 @@ const handleLoanFinalApproval = async (parsedData, res) => {
                         });
 
                         // Log updated mapping details
-                        console.log('✅ Loan mapping updated with disbursement details:', {
+                        logger.info('✅ Loan mapping updated with disbursement details:', {
                             applicationNumber: updatedMapping.essApplicationNumber,
                             loanNumber: updatedMapping.essLoanNumberAlias,
                             status: updatedMapping.status,
@@ -913,7 +916,7 @@ const handleLoanFinalApproval = async (parsedData, res) => {
                         };
 
                         // Log disbursement notification details
-                        console.log('📤 Sending disbursement notification:', {
+                        logger.info('📤 Sending disbursement notification:', {
                             applicationNumber: messageDetails.ApplicationNumber,
                             loanNumber: messageDetails.LoanNumber,
                             amount: updatedMapping.requestedAmount
@@ -922,12 +925,12 @@ const handleLoanFinalApproval = async (parsedData, res) => {
                         // Send callback notification
                         await sendCallback(callbackData);
                     } catch (error) {
-                        console.error('Error in disbursement processing:', error);
+                        logger.error('Error in disbursement processing:', error);
                         throw error;
                     }
                 }
             } catch (error) {
-                console.error('Error in async processing:', error);
+                logger.error('Error in async processing:', error);
                 await AuditLog.create({
                     eventType: 'LOAN_FINAL_APPROVAL_ERROR',
                     data: {
@@ -950,7 +953,7 @@ const handleLoanFinalApproval = async (parsedData, res) => {
         });
 
     } catch (error) {
-        console.error('Error processing loan final approval:', error);
+        logger.error('Error processing loan final approval:', error);
         if (!responseSent) {
             return sendErrorResponse(res, '8012', error.message, 'xml', parsedData);
             responseSent = true;

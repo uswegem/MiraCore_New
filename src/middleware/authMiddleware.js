@@ -1,3 +1,4 @@
+const logger = require('../utils/logger');
 const JWTUtils = require('../utils/jwtUtils');
 const User = require('../models/User');
 const AuditLog = require('../models/AuditLog');
@@ -88,7 +89,7 @@ const auditMiddleware = async (req, res, next) => {
         }
       });
       
-      auditLog.save().catch(console.error);
+      auditLog.save().catch(err => logger.error('Error saving audit log', { error: err.message }));
     }
     
     return result;

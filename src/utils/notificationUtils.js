@@ -1,3 +1,5 @@
+const logger = require('./logger');
+
 async function sendFailureNotification(parsedData, error) {
     const failureNotification = {
         Data: {
@@ -17,5 +19,5 @@ async function sendFailureNotification(parsedData, error) {
 
     const signedFailureXml = digitalSignature.createSignedXML(failureNotification.Data);
     await forwardToThirdParty(signedFailureXml, "LOAN_DISBURSEMENT_FAILURE_NOTIFICATION");
-    console.log('✅ LOAN_DISBURSEMENT_FAILURE_NOTIFICATION sent successfully');
+    logger.info('✅ LOAN_DISBURSEMENT_FAILURE_NOTIFICATION sent successfully');
 }

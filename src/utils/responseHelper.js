@@ -1,3 +1,5 @@
+const logger = require('./logger');
+
 
 const RESPONSE_MESSAGES = {
     8000: "Successful/Received",

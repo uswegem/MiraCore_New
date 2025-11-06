@@ -1,3 +1,5 @@
+const logger = require('./logger');
+
 const { format } = require('date-fns');
 const LOAN_CONSTANTS = require('./loanConstants');
 
@@ -14,7 +16,7 @@ function formattedToUtumishiDate(dateString, isEndOfDay = false) {
     }
     return format(date, "yyyy-MM-dd'T'HH:mm:ss");
   } catch (error) {
-    console.error("Invalid utumishi date-format, given date:", dateString, "error:", error);
+    logger.error("Invalid utumishi date-format, given date:", dateString, "error:", error);
     return "";
   }
 }

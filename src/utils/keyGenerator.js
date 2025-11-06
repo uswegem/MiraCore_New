@@ -1,3 +1,5 @@
+const logger = require('./logger');
+
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
@@ -58,16 +60,16 @@ function generateKeys() {
     const certPem = pki.certificateToPem(cert);
     fs.writeFileSync(path.join(keysDir, 'certificate.crt'), certPem);
 
-    console.log('✅ Keys and certificate generated successfully:');
-    console.log('   - private.pem');
-    console.log('   - public.pem'); 
-    console.log('   - certificate.crt');
-    console.log('\n Update your .env file with the key paths:');
-    console.log('   PRIVATE_KEY_PATH=./keys/private.pem');
-    console.log('   CERTIFICATE_PATH=./keys/certificate.crt');
+    logger.info('✅ Keys and certificate generated successfully:');
+    logger.info('   - private.pem');
+    logger.info('   - public.pem'); 
+    logger.info('   - certificate.crt');
+    logger.info('\n Update your .env file with the key paths:');
+    logger.info('   PRIVATE_KEY_PATH=./keys/private.pem');
+    logger.info('   CERTIFICATE_PATH=./keys/certificate.crt');
 
   } catch (error) {
-    console.error('Error generating keys:', error);
+    logger.error('Error generating keys:', error);
   }
 }
 

@@ -1,3 +1,5 @@
+const logger = require('./logger');
+
 const AsyncQueue = require('async');
 
 class ProcessingQueue {
@@ -7,7 +9,7 @@ class ProcessingQueue {
                 await this.processWithRetry(task);
                 callback();
             } catch (error) {
-                console.error('Queue processing error:', error);
+                logger.error('Queue processing error:', error);
                 callback(error);
             }
         }, 1); // Process one task at a time
@@ -17,17 +19,17 @@ class ProcessingQueue {
         let lastError;
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
-                console.log(`Processing attempt ${attempt}/${maxRetries} for task:`, task.id);
+                logger.info(`Processing attempt ${attempt}/${maxRetries} for task:`, task.id);
                 await task.process();
-                console.log(`✅ Task ${task.id} completed successfully on attempt ${attempt}`);
+                logger.info(`✅ Task ${task.id} completed successfully on attempt ${attempt}`);
                 return;
             } catch (error) {
                 lastError = error;
-                console.error(`❌ Attempt ${attempt}/${maxRetries} failed for task ${task.id}:`, error.message);
+                logger.error(`❌ Attempt ${attempt}/${maxRetries} failed for task ${task.id}:`, error.message);
                 
                 if (attempt < maxRetries) {
                     const delay = initialDelay * Math.pow(2, attempt - 1); // Exponential backoff
-                    console.log(`Retrying in ${delay}ms...`);
+                    logger.info(`Retrying in ${delay}ms...`);
                     await new Promise(resolve => setTimeout(resolve, delay));
                 }
             }
@@ -53,7 +55,7 @@ class ProcessingQueue {
             };
 
             this.queue.push(task);
-            console.log(`Task ${task.id} added to queue. Current queue length: ${this.queue.length()}`);
+            logger.info(`Task ${task.id} added to queue. Current queue length: ${this.queue.length()}`);
         });
     }
 

@@ -1,3 +1,5 @@
+const logger = require('./logger');
+
 const digitalSignature = require('./signatureUtils');
 const thirdPartyService = require('../services/thirdPartyService');
 

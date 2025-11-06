@@ -1,3 +1,4 @@
+const logger = require('../utils/logger');
 const { sendResponse } = require("../utils/responseHelper");
 const api = require("./cbs.api");
 const { API_ENDPOINTS } = require("./cbs.endpoints");
@@ -21,7 +22,7 @@ async function searchClientByExternalId(externalId) {
         }
         return null;
     } catch (error) {
-        console.log('Client search error:', error.message);
+        logger.info('Client search error:', error.message);
         return null;
     }
 }
@@ -34,7 +35,7 @@ async function getClientLoans(clientId) {
         }
         return [];
     } catch (error) {
-        console.log('Client loans fetch error:', error.message);
+        logger.info('Client loans fetch error:', error.message);
         return [];
     }
 }
@@ -47,7 +48,7 @@ async function getProductDetails(productCode) {
         }
         return null;
     } catch (error) {
-        console.log('Product details fetch error:', error.message);
+        logger.info('Product details fetch error:', error.message);
         return null;
     }
 }
@@ -95,7 +96,7 @@ function calculatePayoffAmount(loan) {
         // For now, using outstanding balance as payoff amount
         return outstandingBalance;
     } catch (error) {
-        console.error('Error calculating payoff amount:', error);
+        logger.error('Error calculating payoff amount:', error);
         return 0;
     }
 }
@@ -123,7 +124,7 @@ function generateLoanChargesErrorResponse({ msgId, checkNumber, errorMessage }) 
 
 const LoanCalculate = async (data) => {
     try {
-        console.log('🔄 Processing ESS LOAN_CHARGES_REQUEST with enhanced affordability logic');
+        logger.info('🔄 Processing ESS LOAN_CHARGES_REQUEST with enhanced affordability logic');
 
         if (!data || typeof data !== 'object') {
             throw new Error('Invalid loan charges request data');
@@ -196,17 +197,17 @@ const LoanCalculate = async (data) => {
             ? LOAN_CONSTANTS.AFFORDABILITY_TYPE.REVERSE
             : LOAN_CONSTANTS.AFFORDABILITY_TYPE.FORWARD;
 
-        console.log(`Affordability Type: ${affordabilityType}`);
-        console.log(`Max Affordable EMI: ${maxAffordableEMI}`);
-        console.log(`Desirable EMI: ${desirableEMI}`);
-        console.log(`Central Reg Affordability (used for calculation): ${affordabilityType === LOAN_CONSTANTS.AFFORDABILITY_TYPE.REVERSE ? desirableEMI : deductibleAmount}`);
-        console.log(`Desirable EMI: ${desirableEMI}`);
-        console.log(`Calculated Tenure: ${calculatedTenure}`);
+        logger.info(`Affordability Type: ${affordabilityType}`);
+        logger.info(`Max Affordable EMI: ${maxAffordableEMI}`);
+        logger.info(`Desirable EMI: ${desirableEMI}`);
+        logger.info(`Central Reg Affordability (used for calculation): ${affordabilityType === LOAN_CONSTANTS.AFFORDABILITY_TYPE.REVERSE ? desirableEMI : deductibleAmount}`);
+        logger.info(`Desirable EMI: ${desirableEMI}`);
+        logger.info(`Calculated Tenure: ${calculatedTenure}`);
 
         // Save initial request to database
         // Validate final loan amount before saving
         if (loanAmount < LOAN_CONSTANTS.MIN_LOAN_AMOUNT) {
-            console.warn(`Final loan amount ${loanAmount} is below minimum ${LOAN_CONSTANTS.MIN_LOAN_AMOUNT}`);
+            logger.warn(`Final loan amount ${loanAmount} is below minimum ${LOAN_CONSTANTS.MIN_LOAN_AMOUNT}`);
             loanAmount = LOAN_CONSTANTS.MIN_LOAN_AMOUNT;
             // Recalculate monthly installment based on minimum loan amount
             monthlyInstallment = calculateInstallment(loanAmount, tenure, interest);
@@ -223,9 +224,9 @@ const LoanCalculate = async (data) => {
                 monthlyInstallment: monthlyInstallment, // Add installment to record
                 request: JSON.stringify(utumishiRequest)
             });
-            console.log(`Created PossibleLoanCharges entity with ID: ${possibleLoanChargesEntity._id}`);
+            logger.info(`Created PossibleLoanCharges entity with ID: ${possibleLoanChargesEntity._id}`);
         } catch (dbError) {
-            console.warn('Database not available, continuing without persistence:', dbError.message);
+            logger.warn('Database not available, continuing without persistence:', dbError.message);
             // Create a mock entity for processing
             possibleLoanChargesEntity = {
                 _id: 'mock-id',
@@ -235,12 +236,12 @@ const LoanCalculate = async (data) => {
         }
 
         // Fetch MIFOS product details with fallback to constants
-        console.log('Fetching product details from MIFOS for product code:', productCode);
+        logger.info('Fetching product details from MIFOS for product code:', productCode);
         let productDetails = null;
         try {
             productDetails = await getProductDetails(productCode);
             if (productDetails) {
-                console.log('Successfully fetched product details from MIFOS:', {
+                logger.info('Successfully fetched product details from MIFOS:', {
                     name: productDetails.name,
                     interestRate: productDetails.nominalInterestRatePerPeriod,
                     maxPrincipal: productDetails.maxPrincipal,
@@ -248,10 +249,10 @@ const LoanCalculate = async (data) => {
                     maxNumberOfRepayments: productDetails.maxNumberOfRepayments
                 });
             } else {
-                console.log('Product details not found in MIFOS, using fallback constants');
+                logger.info('Product details not found in MIFOS, using fallback constants');
             }
         } catch (error) {
-            console.warn('Failed to fetch product details from MIFOS, using fallback constants:', error.message);
+            logger.warn('Failed to fetch product details from MIFOS, using fallback constants:', error.message);
         }
 
         // Create LoanOfferDTO with appropriate affordability constraint
@@ -308,7 +309,7 @@ const LoanCalculate = async (data) => {
 
                 // Validate minimum amount against payoff amount
                 if (requestedAmount && requestedAmount < payoffAmount) {
-                    console.warn(`Requested amount ${requestedAmount} is less than required payoff amount ${payoffAmount}`);
+                    logger.warn(`Requested amount ${requestedAmount} is less than required payoff amount ${payoffAmount}`);
                     throw new ApplicationException(
                         LOAN_CONSTANTS.ERROR_CODES.INVALID_AMOUNT,
                         `Loan amount must be at least ${payoffAmount} to cover existing loan payoff`
@@ -331,14 +332,14 @@ const LoanCalculate = async (data) => {
                     const loanDetail = await activeLoanProvider.viewActiveLoanDetail('tanzania', activeAccount.accountNumber);
 
                     if (loanDetail.isPositiveArrears() && loanDetail.dayArr > LOAN_CONSTANTS.NPA_LOAN_ARR_DAYS) {
-                        console.warn(`Loan account ${activeAccount.accountNumber} is NPA for customer ${loanOfferDTO.customerNumber}`);
+                        logger.warn(`Loan account ${activeAccount.accountNumber} is NPA for customer ${loanOfferDTO.customerNumber}`);
                         try {
                             await possibleLoanChargesEntity.updateOne({
                                 status: 'FAILED',
                                 errorMessage: 'Customer has NPA loan'
                             });
                         } catch (dbError) {
-                            console.warn('Failed to update entity status:', dbError.message);
+                            logger.warn('Failed to update entity status:', dbError.message);
                         }
                         throw new ApplicationException(LOAN_CONSTANTS.ERROR_CODES.NOT_ELIGIBLE, 'Customer has NPA loan');
                     }
@@ -354,10 +355,10 @@ const LoanCalculate = async (data) => {
                 offerRequest: JSON.stringify(loanOfferDTO)
             });
         } catch (dbError) {
-            console.warn('Failed to save offer request to database:', dbError.message);
+            logger.warn('Failed to save offer request to database:', dbError.message);
         }
 
-        console.log('Getting loan offer from eligibility service...');
+        logger.info('Getting loan offer from eligibility service...');
         const loanOffer = await eligibilityService.getOffer(loanOfferDTO, true);
 
         // Update loan offer with additional data
@@ -393,13 +394,13 @@ const LoanCalculate = async (data) => {
                 status: 'COMPLETED'
             });
         } catch (dbError) {
-            console.warn('Failed to save response to database:', dbError.message);
+            logger.warn('Failed to save response to database:', dbError.message);
         }
 
         return response;
 
     } catch (error) {
-        console.error('Exception in LoanCalculate:', error);
+        logger.error('Exception in LoanCalculate:', error);
 
         if (error instanceof ApplicationException) {
             throw error;
@@ -417,7 +418,7 @@ const LoanCalculate = async (data) => {
  * Handle forward offer calculation when needed
  */
 async function doForwardOffer(possibleLoanChargesEntity, loanOfferDTO, requestedAmount, term, desiredDeductibleAmount) {
-    console.log('Performing forward offer calculation...');
+    logger.info('Performing forward offer calculation...');
 
     loanOfferDTO.affordabilityType = LOAN_CONSTANTS.AFFORDABILITY_TYPE.FORWARD;
     loanOfferDTO.loanAmount = requestedAmount;
@@ -428,7 +429,7 @@ async function doForwardOffer(possibleLoanChargesEntity, loanOfferDTO, requested
             offerRequest: JSON.stringify(loanOfferDTO)
         });
     } catch (dbError) {
-        console.warn('Failed to save forward offer request:', dbError.message);
+        logger.warn('Failed to save forward offer request:', dbError.message);
     }
 
     const forwardLoanOffer = await eligibilityService.getOffer(loanOfferDTO);
@@ -438,7 +439,7 @@ async function doForwardOffer(possibleLoanChargesEntity, loanOfferDTO, requested
             offerData: JSON.stringify(forwardLoanOffer)
         });
     } catch (dbError) {
-        console.warn('Failed to save forward offer data:', dbError.message);
+        logger.warn('Failed to save forward offer data:', dbError.message);
     }
 
     if (!forwardLoanOffer?.loanOffer?.product) {
@@ -448,7 +449,7 @@ async function doForwardOffer(possibleLoanChargesEntity, loanOfferDTO, requested
                 errorMessage: 'Customer is not eligible with forward offer'
             });
         } catch (dbError) {
-            console.warn('Failed to update entity status:', dbError.message);
+            logger.warn('Failed to update entity status:', dbError.message);
         }
         throw new ApplicationException(LOAN_CONSTANTS.ERROR_CODES.NOT_ELIGIBLE, 'Customer is not eligible with forward offer');
     }
@@ -479,7 +480,7 @@ async function doForwardOffer(possibleLoanChargesEntity, loanOfferDTO, requested
             status: 'COMPLETED'
         });
     } catch (dbError) {
-        console.warn('Failed to save forward response:', dbError.message);
+        logger.warn('Failed to save forward response:', dbError.message);
     }
 
     return response;
@@ -514,7 +515,7 @@ const CreateTopUpLoanOffer = async (data) => {
             throw new Error('CheckNumber is mandatory for client onboarding');
         }
 
-        console.log('Creating top-up loan offer for:', { checkNumber, existingLoanNumber, nin });
+        logger.info('Creating top-up loan offer for:', { checkNumber, existingLoanNumber, nin });
 
         // 1. Check if client exists, if not create client
         let clientExists = false;
@@ -522,21 +523,21 @@ const CreateTopUpLoanOffer = async (data) => {
         
         try {
             const clientSearch = await api.get(`/v1/clients?externalId=${nin}`);
-            console.log('Client search response status:', clientSearch.status);
-            console.log('Client search response:', JSON.stringify(clientSearch.response, null, 2));
+            logger.info('Client search response status:', clientSearch.status);
+            logger.info('Client search response:', JSON.stringify(clientSearch.response, null, 2));
             clientExists = clientSearch.status && clientSearch.response && clientSearch.response.pageItems && clientSearch.response.pageItems.length > 0;
             if (clientExists) {
                 clientId = clientSearch.response.pageItems[0].id;
-                console.log('Found existing client with ID:', clientId);
+                logger.info('Found existing client with ID:', clientId);
             } else {
-                console.log('Client not found, will create new client');
+                logger.info('Client not found, will create new client');
             }
         } catch (error) {
-            console.log('Client search failed with error:', error.message, 'will create new client');
+            logger.info('Client search failed with error:', error.message, 'will create new client');
         }
 
         if (!clientExists) {
-            console.log('Creating new client in MIFOS...');
+            logger.info('Creating new client in MIFOS...');
             
             // Format phone number with country code 255
             const formattedMobile = mobileNo ? (mobileNo.startsWith('+') ? mobileNo : `+255${mobileNo.replace(/^0/, '')}`) : null;
@@ -570,7 +571,7 @@ const CreateTopUpLoanOffer = async (data) => {
             }
             
             clientId = clientResponse.response.clientId;
-            console.log('✅ Client created successfully:', clientId);
+            logger.info('✅ Client created successfully:', clientId);
             
             // 2. Add client onboarding datatable data
             // Format employment date to MIFOS expected format: "dd MMMM yyyy"
@@ -594,23 +595,23 @@ const CreateTopUpLoanOffer = async (data) => {
                 CheckNumber: checkNumber // Mandatory field
             };
             
-            console.log('Inserting client onboarding data:', onboardingData);
+            logger.info('Inserting client onboarding data:', onboardingData);
             
             try {
                 const datatableResponse = await api.post(`/v1/datatables/client_onboarding/${clientId}`, onboardingData);
                 if (datatableResponse.status) {
-                    console.log('✅ Client onboarding data inserted successfully');
+                    logger.info('✅ Client onboarding data inserted successfully');
                 } else {
-                    console.log('⚠️ Failed to insert onboarding data:', datatableResponse.message);
+                    logger.info('⚠️ Failed to insert onboarding data:', datatableResponse.message);
                     // Don't fail the entire process for datatable issues
                 }
             } catch (datatableError) {
-                console.log('⚠️ Datatable insertion failed (datatable may not exist yet):', datatableError.message);
+                logger.info('⚠️ Datatable insertion failed (datatable may not exist yet):', datatableError.message);
                 // Continue with the process even if datatable fails
             }
             
         } else {
-            console.log('Client already exists with NIN:', nin, 'ID:', clientId);
+            logger.info('Client already exists with NIN:', nin, 'ID:', clientId);
         }
 
         // 3. Validate existing loan
@@ -620,7 +621,7 @@ const CreateTopUpLoanOffer = async (data) => {
         }
 
         const existingLoan = existingLoanResponse.response;
-        console.log('Existing loan found:', existingLoan.id);
+        logger.info('Existing loan found:', existingLoan.id);
 
         // 4. Get loan product details
         const productResponse = await api.get(`${API_ENDPOINTS.PRODUCT}/${productCode}`);
@@ -629,7 +630,7 @@ const CreateTopUpLoanOffer = async (data) => {
         }
 
         const product = productResponse.response;
-        console.log('Product details retrieved:', product.name);
+        logger.info('Product details retrieved:', product.name);
 
         // 5. Calculate loan schedule
         const principal = requestedTopUpAmount;
@@ -643,7 +644,7 @@ const CreateTopUpLoanOffer = async (data) => {
         const totalPayable = monthlyInstallment * numberOfInstallments;
         const totalInterest = totalPayable - principal;
 
-        console.log('Calculated loan terms:', {
+        logger.info('Calculated loan terms:', {
             principal,
             monthlyInstallment: monthlyInstallment.toFixed(2),
             totalPayable: totalPayable.toFixed(2),
@@ -664,11 +665,11 @@ const CreateTopUpLoanOffer = async (data) => {
             clientId: clientId
         };
 
-        console.log('Top-up loan offer created:', offerResult);
+        logger.info('Top-up loan offer created:', offerResult);
         return offerResult;
 
     } catch (error) {
-        console.error('CreateTopUpLoanOffer error:', error);
+        logger.error('CreateTopUpLoanOffer error:', error);
         throw error;
     }
 }
@@ -702,7 +703,7 @@ const CreateTakeoverLoanOffer = async (data) => {
             throw new Error('CheckNumber is mandatory for client onboarding');
         }
 
-        console.log('Creating takeover loan offer for:', { checkNumber, existingLoanNumber, nin });
+        logger.info('Creating takeover loan offer for:', { checkNumber, existingLoanNumber, nin });
 
         // 1. Check if client exists, if not create client
         let clientExists = false;
@@ -710,21 +711,21 @@ const CreateTakeoverLoanOffer = async (data) => {
         
         try {
             const clientSearch = await api.get(`/v1/clients?externalId=${nin}`);
-            console.log('Client search response status:', clientSearch.status);
-            console.log('Client search response:', JSON.stringify(clientSearch.response, null, 2));
+            logger.info('Client search response status:', clientSearch.status);
+            logger.info('Client search response:', JSON.stringify(clientSearch.response, null, 2));
             clientExists = clientSearch.status && clientSearch.response && clientSearch.response.pageItems && clientSearch.response.pageItems.length > 0;
             if (clientExists) {
                 clientId = clientSearch.response.pageItems[0].id;
-                console.log('Found existing client with ID:', clientId);
+                logger.info('Found existing client with ID:', clientId);
             } else {
-                console.log('Client not found, will create new client');
+                logger.info('Client not found, will create new client');
             }
         } catch (error) {
-            console.log('Client search failed with error:', error.message, 'will create new client');
+            logger.info('Client search failed with error:', error.message, 'will create new client');
         }
 
         if (!clientExists) {
-            console.log('Creating new client in MIFOS...');
+            logger.info('Creating new client in MIFOS...');
             
             const formattedMobile = mobileNo ? (mobileNo.startsWith('+') ? mobileNo : `+255${mobileNo.replace(/^0/, '')}`) : null;
             const genderMapping = { 'M': 15, 'F': 16 }; // M=15, F=16 (MIFOS zedone-uat codes)
@@ -754,7 +755,7 @@ const CreateTakeoverLoanOffer = async (data) => {
             }
             
             clientId = clientResponse.response.clientId;
-            console.log('✅ Client created successfully:', clientId);
+            logger.info('✅ Client created successfully:', clientId);
             
             // 2. Add client onboarding datatable data
             const formatEmploymentDate = (dateString) => {
@@ -777,21 +778,21 @@ const CreateTakeoverLoanOffer = async (data) => {
                 CheckNumber: checkNumber
             };
             
-            console.log('Inserting client onboarding data:', onboardingData);
+            logger.info('Inserting client onboarding data:', onboardingData);
             
             try {
                 const datatableResponse = await api.post(`/v1/datatables/client_onboarding/${clientId}`, onboardingData);
                 if (datatableResponse.status) {
-                    console.log('✅ Client onboarding data inserted successfully');
+                    logger.info('✅ Client onboarding data inserted successfully');
                 } else {
-                    console.log('⚠️ Failed to insert onboarding data:', datatableResponse.message);
+                    logger.info('⚠️ Failed to insert onboarding data:', datatableResponse.message);
                 }
             } catch (datatableError) {
-                console.log('⚠️ Datatable insertion failed (datatable may not exist yet):', datatableError.message);
+                logger.info('⚠️ Datatable insertion failed (datatable may not exist yet):', datatableError.message);
             }
             
         } else {
-            console.log('Client already exists with NIN:', nin, 'ID:', clientId);
+            logger.info('Client already exists with NIN:', nin, 'ID:', clientId);
         }
 
         // 3. Validate existing loan for takeover
@@ -801,7 +802,7 @@ const CreateTakeoverLoanOffer = async (data) => {
         }
 
         const existingLoan = existingLoanResponse.response;
-        console.log('Existing loan found for takeover:', existingLoan.id);
+        logger.info('Existing loan found for takeover:', existingLoan.id);
 
         // 4. Get loan product details
         const productResponse = await api.get(`${API_ENDPOINTS.PRODUCT}/${productCode}`);
@@ -810,7 +811,7 @@ const CreateTakeoverLoanOffer = async (data) => {
         }
 
         const product = productResponse.response;
-        console.log('Product details retrieved for takeover:', product.name);
+        logger.info('Product details retrieved for takeover:', product.name);
 
         // 5. Calculate takeover loan schedule
         const principal = requestedTakeoverAmount;
@@ -824,7 +825,7 @@ const CreateTakeoverLoanOffer = async (data) => {
         const totalPayable = monthlyInstallment * numberOfInstallments;
         const totalInterest = totalPayable - principal;
 
-        console.log('Calculated takeover loan terms:', {
+        logger.info('Calculated takeover loan terms:', {
             principal,
             monthlyInstallment: monthlyInstallment.toFixed(2),
             totalPayable: totalPayable.toFixed(2),
@@ -845,18 +846,18 @@ const CreateTakeoverLoanOffer = async (data) => {
             clientId: clientId
         };
 
-        console.log('Takeover loan offer created:', offerResult);
+        logger.info('Takeover loan offer created:', offerResult);
         return offerResult;
 
     } catch (error) {
-        console.error('CreateTakeoverLoanOffer error:', error);
+        logger.error('CreateTakeoverLoanOffer error:', error);
         throw error;
     }
 }
 
 const processTakeoverPayment = async (paymentData) => {
     try {
-        console.log('Processing takeover payment:', paymentData);
+        logger.info('Processing takeover payment:', paymentData);
 
         const {
             loanId,
@@ -881,7 +882,7 @@ const processTakeoverPayment = async (paymentData) => {
             throw new Error('Failed to approve takeover loan: ' + JSON.stringify(approveResponse.response));
         }
 
-        console.log('✅ Takeover loan approved successfully');
+        logger.info('✅ Takeover loan approved successfully');
 
         // 2. Disburse the loan
         const disburseResponse = await api.post(`${API_ENDPOINTS.LOAN}${loanId}?command=disburse`, {
@@ -895,7 +896,7 @@ const processTakeoverPayment = async (paymentData) => {
             throw new Error('Failed to disburse takeover loan: ' + JSON.stringify(disburseResponse.response));
         }
 
-        console.log('✅ Takeover loan disbursed successfully');
+        logger.info('✅ Takeover loan disbursed successfully');
 
         return {
             success: true,
@@ -905,7 +906,7 @@ const processTakeoverPayment = async (paymentData) => {
         };
 
     } catch (error) {
-        console.error('processTakeoverPayment error:', error);
+        logger.error('processTakeoverPayment error:', error);
         throw error;
     }
 }
@@ -960,40 +961,40 @@ const CreateLoanOffer = async (data) => {
             throw new Error('RequestedAmount is mandatory for loan offer');
         }
 
-        console.log('Calculating loan offer for:', { checkNumber, applicationNumber, nin, requestedAmount });
+        logger.info('Calculating loan offer for:', { checkNumber, applicationNumber, nin, requestedAmount });
 
         // 1. Validate product exists with fallback logic
         let productId = productCode || 17; // Use provided productCode or default to 17
-        console.log('Requested product ID:', productId);
+        logger.info('Requested product ID:', productId);
 
         // Get loan product details for validation and calculation
         let loanProduct;
         try {
-            console.log('Fetching product from:', API_ENDPOINTS.PRODUCT + '/' + productId);
+            logger.info('Fetching product from:', API_ENDPOINTS.PRODUCT + '/' + productId);
             loanProduct = await api.get(API_ENDPOINTS.PRODUCT + '/' + productId);
-            console.log('Product API response status:', loanProduct.status);
-            console.log('Product API response:', JSON.stringify(loanProduct.response, null, 2));
+            logger.info('Product API response status:', loanProduct.status);
+            logger.info('Product API response:', JSON.stringify(loanProduct.response, null, 2));
         } catch (error) {
-            console.log('Product ID', productId, 'not found, error:', error.message, 'falling back to product ID 17');
+            logger.info('Product ID', productId, 'not found, error:', error.message, 'falling back to product ID 17');
             try {
-                console.log('Fetching fallback product from:', API_ENDPOINTS.PRODUCT + '/17');
+                logger.info('Fetching fallback product from:', API_ENDPOINTS.PRODUCT + '/17');
                 loanProduct = await api.get(API_ENDPOINTS.PRODUCT + '/17');
-                console.log('Fallback product API response status:', loanProduct.status);
-                console.log('Fallback product API response:', JSON.stringify(loanProduct.response, null, 2));
+                logger.info('Fallback product API response status:', loanProduct.status);
+                logger.info('Fallback product API response:', JSON.stringify(loanProduct.response, null, 2));
                 productId = 17; // Update productId to the fallback
             } catch (fallbackError) {
-                console.log('Fallback product also failed:', fallbackError.message);
+                logger.info('Fallback product also failed:', fallbackError.message);
                 throw fallbackError;
             }
         }
 
         const { response: productResponse, status: productStatus } = loanProduct;
         if (!productStatus) {
-            console.log('Product status is false, response:', productResponse);
+            logger.info('Product status is false, response:', productResponse);
             throw new Error(productResponse?.error || "Product not found");
         }
 
-        console.log('Loan product validated:', productResponse.name, '(ID:', productId, productId !== (productCode || 17) ? '- fallback used' : '', ')');
+        logger.info('Loan product validated:', productResponse.name, '(ID:', productId, productId !== (productCode || 17) ? '- fallback used' : '', ')');
 
         // 2. Calculate loan terms using same method as LoanCalculate (no actual creation)
         const principal = requestedAmount;
@@ -1009,7 +1010,7 @@ const CreateLoanOffer = async (data) => {
         const totalAmount = monthlyPayment * numberOfRepayments;
         const totalInterest = totalAmount - principal;
 
-        console.log('Loan calculation (consistent with LOAN_CHARGES_REQUEST):', {
+        logger.info('Loan calculation (consistent with LOAN_CHARGES_REQUEST):', {
             principal,
             numberOfRepayments,
             interestRate,
@@ -1033,11 +1034,11 @@ const CreateLoanOffer = async (data) => {
             approvalStatus: 'APPROVED'
         };
 
-        console.log('Loan offer calculated:', offerResult);
+        logger.info('Loan offer calculated:', offerResult);
         return offerResult;
 
     } catch (error) {
-        console.error('CreateLoanOffer error:', error);
+        logger.error('CreateLoanOffer error:', error);
         throw error;
     }
 };

@@ -1,3 +1,4 @@
+const logger = require('../utils/logger');
 const axios = require("axios");
 const dotenv = require('dotenv');
 dotenv.config();
@@ -25,7 +26,7 @@ const api = axios.create({
 // Request interceptor
 api.interceptors.request.use(
   (config) => {
-    console.log('📤 CBS API Request:', {
+    logger.info('📤 CBS API Request:', {
       url: config.url,
       method: config.method,
       headers: {
@@ -43,7 +44,7 @@ api.interceptors.request.use(
 // Response interceptor
 api.interceptors.response.use(
   (response) => {
-    console.log('📥 CBS API Response:', {
+    logger.info('📥 CBS API Response:', {
       url: response.config.url,
       status: response.status,
       data: response.data
@@ -51,7 +52,7 @@ api.interceptors.response.use(
     return { status: true, message: 'Success', response: response.data }
   },
   (error) => {
-    console.error('❌ CBS API Error:', {
+    logger.error('❌ CBS API Error:', {
       url: error.config?.url,
       method: error.config?.method,
       headers: error.config?.headers,
@@ -86,7 +87,7 @@ const checkerApi = axios.create({
 // Apply the same interceptors to checkerApi
 checkerApi.interceptors.request.use(
   (config) => {
-    console.log('📤 CBS Checker API Request:', {
+    logger.info('📤 CBS Checker API Request:', {
       url: config.url,
       method: config.method,
       headers: {
@@ -102,7 +103,7 @@ checkerApi.interceptors.request.use(
 
 checkerApi.interceptors.response.use(
   (response) => {
-    console.log('📥 CBS Checker API Response:', {
+    logger.info('📥 CBS Checker API Response:', {
       url: response.config.url,
       status: response.status,
       data: response.data
@@ -110,7 +111,7 @@ checkerApi.interceptors.response.use(
     return { status: true, message: 'Success', response: response.data }
   },
   (error) => {
-    console.error('❌ CBS Checker API Error:', {
+    logger.error('❌ CBS Checker API Error:', {
       url: error.config?.url,
       method: error.config?.method,
       headers: error.config?.headers,

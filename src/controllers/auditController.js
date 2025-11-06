@@ -1,3 +1,4 @@
+const logger = require('../utils/logger');
 const AuditLog = require('../models/AuditLog');
 
 class AuditController {
@@ -43,7 +44,7 @@ class AuditController {
       });
 
     } catch (error) {
-      console.error('Get audit logs error:', error);
+      logger.error('Get audit logs error:', error);
       res.status(500).json({
         success: false,
         message: 'Internal server error while fetching audit logs.'
@@ -93,7 +94,7 @@ class AuditController {
       });
 
     } catch (error) {
-      console.error('Get audit stats error:', error);
+      logger.error('Get audit stats error:', error);
       res.status(500).json({
         success: false,
         message: 'Internal server error while fetching audit statistics.'

@@ -1,3 +1,4 @@
+const logger = require('../utils/logger');
 const { API_ENDPOINTS } = require('./cbs.endpoints');
 const { maker: cbsApi } = require('./cbs.api');
 
@@ -55,15 +56,15 @@ class ClientService {
                 }]
             };
 
-            console.log('🔵 Creating client in CBS:', payload);
+            logger.info('🔵 Creating client in CBS:', payload);
             const response = await cbsApi.post(API_ENDPOINTS.CLIENTS, payload);
-            console.log('🟢 CBS client creation response:', JSON.stringify(response, null, 2));
+            logger.info('🟢 CBS client creation response:', JSON.stringify(response, null, 2));
             
             // Client creation includes datatable, no need for separate call
             
             return response;
         } catch (error) {
-            console.error('🔴 Error creating client:', error);
+            logger.error('🔴 Error creating client:', error);
             throw error;
         }
     }
@@ -75,12 +76,12 @@ class ClientService {
      */
     static async searchClientByExternalId(externalId) {
         try {
-            console.log('🔵 Searching for client by external ID:', externalId);
+            logger.info('🔵 Searching for client by external ID:', externalId);
             const response = await cbsApi.get(`${API_ENDPOINTS.CLIENTS}?externalId=${externalId}`);
-            console.log('🟢 CBS client search response:', response);
+            logger.info('🟢 CBS client search response:', response);
             return response;
         } catch (error) {
-            console.error('🔴 Error searching client:', error);
+            logger.error('🔴 Error searching client:', error);
             throw error;
         }
     }
@@ -92,12 +93,12 @@ class ClientService {
      */
     static async getClientDetails(clientId) {
         try {
-            console.log('🔵 Getting client details for ID:', clientId);
+            logger.info('🔵 Getting client details for ID:', clientId);
             const response = await cbsApi.get(`${API_ENDPOINTS.CLIENTS}/${clientId}`);
-            console.log('🟢 CBS client details response:', response);
+            logger.info('🟢 CBS client details response:', response);
             return response;
         } catch (error) {
-            console.error('🔴 Error getting client details:', error);
+            logger.error('🔴 Error getting client details:', error);
             throw error;
         }
     }

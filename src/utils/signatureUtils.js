@@ -1,3 +1,5 @@
+const logger = require('./logger');
+
 const crypto = require('crypto');
 const forge = require('node-forge');
 const fs = require('fs');
@@ -17,7 +19,7 @@ class DigitalSignature {
       const certPath = process.env.CERTIFICATE_PATH || path.join(__dirname, '../../keys/fspNameCertificate.crt');
       if (fs.existsSync(certPath)) {
         this.certificate = fs.readFileSync(certPath, 'utf8');
-        console.log('✅ FSP Certificate loaded from:', certPath);
+        logger.info('✅ FSP Certificate loaded from:', certPath);
         
         // Extract public key from certificate
         this.extractPublicKeyFromCertificate();
@@ -25,23 +27,23 @@ class DigitalSignature {
         // Validate certificate
         this.validateCertificate();
       } else {
-        console.log('❌ FSP Certificate not found at:', certPath);
-        console.log('💡 You need to obtain fspNameCertificate.crt from ESS/CA');
+        logger.info('❌ FSP Certificate not found at:', certPath);
+        logger.info('💡 You need to obtain fspNameCertificate.crt from ESS/CA');
       }
 
       // Load private key (you generate this during certificate request)
       const privateKeyPath = process.env.PRIVATE_KEY_PATH || path.join(__dirname, '../../keys/private.pem');
       if (fs.existsSync(privateKeyPath)) {
         this.privateKey = fs.readFileSync(privateKeyPath, 'utf8');
-        console.log('✅ Private key loaded from:', privateKeyPath);
+        logger.info('✅ Private key loaded from:', privateKeyPath);
         this.validatePrivateKey();
       } else {
-        console.log('❌ Private key not found at:', privateKeyPath);
-        console.log('💡 Generate private key using: openssl genrsa -out private.pem 2048');
+        logger.info('❌ Private key not found at:', privateKeyPath);
+        logger.info('💡 Generate private key using: openssl genrsa -out private.pem 2048');
       }
 
     } catch (error) {
-      console.error('❌ Error loading keys:', error);
+      logger.error('❌ Error loading keys:', error);
     }
   }
 
@@ -52,9 +54,9 @@ class DigitalSignature {
       testSign.update('test');
       testSign.end();
       testSign.sign(this.privateKey, 'base64');
-      console.log('✅ Private key validation: PASSED');
+      logger.info('✅ Private key validation: PASSED');
     } catch (error) {
-      console.error('❌ Private key validation: FAILED -', error.message);
+      logger.error('❌ Private key validation: FAILED -', error.message);
     }
   }
 
@@ -63,9 +65,9 @@ class DigitalSignature {
       const pki = forge.pki;
       const cert = pki.certificateFromPem(this.certificate);
       this.publicKey = pki.publicKeyToPem(cert.publicKey);
-      console.log('✅ Public key extracted from FSP certificate');
+      logger.info('✅ Public key extracted from FSP certificate');
     } catch (error) {
-      console.error('❌ Failed to extract public key from certificate:', error);
+      logger.error('❌ Failed to extract public key from certificate:', error);
     }
   }
 
@@ -74,24 +76,24 @@ class DigitalSignature {
       const pki = forge.pki;
       const cert = pki.certificateFromPem(this.certificate);
       
-      console.log('📜 FSP Certificate Information:');
-      console.log('   Subject:', cert.subject.attributes.map(attr => `${attr.name}=${attr.value}`).join(', '));
-      console.log('   Issuer:', cert.issuer.attributes.map(attr => `${attr.name}=${attr.value}`).join(', '));
-      console.log('   Valid From:', cert.validity.notBefore);
-      console.log('   Valid To:', cert.validity.notAfter);
-      console.log('   Serial Number:', cert.serialNumber);
+      logger.info('📜 FSP Certificate Information:');
+      logger.info('   Subject:', cert.subject.attributes.map(attr => `${attr.name}=${attr.value}`).join(', '));
+      logger.info('   Issuer:', cert.issuer.attributes.map(attr => `${attr.name}=${attr.value}`).join(', '));
+      logger.info('   Valid From:', cert.validity.notBefore);
+      logger.info('   Valid To:', cert.validity.notAfter);
+      logger.info('   Serial Number:', cert.serialNumber);
       
       // Check if certificate is valid
       const now = new Date();
       if (now < cert.validity.notBefore) {
-        console.warn('⚠️  Certificate not yet valid');
+        logger.warn('⚠️  Certificate not yet valid');
       } else if (now > cert.validity.notAfter) {
-        console.warn('⚠️  Certificate has expired');
+        logger.warn('⚠️  Certificate has expired');
       } else {
-        console.log('✅ Certificate validity: PASSED');
+        logger.info('✅ Certificate validity: PASSED');
       }
     } catch (error) {
-      console.error('❌ Certificate validation failed:', error);
+      logger.error('❌ Certificate validation failed:', error);
     }
   }
 
@@ -104,11 +106,11 @@ class DigitalSignature {
     }
 
     try {
-      console.log('🔐 Generating SHA256withRSA signature...');
+      logger.info('🔐 Generating SHA256withRSA signature...');
       
       // Normalize XML for consistent signing
       const cleanXml = this.normalizeXMLForSigning(xmlData);
-      console.log('Data to sign length:', cleanXml.length, 'characters');
+      logger.info('Data to sign length:', cleanXml.length, 'characters');
       
       // Create sign object with SHA256
       const sign = crypto.createSign('SHA256');
@@ -121,12 +123,12 @@ class DigitalSignature {
         padding: crypto.constants.RSA_PKCS1_PADDING
       }, 'base64');
 
-      console.log('✅ Signature generated');
-      console.log('   Signature length:', signature.length, 'characters');
+      logger.info('✅ Signature generated');
+      logger.info('   Signature length:', signature.length, 'characters');
       
       return signature;
     } catch (error) {
-      console.error('❌ Error generating signature:', error);
+      logger.error('❌ Error generating signature:', error);
       throw new Error('Failed to generate digital signature: ' + error.message);
     }
   }
@@ -167,10 +169,10 @@ class DigitalSignature {
       // Remove leading/trailing whitespace
       dataElement = dataElement.trim();
       
-      console.log('🔄 Normalized XML for signing:', dataElement);
+      logger.info('🔄 Normalized XML for signing:', dataElement);
       return dataElement;
     } catch (error) {
-      console.error('❌ Error normalizing XML:', error);
+      logger.error('❌ Error normalizing XML:', error);
       throw new Error('XML normalization failed: ' + error.message);
     }
   }
@@ -190,11 +192,11 @@ class DigitalSignature {
       }
 
       const dataElement = xmlData.substring(startIndex, endIndex + endTag.length);
-      console.log('📄 Extracted Data element for signing');
+      logger.info('📄 Extracted Data element for signing');
       
       return dataElement;
     } catch (error) {
-      console.error('❌ Error extracting Data element:', error);
+      logger.error('❌ Error extracting Data element:', error);
       throw new Error('Invalid XML structure for signing');
     }
   }
@@ -222,7 +224,7 @@ class DigitalSignature {
       cdata: false
     });
 
-    console.log('📝 Building signed XML payload...');
+    logger.info('📝 Building signed XML payload...');
     
     // Build XML without signature first
     const tempDoc = {
@@ -244,7 +246,7 @@ class DigitalSignature {
     };
 
     const signedXml = builder.buildObject(finalDoc);
-    console.log('✅ Signed XML created successfully');
+    logger.info('✅ Signed XML created successfully');
     
     return signedXml;
   }
@@ -267,7 +269,7 @@ class DigitalSignature {
         serialNumber: cert.serialNumber
       };
     } catch (error) {
-      console.error('Error reading certificate info:', error);
+      logger.error('Error reading certificate info:', error);
       return null;
     }
   }
@@ -281,7 +283,7 @@ class DigitalSignature {
     }
 
     try {
-      console.log('🔍 Verifying signature...');
+      logger.info('🔍 Verifying signature...');
       
       // Create verify object with SHA256
       const verify = crypto.createVerify('SHA256');
@@ -295,14 +297,14 @@ class DigitalSignature {
       }, signature, 'base64');
 
       if (isValid) {
-        console.log('✅ Signature verification successful');
+        logger.info('✅ Signature verification successful');
       } else {
-        console.error('❌ Signature verification failed');
+        logger.error('❌ Signature verification failed');
       }
 
       return isValid;
     } catch (error) {
-      console.error('❌ Error verifying signature:', error);
+      logger.error('❌ Error verifying signature:', error);
       throw new Error('Failed to verify signature: ' + error.message);
     }
   }

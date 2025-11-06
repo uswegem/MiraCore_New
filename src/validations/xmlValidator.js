@@ -1,3 +1,4 @@
+const logger = require('../utils/logger');
 const Joi = require('joi');
 
 // Common header validation schema
@@ -11,8 +12,8 @@ const headerSchema = Joi.object({
 
 // Common validation for all message types
 function validateXML(parsedData) {
-  console.log('Validating XML structure...');
-  console.log('Parsed data keys:', Object.keys(parsedData));
+  logger.info('Validating XML structure...');
+  logger.info('Parsed data keys:', Object.keys(parsedData));
 
   // Handle different XML structures:
   // Option 1: Direct Data element (from frontend)
@@ -21,16 +22,16 @@ function validateXML(parsedData) {
   let dataElement;
   
   if (parsedData.Data) {
-    console.log(' Found direct Data element (frontend format)');
+    logger.info(' Found direct Data element (frontend format)');
     dataElement = parsedData.Data;
   } else if (parsedData.Document && parsedData.Document.Data) {
-    console.log(' Found Document > Data structure (proper Miracore format)');
+    logger.info(' Found Document > Data structure (proper Miracore format)');
     dataElement = parsedData.Document.Data;
   } else if (parsedData.document && parsedData.document.data) {
-    console.log(' Found document > data structure (lowercase)');
+    logger.info(' Found document > data structure (lowercase)');
     dataElement = parsedData.document.data;
   } else {
-    console.log('❌ No valid XML structure found');
+    logger.info('❌ No valid XML structure found');
     return {
       isValid: false,
       errorCode: '8001',
@@ -57,7 +58,7 @@ function validateXML(parsedData) {
     };
   }
 
-  console.log('✅ XML structure validation passed');
+  logger.info('✅ XML structure validation passed');
   return { 
     isValid: true,
     data: dataElement // Return the extracted data element

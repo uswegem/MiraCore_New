@@ -1,8 +1,9 @@
+const logger = require('../utils/logger');
 const digitalSignature = require('../utils/signatureUtils');
 
 function verifySignatureMiddleware(req, res, next) {
-  console.log('⚠️ TESTING MODE: Signature validation is disabled');
-  console.log('Request path:', req.path);
+  logger.info('⚠️ TESTING MODE: Signature validation is disabled');
+  logger.info('Request path:', req.path);
   
   // Skip signature validation in testing mode
   return next();
@@ -15,7 +16,7 @@ function verifySignatureMiddleware(req, res, next) {
   );
 
   if (!isXmlRequest) {
-    console.log('❌ Not an XML request');
+    logger.info('❌ Not an XML request');
     return res.status(400).json({
       responseCode: '8001',
       description: 'Content-Type must be application/xml'
@@ -23,10 +24,10 @@ function verifySignatureMiddleware(req, res, next) {
   }
 
   const xmlData = req.body;
-  console.log('XML data length:', xmlData ? xmlData.length : 0);
+  logger.info('XML data length:', xmlData ? xmlData.length : 0);
 
   if (!xmlData || xmlData.trim().length === 0) {
-    console.log('❌ Empty XML data');
+    logger.info('❌ Empty XML data');
     return res.status(400).json({
       responseCode: '8009',
       description: 'XML data is required'
@@ -42,7 +43,7 @@ function verifySignatureMiddleware(req, res, next) {
 
   parser.parseString(xmlData, (err, result) => {
     if (err) {
-      console.error('❌ Invalid XML format:', err.message);
+      logger.error('❌ Invalid XML format:', err.message);
       return res.status(400).json({
         responseCode: '8001',
         description: 'Invalid XML format: ' + err.message
@@ -51,7 +52,7 @@ function verifySignatureMiddleware(req, res, next) {
 
     // Extract Data and Signature elements
     if (!result.Document || !result.Document.Data || !result.Document.Signature) {
-      console.error('❌ Missing required XML elements');
+      logger.error('❌ Missing required XML elements');
       return res.status(400).json({
         responseCode: '8009',
         description: 'Missing required XML elements (Data or Signature)'
@@ -83,20 +84,20 @@ function verifySignatureMiddleware(req, res, next) {
       const isValid = digitalSignature.verifySignature(normalizedData, signature);
       
       if (!isValid) {
-        console.error('❌ Invalid signature');
+        logger.error('❌ Invalid signature');
         return res.status(400).json({
           responseCode: '8009',
           description: 'Invalid signature'
         });
       }
 
-      console.log('✅ Signature verified successfully');
+      logger.info('✅ Signature verified successfully');
       
       // Attach parsed data to request
       req.parsedXmlData = result;
       next();
     } catch (error) {
-      console.error('❌ Signature verification error:', error);
+      logger.error('❌ Signature verification error:', error);
       return res.status(400).json({
         responseCode: '8009',
         description: 'Signature verification failed: ' + error.message

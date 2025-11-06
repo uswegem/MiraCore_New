@@ -4,6 +4,8 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const dotenv = require('dotenv');
 dotenv.config();
+const logger = require('./src/utils/logger');
+
 // Import routes
 const apiRouter = require('./src/routes/api');
 const authRoutes = require('./src/routes/auth');
@@ -17,7 +19,7 @@ const { auditMiddleware } = require('./src/middleware/authMiddleware');
 // Import database
 const connectDB = require('./src/config/database');
 
-console.log('=== SERVER STARTING AT', new Date().toISOString(), '===');
+logger.info('=== SERVER STARTING AT', new Date().toISOString(), '===');
 
 // Clear require cache for development
 delete require.cache[require.resolve('./src/services/loanService')];
@@ -69,24 +71,24 @@ app.use(express.text({
 app.use((req, res, next) => {
     const contentType = req.headers['content-type'];
     
-    console.log('📨 Incoming Request:');
-    console.log('   Method:', req.method);
-    console.log('   Path:', req.path);
-    console.log('   Full URL:', req.protocol + '://' + req.get('host') + req.originalUrl);
-    console.log('   Content-Type:', contentType);
-    console.log('   Source IP:', req.ip || req.connection.remoteAddress || req.socket.remoteAddress || 'unknown');
-    console.log('   X-Forwarded-For:', req.get('X-Forwarded-For') || 'none');
-    console.log('   X-Real-IP:', req.get('X-Real-IP') || 'none');
-    console.log('   User-Agent:', req.get('User-Agent') || 'not provided');
-    console.log('   All Headers:', JSON.stringify(req.headers, null, 2));
-    console.log('   Body type:', typeof req.body);
+    logger.info('📨 Incoming Request:');
+    logger.info('   Method:', req.method);
+    logger.info('   Path:', req.path);
+    logger.info('   Full URL:', req.protocol + '://' + req.get('host') + req.originalUrl);
+    logger.info('   Content-Type:', contentType);
+    logger.info('   Source IP:', req.ip || req.connection.remoteAddress || req.socket.remoteAddress || 'unknown');
+    logger.info('   X-Forwarded-For:', req.get('X-Forwarded-For') || 'none');
+    logger.info('   X-Real-IP:', req.get('X-Real-IP') || 'none');
+    logger.info('   User-Agent:', req.get('User-Agent') || 'not provided');
+    logger.info('   All Headers:', JSON.stringify(req.headers, null, 2));
+    logger.info('   Body type:', typeof req.body);
     
     // Handle XML content
     if (contentType && (contentType.includes('application/xml') || contentType.includes('text/xml'))) {
         if (Buffer.isBuffer(req.body)) {
             // Convert buffer to string for XML
             req.body = req.body.toString('utf8');
-            console.log('   📝 Converted buffer to XML string');
+            logger.info('   📝 Converted buffer to XML string');
         }
     }
     
@@ -95,24 +97,24 @@ app.use((req, res, next) => {
 
 // 5. Debug middleware
 app.use((req, res, next) => {
-    console.log('=== INCOMING REQUEST ===');
-    console.log('Method:', req.method);
-    console.log('Path:', req.path);
-    console.log('Content-Type:', req.get('Content-Type'));
-    console.log('Body exists:', !!req.body);
+    logger.info('=== INCOMING REQUEST ===');
+    logger.info('Method:', req.method);
+    logger.info('Path:', req.path);
+    logger.info('Content-Type:', req.get('Content-Type'));
+    logger.info('Body exists:', !!req.body);
     
     if (req.body) {
         if (typeof req.body === 'string') {
-            console.log('Body type: XML/String');
-            console.log('Body length:', req.body.length);
-            console.log('Body sample:', req.body.substring(0, 200));
+            logger.info('Body type: XML/String');
+            logger.info('Body length:', req.body.length);
+            logger.info('Body sample:', req.body.substring(0, 200));
         } else if (typeof req.body === 'object') {
-            console.log('Body type: JSON/Object');
-            console.log('Body keys:', Object.keys(req.body));
-            console.log('Body sample:', JSON.stringify(req.body).substring(0, 200));
+            logger.info('Body type: JSON/Object');
+            logger.info('Body keys:', Object.keys(req.body));
+            logger.info('Body sample:', JSON.stringify(req.body).substring(0, 200));
         }
     }
-    console.log('========================');
+    logger.info('========================');
     next();
 });
 
@@ -168,10 +170,10 @@ app.post('/api/v1/test', (req, res) => {
     const contentType = req.get('Content-Type');
     const acceptHeader = req.get('Accept');
     
-    console.log('Test endpoint called:');
-    console.log('   Content-Type:', contentType);
-    console.log('   Accept:', acceptHeader);
-    console.log('   Body type:', typeof req.body);
+    logger.info('Test endpoint called:');
+    logger.info('   Content-Type:', contentType);
+    logger.info('   Accept:', acceptHeader);
+    logger.info('   Body type:', typeof req.body);
     
     const responseData = {
         message: 'Request received successfully',
@@ -198,7 +200,7 @@ app.post('/api/v1/test', (req, res) => {
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-    console.error('Error:', err);
+    logger.error('Error:', err);
     
     const acceptHeader = req.get('Accept');
     
@@ -255,12 +257,12 @@ app.use('*', (req, res) => {
 // Create server with proper error handling
 const server = app.listen(PORT, async () => {
     try {
-        console.log(`Miracore Backend running on port ${PORT}`);
-        console.log(`Supports: XML & JSON`);
-        console.log(`Authentication: Enabled`);
-        console.log(`Database: MongoDB`);
-        console.log(`Initial Super Admin: superadmin / SuperAdmin123!`);
-        console.log(`Digital signature: ${process.env.PRIVATE_KEY_PATH ? 'Enabled' : 'Disabled'}`);
+        logger.info(`Miracore Backend running on port ${PORT}`);
+        logger.info(`Supports: XML & JSON`);
+        logger.info(`Authentication: Enabled`);
+        logger.info(`Database: MongoDB`);
+        logger.info(`Initial Super Admin: superadmin / SuperAdmin123!`);
+        logger.info(`Digital signature: ${process.env.PRIVATE_KEY_PATH ? 'Enabled' : 'Disabled'}`);
         
         // Write PID file for process management
         const fs = require('fs');
@@ -277,27 +279,27 @@ const server = app.listen(PORT, async () => {
             }
         });
 
-        console.log('✅ Server ready and database connected');
+        logger.info('✅ Server ready and database connected');
     } catch (error) {
-        console.error('❌ Error during server startup:', error);
+        logger.error('❌ Error during server startup:', error);
         process.exit(1);
     }
 }).on('error', (err) => {
-    console.error('❌ Server failed to start:', err.message);
+    logger.error('❌ Server failed to start:', err.message);
     if (err.code === 'EADDRINUSE') {
-        console.error(`Port ${PORT} is already in use. Trying to terminate existing process...`);
+        logger.error(`Port ${PORT} is already in use. Trying to terminate existing process...`);
         try {
             const fs = require('fs');
             if (fs.existsSync('server.pid')) {
                 const pid = parseInt(fs.readFileSync('server.pid', 'utf8'));
                 if (pid) {
                     process.kill(pid, 'SIGTERM');
-                    console.log(`Terminated process ${pid}`);
+                    logger.info(`Terminated process ${pid}`);
                     startServer();
                 }
             }
         } catch (e) {
-            console.error('Failed to terminate existing process:', e.message);
+            logger.error('Failed to terminate existing process:', e.message);
         }
     }
     process.exit(1);
@@ -305,17 +307,17 @@ const server = app.listen(PORT, async () => {
 
 // Graceful shutdown handling
 process.on('SIGTERM', () => {
-    console.log('Received SIGTERM. Performing graceful shutdown...');
+    logger.info('Received SIGTERM. Performing graceful shutdown...');
     server.close(() => {
-        console.log('Server closed. Exiting process...');
+        logger.info('Server closed. Exiting process...');
         process.exit(0);
     });
 });
 
 process.on('SIGINT', () => {
-    console.log('Received SIGINT. Performing graceful shutdown...');
+    logger.info('Received SIGINT. Performing graceful shutdown...');
     server.close(() => {
-        console.log('Server closed. Exiting process...');
+        logger.info('Server closed. Exiting process...');
         process.exit(0);
     });
 });

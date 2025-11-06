@@ -1,3 +1,5 @@
+const logger = require('./logger');
+
 const jwt = require('jsonwebtoken');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'emkopo-super-secret-key-change-in-production';

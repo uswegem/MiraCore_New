@@ -1,3 +1,5 @@
+const logger = require('./logger');
+
 /**
  * Generates a unique message ID in the format ZDYYMMDDHHMNXXX
  * ZD = ZE DONE (tenant code)
@@ -57,7 +59,7 @@ const messageIdGenerators = {
 function getMessageId(messageType) {
     const generator = messageIdGenerators[messageType];
     if (!generator) {
-        console.warn(`No specific generator for message type: ${messageType}`);
+        logger.warn(`No specific generator for message type: ${messageType}`);
         return generateMessageId(); // Fallback to basic ID
     }
     return generator();

@@ -1,3 +1,5 @@
+const logger = require('./logger');
+
 // Loan Service Constants and Default Values
 const LOAN_CONSTANTS = {
   // ===== LOAN AMOUNTS =====

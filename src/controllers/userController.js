@@ -1,3 +1,4 @@
+const logger = require('../utils/logger');
 const User = require('../models/User');
 const AuditLog = require('../models/AuditLog');
 
@@ -55,7 +56,7 @@ class UserController {
       });
 
     } catch (error) {
-      console.error('Create user error:', error);
+      logger.error('Create user error:', error);
       res.status(500).json({
         success: false,
         message: 'Internal server error while creating user.'
@@ -92,7 +93,7 @@ class UserController {
       });
 
     } catch (error) {
-      console.error('Get users error:', error);
+      logger.error('Get users error:', error);
       res.status(500).json({
         success: false,
         message: 'Internal server error while fetching users.'
@@ -119,7 +120,7 @@ class UserController {
       });
 
     } catch (error) {
-      console.error('Get user error:', error);
+      logger.error('Get user error:', error);
       res.status(500).json({
         success: false,
         message: 'Internal server error while fetching user.'
@@ -190,7 +191,7 @@ class UserController {
       });
 
     } catch (error) {
-      console.error('Update user error:', error);
+      logger.error('Update user error:', error);
       res.status(500).json({
         success: false,
         message: 'Internal server error while updating user.'
@@ -242,7 +243,7 @@ class UserController {
       });
 
     } catch (error) {
-      console.error('Delete user error:', error);
+      logger.error('Delete user error:', error);
       res.status(500).json({
         success: false,
         message: 'Internal server error while deleting user.'

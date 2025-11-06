@@ -1,3 +1,4 @@
+const logger = require('../utils/logger');
 const LoanMapping = require('../models/LoanMapping');
 const ClientService = require('./clientService');
 
@@ -51,10 +52,10 @@ class LoanMappingService {
       };
 
       const mapping = await LoanMapping.findOneAndUpdate(filter, update, options);
-      console.log(`✅ Stored client data for application: ${applicationNumber}`);
+      logger.info(`✅ Stored client data for application: ${applicationNumber}`);
       return mapping;
     } catch (error) {
-      console.error('❌ Error storing client data:', error);
+      logger.error('❌ Error storing client data:', error);
       throw error;
     }
   }
@@ -80,10 +81,10 @@ class LoanMappingService {
       });
 
       await mapping.save();
-      console.log(`✅ Created initial loan mapping for application: ${essApplicationNumber}, check: ${essCheckNumber}`);
+      logger.info(`✅ Created initial loan mapping for application: ${essApplicationNumber}, check: ${essCheckNumber}`);
       return mapping;
     } catch (error) {
-      console.error('❌ Error creating initial loan mapping:', error);
+      logger.error('❌ Error creating initial loan mapping:', error);
       throw error;
     }
   }
@@ -105,7 +106,7 @@ class LoanMappingService {
 
       // The loan number from ESS should match our generated alias
       if (mapping.essLoanNumberAlias && mapping.essLoanNumberAlias !== essLoanNumberAlias) {
-        console.warn(`⚠️ ESS loan number alias mismatch. Expected: ${mapping.essLoanNumberAlias}, Received: ${essLoanNumberAlias}`);
+        logger.warn(`⚠️ ESS loan number alias mismatch. Expected: ${mapping.essLoanNumberAlias}, Received: ${essLoanNumberAlias}`);
       }
 
       // Update with final approval data (loan number alias should already be set)
@@ -118,10 +119,10 @@ class LoanMappingService {
       };
 
       await mapping.save();
-      console.log(`✅ Updated loan mapping with final approval for loan alias: ${essLoanNumberAlias}`);
+      logger.info(`✅ Updated loan mapping with final approval for loan alias: ${essLoanNumberAlias}`);
       return mapping;
     } catch (error) {
-      console.error('❌ Error updating loan mapping with final approval:', error);
+      logger.error('❌ Error updating loan mapping with final approval:', error);
       throw error;
     }
   }
@@ -141,10 +142,10 @@ class LoanMappingService {
       mapping.clientCreatedAt = new Date();
 
       await mapping.save();
-      console.log(`✅ Updated loan mapping with MIFOS client ID: ${mifosClientId}`);
+      logger.info(`✅ Updated loan mapping with MIFOS client ID: ${mifosClientId}`);
       return mapping;
     } catch (error) {
-      console.error('❌ Error updating loan mapping with client creation:', error);
+      logger.error('❌ Error updating loan mapping with client creation:', error);
       throw error;
     }
   }
@@ -165,10 +166,10 @@ class LoanMappingService {
       mapping.loanCreatedAt = new Date();
 
       await mapping.save();
-      console.log(`✅ Updated loan mapping with MIFOS loan ID: ${mifosLoanId}, Account: ${mifosLoanAccountNumber}`);
+      logger.info(`✅ Updated loan mapping with MIFOS loan ID: ${mifosLoanId}, Account: ${mifosLoanAccountNumber}`);
       return mapping;
     } catch (error) {
-      console.error('❌ Error updating loan mapping with loan creation:', error);
+      logger.error('❌ Error updating loan mapping with loan creation:', error);
       throw error;
     }
   }
@@ -187,10 +188,10 @@ class LoanMappingService {
       mapping.disbursedAt = new Date();
 
       await mapping.save();
-      console.log(`✅ Updated loan mapping with disbursement for loan ID: ${mifosLoanId}`);
+      logger.info(`✅ Updated loan mapping with disbursement for loan ID: ${mifosLoanId}`);
       return mapping;
     } catch (error) {
-      console.error('❌ Error updating loan mapping with disbursement:', error);
+      logger.error('❌ Error updating loan mapping with disbursement:', error);
       throw error;
     }
   }
@@ -259,7 +260,7 @@ class LoanMappingService {
         }
 
         const savedMapping = await mapping.save();
-        console.log('✅ Updated loan mapping:', {
+        logger.info('✅ Updated loan mapping:', {
             applicationNumber: savedMapping.essApplicationNumber,
             loanNumber: savedMapping.essLoanNumberAlias,
             status: savedMapping.status,
@@ -268,7 +269,7 @@ class LoanMappingService {
         });
         return savedMapping;
     } catch (error) {
-        console.error('❌ Error updating loan mapping:', error);
+        logger.error('❌ Error updating loan mapping:', error);
         throw error;
     }
   }
@@ -284,7 +285,7 @@ class LoanMappingService {
       }
       return mapping;
     } catch (error) {
-      console.error('❌ Error retrieving loan mapping:', error);
+      logger.error('❌ Error retrieving loan mapping:', error);
       throw error;
     }
   }
@@ -300,7 +301,7 @@ class LoanMappingService {
       }
       return mapping;
     } catch (error) {
-      console.error('❌ Error retrieving loan mapping:', error);
+      logger.error('❌ Error retrieving loan mapping:', error);
       throw error;
     }
   }
@@ -316,7 +317,7 @@ class LoanMappingService {
       }
       return mapping;
     } catch (error) {
-      console.error('❌ Error retrieving loan mapping:', error);
+      logger.error('❌ Error retrieving loan mapping:', error);
       throw error;
     }
   }
@@ -332,7 +333,7 @@ class LoanMappingService {
       }
       return mapping;
     } catch (error) {
-      console.error('❌ Error retrieving loan mapping:', error);
+      logger.error('❌ Error retrieving loan mapping:', error);
       throw error;
     }
   }
@@ -347,7 +348,7 @@ class LoanMappingService {
         await mapping.addError(stage, error);
       }
     } catch (error) {
-      console.error('❌ Error adding error to loan mapping:', error);
+      logger.error('❌ Error adding error to loan mapping:', error);
     }
   }
 
@@ -358,7 +359,7 @@ class LoanMappingService {
     try {
       return await LoanMapping.find({ status }).sort({ createdAt: -1 });
     } catch (error) {
-      console.error('❌ Error retrieving loan mappings by status:', error);
+      logger.error('❌ Error retrieving loan mappings by status:', error);
       throw error;
     }
   }
@@ -384,7 +385,7 @@ class LoanMappingService {
 
       return result;
     } catch (error) {
-      console.error('❌ Error getting loan mapping stats:', error);
+      logger.error('❌ Error getting loan mapping stats:', error);
       throw error;
     }
   }

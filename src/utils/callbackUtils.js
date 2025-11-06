@@ -1,3 +1,5 @@
+const logger = require('./logger');
+
 const express = require('express');
 const router = express.Router();
 const digitalSignature = require('../utils/signatureUtils');
@@ -12,7 +14,7 @@ async function sendCallback(callbackData) {
     while (retryCount < MAX_RETRIES) {
         try {
             const signedCallback = digitalSignature.createSignedXML(callbackData);
-            console.log(`📤 Attempt ${retryCount + 1}/${MAX_RETRIES} to send callback`);
+            logger.info(`📤 Attempt ${retryCount + 1}/${MAX_RETRIES} to send callback`);
         
         // Get callback URL from environment variables
         const callbackUrl = process.env.THIRD_PARTY_BASE_URL || process.env.ESS_CALLBACK_URL || 'http://localhost:3000/api/callback';
@@ -20,13 +22,13 @@ async function sendCallback(callbackData) {
             throw new Error('THIRD_PARTY_BASE_URL is not configured in environment');
         }
 
-        console.log('📤 Sending callback:', {
+        logger.info('📤 Sending callback:', {
             url: callbackUrl,
             messageType: callbackData.Header.MessageType,
             data: JSON.stringify(callbackData, null, 2)
         });
 
-        console.log('📝 Signed XML Payload:', signedCallback);
+        logger.info('📝 Signed XML Payload:', signedCallback);
 
         const response = await axios({
             method: 'post',
@@ -43,7 +45,7 @@ async function sendCallback(callbackData) {
         });
 
         // Log the complete response information
-        console.log('📥 Callback response:', {
+        logger.info('📥 Callback response:', {
             status: response.status,
             statusText: response.statusText,
             messageType: callbackData.Header.MessageType,
@@ -57,7 +59,7 @@ async function sendCallback(callbackData) {
 
         return response;
     } catch (error) {
-        console.error('❌ Error sending callback:', {
+        logger.error('❌ Error sending callback:', {
             message: error.message,
             stack: error.stack,
             responseData: error.response?.data,
@@ -66,7 +68,7 @@ async function sendCallback(callbackData) {
         });
         // If not the last attempt, wait before retrying
         if (retryCount < MAX_RETRIES - 1) {
-            console.log(`⏳ Waiting ${RETRY_DELAY}ms before retry...`);
+            logger.info(`⏳ Waiting ${RETRY_DELAY}ms before retry...`);
             await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
             retryCount++;
             continue;
