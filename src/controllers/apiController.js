@@ -1,4 +1,5 @@
 const xml2js = require('xml2js');
+const api = require("../services/cbs.api").maker;
 const { validateXML, validateMessageType } = require('../validations/xmlValidator');
 const { forwardToThirdParty } = require('../services/thirdPartyService');
 const digitalSignature = require('../utils/signatureUtils');
@@ -562,6 +563,19 @@ const handleLoanFinalApproval = async (parsedData, res) => {
             const signedResponse = digitalSignature.createSignedXML(responseData.Data);
             res.status(200).send(signedResponse);
             responseSent = true;
+
+            // Log the client creation attempt
+            console.log('Creating client in CBS with data:', {
+                firstname: messageDetails.FirstName,
+                middlename: messageDetails.MiddleName,
+                lastname: messageDetails.LastName,
+                externalId: messageDetails.NIN,
+                mobileNo: messageDetails.MobileNo,
+                dateOfBirth: messageDetails.DateOfBirth,
+                gender: messageDetails.Sex,
+                address: messageDetails.PhysicalAddress,
+                applicationNumber: messageDetails.ApplicationNumber
+            });
         }
 
         // Process the request asynchronously
@@ -580,94 +594,163 @@ const handleLoanFinalApproval = async (parsedData, res) => {
                     finalApprovalReceivedAt: new Date().toISOString()
                 };
 
-                // If approved and client data exists, create client in CBS
-                if (messageDetails.Approval === 'APPROVED' && existingMapping && existingMapping.metadata && existingMapping.metadata.clientData) {
-                    const clientData = existingMapping.metadata.clientData;
-                    console.log('Retrieved client data from loan mapping:', JSON.stringify(clientData, null, 2));
-                    
-                    try {
-                        const potentialNIN = clientData?.NIN || clientData?.nin || clientData?.nationalId;
-                        console.log('Potential NIN values:', {
-                            fromNIN: clientData?.NIN,
-                            fromNin: clientData?.nin,
-                            fromNationalId: clientData?.nationalId,
-                            selected: potentialNIN
-                        });
-
-                        // Ensure we have NIN
-                        if (!potentialNIN) {
-                            console.warn('⚠️ No NIN found in client data');
-                            throw new Error('National ID Number (NIN) is required for client creation');
-                        }
-
-                        // First check if client exists by NIN
-                        console.log('🔍 Checking if client exists with NIN:', potentialNIN);
-                        const existingClientByNin = await ClientService.searchClientByExternalId(potentialNIN);
-                        console.log('Search result:', JSON.stringify(existingClientByNin, null, 2));
-                        
-                        let clientId;
-                        if (!existingClientByNin?.status || !existingClientByNin?.response?.pageItems?.length) {
-                            // Create new client in CBS
-                            console.log(`Creating new client: ${clientData.fullName || clientData.firstName + ' ' + clientData.lastName}`);
-                            
-                            // Prepare client creation payload
-                            const fullName = clientData.fullName || `${clientData.firstName || ''} ${clientData.middleName || ''} ${clientData.lastName || ''}`.trim();
-                            const mobileNumber = clientData.mobileNumber || clientData.mobileNo || clientData.MobileNumber;
-                            
-                            const date = new Date();
-                            const formattedDate = date.toLocaleDateString('en-GB', { 
-                                day: '2-digit', 
-                                month: 'long', 
-                                year: 'numeric' 
-                            });
-                            
-                            const clientPayload = {
-                                fullname: fullName,
-                                externalId: potentialNIN,
-                                mobileNo: mobileNumber,
-                                officeId: 1,
-                                legalFormId: 1, // Person
-                                dateFormat: "dd MMMM yyyy",
-                                locale: "en",
-                                active: true,
-                                activationDate: formattedDate,
-                                // Additional fields for datatable
-                                checkNumber: clientData.ApplicationNumber || clientData.applicationNumber || clientData.CheckNumber || clientData.checkNumber,
-                                employmentDate: clientData.EmploymentDate || clientData.employmentDate,
-                                swiftCode: clientData.SwiftCode || clientData.swiftCode,
-                                bankAccountNumber: clientData.BankAccountNumber || clientData.bankAccountNumber
+                        // If approved, create client in CBS and create loan
+                        if (messageDetails.Approval === 'APPROVED') {
+                            const clientData = {
+                                externalId: messageDetails.NIN,
+                                nin: messageDetails.NIN,
+                                firstname: messageDetails.FirstName,
+                                middlename: messageDetails.MiddleName,
+                                lastname: messageDetails.LastName,
+                                mobileNo: messageDetails.MobileNo,
+                                sex: messageDetails.Sex,
+                                dateOfBirth: messageDetails.DateOfBirth,
+                                employmentDate: messageDetails.EmploymentDate,
+                                maritalStatus: messageDetails.MaritalStatus,
+                                physicalAddress: messageDetails.PhysicalAddress,
+                                emailAddress: messageDetails.EmailAddress,
+                                applicationNumber: messageDetails.ApplicationNumber,
+                                checkNumber: messageDetails.CheckNumber
                             };
+                            console.log('Retrieved client data from loan mapping:', JSON.stringify(clientData, null, 2));
                             
-                            console.log('📄 Creating client with payload:', JSON.stringify(clientPayload, null, 2));
-                            const newClient = await ClientService.createClient(clientPayload);
+                            try {
+                                const potentialNIN = clientData?.NIN || clientData?.nin || clientData?.nationalId;
+                                console.log('Potential NIN values:', {
+                                    fromNIN: clientData?.NIN,
+                                    fromNin: clientData?.nin,
+                                    fromNationalId: clientData?.nationalId,
+                                    selected: potentialNIN
+                                });
 
-                            if (newClient.status && newClient.response) {
-                                clientId = newClient.response.clientId;
-                                console.log(`✅ Client created in CBS with ID: ${clientId}`);
+                                // Ensure we have NIN
+                                if (!potentialNIN) {
+                                    console.warn('⚠️ No NIN found in client data');
+                                    throw new Error('National ID Number (NIN) is required for client creation');
+                                }
+
+                                // First check if client exists by NIN
+                                console.log('🔍 Checking if client exists with NIN:', potentialNIN);
+                                const existingClientByNin = await ClientService.searchClientByExternalId(potentialNIN);
+                                console.log('Search result:', JSON.stringify(existingClientByNin, null, 2));
+                                
+                                let clientId;
+                                if (!existingClientByNin?.status || !existingClientByNin?.response?.pageItems?.length) {
+                                    // Create new client in CBS
+                                    console.log(`Creating new client: ${clientData.fullName || clientData.firstName + ' ' + clientData.lastName}`);
+                                    
+                                    // Prepare client creation payload
+                                    const fullName = clientData.fullName || `${clientData.firstName || ''} ${clientData.middleName || ''} ${clientData.lastName || ''}`.trim();
+                                    const mobileNumber = clientData.mobileNumber || clientData.mobileNo || clientData.MobileNumber;
+                                    
+                                    const date = new Date();
+                                    const formattedDate = date.toLocaleDateString('en-GB', { 
+                                        day: '2-digit', 
+                                        month: 'long', 
+                                        year: 'numeric' 
+                                    });
+                                    
+                                    // Format dates properly
+                                    const clientPayload = {
+                                        officeId: 1,
+                                        firstname: clientData.firstname || clientData.FirstName,
+                                        middlename: clientData.middlename || clientData.MiddleName,
+                                        lastname: clientData.lastname || clientData.LastName,
+                                        externalId: potentialNIN,
+                                        dateFormat: "yyyy-MM-dd",
+                                        locale: "en",
+                                        active: true,
+                                        activationDate: new Date().toISOString().split('T')[0],
+                                        dateOfBirth: clientData.DateOfBirth || clientData.dateOfBirth,
+                                        genderId: clientData.Sex === 'M' || clientData.sex === 'M' ? 15 : 16,
+                                        clientTypeId: 17,
+                                        submittedOnDate: new Date().toISOString().split('T')[0],
+                                        legalFormId: 1
+                                    };
+                                    
+                                    console.log('📄 Creating client with payload:', JSON.stringify(clientPayload, null, 2));
+                                    const newClient = await ClientService.createClient(clientPayload);
+
+                                    if (newClient.status && newClient.response) {
+                                        clientId = newClient.response.clientId;
+                                        console.log(`✅ Client created in CBS with ID: ${clientId}`);
+                                    }
+                                } else {
+                                    clientId = existingClientByNin.response.pageItems[0].id;
+                                    console.log(`✅ Existing client found with ID: ${clientId}`);
+                                }
+
+                                if (clientId) {
+                                    // Create loan in CBS
+                                    const loanPayload = {
+                                        clientId: clientId,
+                                        productId: 17, // ESS Loan product
+                                        principal: messageDetails.LoanAmount.toString(),
+                                        loanTermFrequency: parseInt(messageDetails.LoanTenure),
+                                        loanTermFrequencyType: 2, // Months
+                                        numberOfRepayments: parseInt(messageDetails.LoanTenure),
+                                        repaymentEvery: 1,
+                                        repaymentFrequencyType: 2, // Monthly
+                                        interestRatePerPeriod: 15, // 15% per year
+                                        interestRateFrequencyType: 3, // Per year
+                                        amortizationType: 1, // Equal installments
+                                        interestType: 0, // Declining balance
+                                        interestCalculationPeriodType: 1, // Same as repayment
+                                        transactionProcessingStrategyCode: "mifos-standard-strategy",
+                                        expectedDisbursementDate: new Date().toISOString().split('T')[0],
+                                        submittedOnDate: new Date().toISOString().split('T')[0],
+                                        dateFormat: "yyyy-MM-dd",
+                                        locale: "en"
+                                    };
+                                    
+                                    console.log('Creating loan with payload:', JSON.stringify(loanPayload, null, 2));
+
+                                    // Create loan
+                                    console.log('Creating loan with payload:', JSON.stringify(loanPayload, null, 2));
+                                    const loanResponse = await api.post('/v1/loans', loanPayload);
+
+                                    if (loanResponse.status && loanResponse.response?.loanId) {
+                                        const loanId = loanResponse.response.loanId;
+                                        console.log(`Loan created successfully with ID: ${loanId}`);
+
+                                        // Approve loan
+                                        const approvePayload = {
+                                            approvedOnDate: new Date().toISOString().split('T')[0],
+                                            dateFormat: "yyyy-MM-dd",
+                                            locale: "en"
+                                        };
+
+                                        await api.post(`/v1/loans/${loanId}?command=approve`, approvePayload);
+                                        console.log(`Loan ${loanId} approved successfully`);
+
+                                        // Disburse loan
+                                        const disbursePayload = {
+                                            actualDisbursementDate: new Date().toISOString().split('T')[0],
+                                            dateFormat: "yyyy-MM-dd",
+                                            locale: "en"
+                                        };
+
+                                        await api.post(`/v1/loans/${loanId}?command=disburse`, disbursePayload);
+                                        console.log(`Loan ${loanId} disbursed successfully`);
+
+                                        // Update loan mapping with loan details
+                                        loanMappingData.mifosClientId = clientId;
+                                        loanMappingData.mifosLoanId = loanId;
+                                        loanMappingData.metadata = {
+                                            ...existingMapping.metadata,
+                                            clientId: clientId,
+                                            clientCreatedAt: new Date().toISOString(),
+                                            loanId: loanId,
+                                            loanCreatedAt: new Date().toISOString(),
+                                            loanDisbursedAt: new Date().toISOString()
+                                        };
+                                    }
+                                }
+                            } catch (error) {
+                                console.error('Error in loan creation process:', error);
+                                // Continue with loan mapping update even if process fails
                             }
-                        } else {
-                            clientId = existingClientByNin.response.pageItems[0].id;
-                            console.log(`✅ Existing client found with ID: ${clientId}`);
-                            // Add client details to mapping
-                            loanMappingData.mifosClientId = clientId;
-                        }
-
-                        // Add client ID to loan mapping metadata
-                        if (clientId) {
-                            loanMappingData.mifosClientId = clientId;
-                            loanMappingData.metadata = {
-                                ...existingMapping.metadata,
-                                clientId: clientId,
-                                clientCreatedAt: new Date().toISOString()
-                            };
-                        }
-                    } catch (clientError) {
-                        console.error('Error creating/fetching client:', clientError);
-                        // Continue with loan mapping update even if client creation fails
-                    }
-                }
-
-                // Get existing loan mapping data
+                        }                // Get existing loan mapping data
                 const existingLoanData = await LoanMappingService.getByEssApplicationNumber(messageDetails.ApplicationNumber);
                 
                 if (!existingLoanData) {

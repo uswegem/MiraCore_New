@@ -103,14 +103,14 @@ async function simulateLoanFlow() {
     console.log('\n📥 RESPONSE XML:');
 
     try {
-        const response1 = await axios.post('http://135.181.33.13:3002/api/loan', loanChargesRequest, {
+        const response1 = await axios.post('http://135.181.33.13:3002/api/loan', loanOfferRequest, {
             headers: { 
                 'Content-Type': 'application/xml',
                 'X-ESS-Source': 'SIMULATION'
             },
             timeout: 30000
         });
-        console.log(response2.data);
+        console.log(response1.data);
     } catch (error) {
         console.log('❌ Error:', error.message);
         if (error.response) {
@@ -144,17 +144,18 @@ async function simulateLoanFlow() {
             <FSPReferenceNumber>FSP${Date.now()}</FSPReferenceNumber>
             <LoanNumber>LOAN${Date.now()}</LoanNumber>
             <Approval>APPROVED</Approval>
-            <NIN>19880527111450000244</NIN>
-            <FirstName>Juma</FirstName>
-            <MiddleName>Ponda</MiddleName>
-            <LastName>Mali</LastName>
-            <MobileNo>0755123456</MobileNo>
+            <NIN>19900615111450000123</NIN>
+            <FirstName>AARON</FirstName>
+            <MiddleName>JOHN</MiddleName>
+            <LastName>USWEGE</LastName>
+            <MobileNo>255755987654</MobileNo>
             <Sex>M</Sex>
-            <DateOfBirth>1988-05-27</DateOfBirth>
-            <EmploymentDate>2015-06-01</EmploymentDate>
+            <DateOfBirth>1990-06-15</DateOfBirth>
+            <EmploymentDate>2018-01-01</EmploymentDate>
             <MaritalStatus>MARRIED</MaritalStatus>
-            <PhysicalAddress>Dodoma, Tanzania</PhysicalAddress>
-            <EmailAddress>juma.ponda@example.com</EmailAddress>
+            <PhysicalAddress>Dar es Salaam, Tanzania</PhysicalAddress>
+            <EmailAddress>aaron.uswege@example.com</EmailAddress>
+            <CallbackUrl>http://135.181.33.13:3002/api/webhook/mifos</CallbackUrl>
             <BankAccountNumber>11223344556</BankAccountNumber>
             <SwiftCode>CRDBTZTZ</SwiftCode>
             <CheckNumber>CHK${Date.now()}</CheckNumber>
@@ -175,14 +176,41 @@ async function simulateLoanFlow() {
     console.log('\n📥 RESPONSE XML:');
 
     try {
-        const response2 = await axios.post('http://135.181.33.13:3002/api/loan', loanOfferRequest, {
+        const response2 = await axios.post('http://135.181.33.13:3002/api/loan', finalApprovalRequest, {
             headers: { 
                 'Content-Type': 'application/xml',
                 'X-ESS-Source': 'SIMULATION'
             },
             timeout: 30000
         });
-        console.log(response3.data);
+        console.log(response2.data);
+        
+        // Wait for client creation to complete
+        console.log('\n⏳ Waiting for client creation to complete...');
+        
+        // Wait for client creation and CBS sync
+        console.log('\n⏳ Waiting for client creation and CBS sync (30 seconds)...');
+        await new Promise(resolve => setTimeout(resolve, 30000));
+
+        // Check CBS directly
+        try {
+            const cbsResponse = await axios.get('https://zedone-uat.miracore.co.tz/fineract-provider/api/v1/clients?externalId=19900615111450000123', {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'fineract-platform-tenantid': 'zedone-uat'
+                },
+                auth: {
+                    username: 'ess_creater',
+                    password: 'Jothan@123456'
+                }
+            });
+            } catch (error) {
+                console.log('\n❌ Failed to check loan mapping:', error.message);
+                try {
+                    await mongoose.disconnect();
+                } catch (e) {}
+            }
+        }
     } catch (error) {
         console.log('❌ Error:', error.message);
         if (error.response) {
