@@ -22,15 +22,21 @@ class ClientService {
                 new Date(clientData.employmentDate).toISOString().split('T')[0] : null;
 
             const payload = {
-                fullname: clientData.fullname,
-                externalId: clientData.externalId || null,
-                mobileNo: clientData.mobileNo || null,
-                officeId: clientData.officeId || 1,
-                legalFormId: clientData.legalFormId || 1,
+                firstname: clientData.firstname,
+                middlename: clientData.middlename,
+                lastname: clientData.lastname,
+                externalId: clientData.externalId,
                 dateFormat: "yyyy-MM-dd",
                 locale: "en",
                 active: true,
+                submittedOnDate: new Date().toISOString().split('T')[0],
                 activationDate: new Date().toISOString().split('T')[0],
+                officeId: 1,
+                savingsProductId: null,
+                dateOfBirth: clientData.dateOfBirth,
+                genderId: clientData.gender === 'M' ? 15 : 16,
+                clientTypeId: 17, // Individual Client
+                staffId: null,
                 // Include datatable fields in main payload
                 datatables: [{
                     registeredTableName: "client_onboarding",
@@ -39,6 +45,10 @@ class ClientService {
                         EmploymentDate: formattedEmploymentDate,
                         SwiftCode: clientData.swiftCode || null,
                         BankAccountNumber: clientData.bankAccountNumber || null,
+                        PhoneNumber: clientData.mobileNo || clientData.mobileNumber,
+                        EmailAddress: clientData.emailAddress,
+                        PhysicalAddress: clientData.physicalAddress,
+                        MaritalStatus: clientData.maritalStatus,
                         locale: "en",
                         dateFormat: "yyyy-MM-dd"
                     }

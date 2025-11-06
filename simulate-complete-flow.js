@@ -103,8 +103,11 @@ async function simulateLoanFlow() {
     console.log('\n📥 RESPONSE XML:');
 
     try {
-        const response2 = await axios.post('http://localhost:3002/api/loan', loanOfferRequest, {
-            headers: { 'Content-Type': 'application/xml' },
+        const response1 = await axios.post('http://135.181.33.13:3002/api/loan', loanChargesRequest, {
+            headers: { 
+                'Content-Type': 'application/xml',
+                'X-ESS-Source': 'SIMULATION'
+            },
             timeout: 30000
         });
         console.log(response2.data);
@@ -172,8 +175,11 @@ async function simulateLoanFlow() {
     console.log('\n📥 RESPONSE XML:');
 
     try {
-        const response3 = await axios.post('http://localhost:3002/api/loan', finalApprovalRequest, {
-            headers: { 'Content-Type': 'application/xml' },
+        const response2 = await axios.post('http://135.181.33.13:3002/api/loan', loanOfferRequest, {
+            headers: { 
+                'Content-Type': 'application/xml',
+                'X-ESS-Source': 'SIMULATION'
+            },
             timeout: 30000
         });
         console.log(response3.data);
