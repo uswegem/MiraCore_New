@@ -208,9 +208,32 @@ const handleLoanChargesRequest = async (parsedData, res) => {
         const messageDetails = parsedData.Document.Data.MessageDetails;
 
         // Extract loan details from request
-        const requestedAmount = parseFloat(messageDetails.RequestedAmount || messageDetails.LoanAmount);
+        let requestedAmount = parseFloat(messageDetails.RequestedAmount || messageDetails.LoanAmount);
         const requestedTenure = parseInt(messageDetails.RequestedTenure || messageDetails.Tenure || 12);
         const interestRate = 15.0; // 15% per annum
+        
+        // If requested amount is 0, calculate based on affordability (OneThirdAmount or DeductibleAmount)
+        const MIN_LOAN_AMOUNT = 100000; // Minimum loan amount
+        if (!requestedAmount || requestedAmount === 0) {
+            const affordability = parseFloat(messageDetails.OneThirdAmount || messageDetails.DeductibleAmount || messageDetails.DesiredDeductibleAmount || 0);
+            console.log(`RequestedAmount is 0, calculating from affordability: ${affordability}`);
+            
+            if (affordability > 0 && requestedTenure > 0) {
+                // Calculate maximum loan amount from affordability (reverse calculation)
+                const monthlyRate = interestRate / 100 / 12;
+                const maxAmount = (affordability * (Math.pow(1 + monthlyRate, requestedTenure) - 1)) /
+                                  (monthlyRate * Math.pow(1 + monthlyRate, requestedTenure));
+                requestedAmount = Math.max(MIN_LOAN_AMOUNT, Math.round(maxAmount));
+                console.log(`Calculated eligible amount from affordability: ${requestedAmount}`);
+            } else {
+                // Default to minimum loan amount if no affordability data
+                requestedAmount = MIN_LOAN_AMOUNT;
+                console.log(`No affordability data, using minimum loan amount: ${requestedAmount}`);
+            }
+        }
+        
+        // Ensure amount meets minimum requirement
+        requestedAmount = Math.max(requestedAmount, MIN_LOAN_AMOUNT);
 
         // Calculate charges
         const totalProcessingFees = requestedAmount * 0.02; // 2% processing fee
