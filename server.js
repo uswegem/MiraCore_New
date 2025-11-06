@@ -72,9 +72,13 @@ app.use((req, res, next) => {
     console.log('📨 Incoming Request:');
     console.log('   Method:', req.method);
     console.log('   Path:', req.path);
+    console.log('   Full URL:', req.protocol + '://' + req.get('host') + req.originalUrl);
     console.log('   Content-Type:', contentType);
     console.log('   Source IP:', req.ip || req.connection.remoteAddress || req.socket.remoteAddress || 'unknown');
+    console.log('   X-Forwarded-For:', req.get('X-Forwarded-For') || 'none');
+    console.log('   X-Real-IP:', req.get('X-Real-IP') || 'none');
     console.log('   User-Agent:', req.get('User-Agent') || 'not provided');
+    console.log('   All Headers:', JSON.stringify(req.headers, null, 2));
     console.log('   Body type:', typeof req.body);
     
     // Handle XML content
