@@ -280,6 +280,12 @@ const server = app.listen(PORT, async () => {
         });
 
         logger.info('✅ Server ready and database connected');
+        
+        // Signal PM2 that app is ready (for cluster mode)
+        if (process.send) {
+            process.send('ready');
+            logger.info('📡 Sent ready signal to PM2');
+        }
     } catch (error) {
         logger.error('❌ Error during server startup:', error);
         process.exit(1);
@@ -306,18 +312,54 @@ const server = app.listen(PORT, async () => {
 });
 
 // Graceful shutdown handling
-process.on('SIGTERM', () => {
-    logger.info('Received SIGTERM. Performing graceful shutdown...');
-    server.close(() => {
-        logger.info('Server closed. Exiting process...');
+process.on('SIGTERM', async () => {
+    logger.info('SIGTERM received, shutting down gracefully');
+    
+    server.close(async () => {
+        logger.info('HTTP server closed');
+        
+        // Close database connections
+        const mongoose = require('mongoose');
+        try {
+            await mongoose.connection.close(false);
+            logger.info('MongoDB connection closed');
+        } catch (error) {
+            logger.error('Error closing MongoDB connection:', error);
+        }
+        
+        logger.info('Graceful shutdown completed');
         process.exit(0);
     });
+    
+    // Force close after 30s if graceful shutdown fails
+    setTimeout(() => {
+        logger.error('Forced shutdown after timeout');
+        process.exit(1);
+    }, 30000);
 });
 
-process.on('SIGINT', () => {
-    logger.info('Received SIGINT. Performing graceful shutdown...');
-    server.close(() => {
-        logger.info('Server closed. Exiting process...');
+process.on('SIGINT', async () => {
+    logger.info('SIGINT received, shutting down gracefully');
+    
+    server.close(async () => {
+        logger.info('HTTP server closed');
+        
+        // Close database connections
+        const mongoose = require('mongoose');
+        try {
+            await mongoose.connection.close(false);
+            logger.info('MongoDB connection closed');
+        } catch (error) {
+            logger.error('Error closing MongoDB connection:', error);
+        }
+        
+        logger.info('Graceful shutdown completed');
         process.exit(0);
     });
+    
+    // Force close after 30s if graceful shutdown fails
+    setTimeout(() => {
+        logger.error('Forced shutdown after timeout');
+        process.exit(1);
+    }, 30000);
 });
