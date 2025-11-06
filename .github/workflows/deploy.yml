@@ -78,18 +78,41 @@ jobs:
           cd /home/uswege/ess
           
           # Install production dependencies
+          echo "📦 Installing dependencies..."
           npm ci --production
           
           # Stop any existing instance
+          echo "🛑 Stopping existing service..."
           pm2 delete ess-app || true
           
-          # Create logs directory
+          # Create required directories
+          echo "📁 Creating required directories..."
           mkdir -p logs
+          mkdir -p keys
+          
+          # Copy keys from backup if they don't exist
+          echo "🔑 Checking SSL keys..."
+          [ ! -f keys/private.pem ] && cp ../ess_backup_*/keys/private.pem keys/ || true
+          [ ! -f keys/public.pem ] && cp ../ess_backup_*/keys/public.pem keys/ || true
+          [ ! -f keys/fspNameCertificate.crt ] && cp ../ess_backup_*/keys/fspNameCertificate.crt keys/ || true
+          [ ! -f keys/ess_public.pem ] && cp ../ess_backup_*/keys/ess_public.pem keys/ || true
+          [ ! -f keys/third_party_public.pem ] && cp ../ess_backup_*/keys/third_party_public.pem keys/ || true
+          
+          # Copy .env from backup if it doesn't exist
+          echo "📝 Checking environment file..."
+          [ ! -f .env ] && cp ../ess_backup_*/.env . || true
+          
+          # Set correct permissions
+          echo "🔒 Setting permissions..."
+          chmod 600 keys/*
+          chmod 600 .env
           
           # Start using ecosystem config
+          echo "🚀 Starting service..."
           pm2 start ecosystem.config.js --env production
           
           # Wait for the service to be ready and perform health checks
+          echo "🏥 Performing health checks..."
           for i in {1..30}; do
             echo "Attempt $i: Checking if service is up..."
             if curl -s http://localhost:3002/health | grep -q "healthy"; then

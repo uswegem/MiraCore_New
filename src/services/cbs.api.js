@@ -25,6 +25,15 @@ const api = axios.create({
 // Request interceptor
 api.interceptors.request.use(
   (config) => {
+    console.log('📤 CBS API Request:', {
+      url: config.url,
+      method: config.method,
+      headers: {
+        ...config.headers,
+        Authorization: '[REDACTED]' // Don't log auth header
+      },
+      data: config.data
+    });
     return config;
   },
   (error) => Promise.reject(error)
@@ -34,9 +43,22 @@ api.interceptors.request.use(
 // Response interceptor
 api.interceptors.response.use(
   (response) => {
+    console.log('📥 CBS API Response:', {
+      url: response.config.url,
+      status: response.status,
+      data: response.data
+    });
     return { status: true, message: 'Success', response: response.data }
   },
   (error) => {
+    console.error('❌ CBS API Error:', {
+      url: error.config?.url,
+      method: error.config?.method,
+      headers: error.config?.headers,
+      data: error.config?.data,
+      status: error.response?.status,
+      error: error.response?.data || error.message
+    });
     if (error.response) {
       return { status: false, message: 'Error', response: error.response.data }
     }
@@ -64,6 +86,15 @@ const checkerApi = axios.create({
 // Apply the same interceptors to checkerApi
 checkerApi.interceptors.request.use(
   (config) => {
+    console.log('📤 CBS Checker API Request:', {
+      url: config.url,
+      method: config.method,
+      headers: {
+        ...config.headers,
+        Authorization: '[REDACTED]' // Don't log auth header
+      },
+      data: config.data
+    });
     return config;
   },
   (error) => Promise.reject(error)
@@ -71,9 +102,22 @@ checkerApi.interceptors.request.use(
 
 checkerApi.interceptors.response.use(
   (response) => {
+    console.log('📥 CBS Checker API Response:', {
+      url: response.config.url,
+      status: response.status,
+      data: response.data
+    });
     return { status: true, message: 'Success', response: response.data }
   },
   (error) => {
+    console.error('❌ CBS Checker API Error:', {
+      url: error.config?.url,
+      method: error.config?.method,
+      headers: error.config?.headers,
+      data: error.config?.data,
+      status: error.response?.status,
+      error: error.response?.data || error.message
+    });
     if (error.response) {
       return { status: false, message: 'Error', response: error.response.data }
     }

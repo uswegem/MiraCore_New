@@ -44,7 +44,7 @@ async function simulateLoanFlow() {
     console.log('\n📥 RESPONSE XML:');
 
     try {
-        const response1 = await axios.post('http://localhost:3002/api/loan', loanChargesRequest, {
+        const response1 = await axios.post('http://135.181.33.13:3002/api/loan', loanChargesRequest, {
             headers: { 'Content-Type': 'application/xml' },
             timeout: 30000
         });
@@ -141,22 +141,28 @@ async function simulateLoanFlow() {
             <FSPReferenceNumber>FSP${Date.now()}</FSPReferenceNumber>
             <LoanNumber>LOAN${Date.now()}</LoanNumber>
             <Approval>APPROVED</Approval>
-            <NIN>1234567890123456</NIN>
-            <FirstName>John</FirstName>
-            <LastName>Doe</LastName>
-            <MobileNo>0712345678</MobileNo>
+            <NIN>19880527111450000244</NIN>
+            <FirstName>Juma</FirstName>
+            <MiddleName>Ponda</MiddleName>
+            <LastName>Mali</LastName>
+            <MobileNo>0755123456</MobileNo>
             <Sex>M</Sex>
-            <DateOfBirth>1990-01-01</DateOfBirth>
-            <EmploymentDate>2020-01-01</EmploymentDate>
-            <BankAccountNumber>1234567890</BankAccountNumber>
-            <SwiftCode>TESTSWFT</SwiftCode>
+            <DateOfBirth>1988-05-27</DateOfBirth>
+            <EmploymentDate>2015-06-01</EmploymentDate>
+            <MaritalStatus>MARRIED</MaritalStatus>
+            <PhysicalAddress>Dodoma, Tanzania</PhysicalAddress>
+            <EmailAddress>juma.ponda@example.com</EmailAddress>
+            <BankAccountNumber>11223344556</BankAccountNumber>
+            <SwiftCode>CRDBTZTZ</SwiftCode>
             <CheckNumber>CHK${Date.now()}</CheckNumber>
-            <RequestedAmount>5000000</RequestedAmount>
+            <RequestedAmount>8000000</RequestedAmount>
             <ProductCode>17</ProductCode>
-            <Tenure>24</Tenure>
+            <Tenure>36</Tenure>
             <InterestRate>28</InterestRate>
-            <ProcessingFee>500</ProcessingFee>
-            <Insurance>200</Insurance>
+            <ProcessingFee>160000</ProcessingFee>
+            <Insurance>80000</Insurance>
+            <LoanPurpose>HOME_IMPROVEMENT</LoanPurpose>
+            <Funding>PERSONAL</Funding>
         </MessageDetails>
     </Data>
 </Document>`;

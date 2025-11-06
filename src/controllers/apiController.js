@@ -522,6 +522,7 @@ const handleLoanCancellation = async (parsedData, res) => {
 };
 
 const handleLoanFinalApproval = async (parsedData, res) => {
+    let responseSent = false;
     try {
         console.log('Processing LOAN_FINAL_APPROVAL_NOTIFICATION...');
 
@@ -557,8 +558,11 @@ const handleLoanFinalApproval = async (parsedData, res) => {
         };
         
         // Send acknowledgment response
-        const signedResponse = digitalSignature.createSignedXML(responseData.Data);
-        res.status(200).send(signedResponse);
+        if (!responseSent) {
+            const signedResponse = digitalSignature.createSignedXML(responseData.Data);
+            res.status(200).send(signedResponse);
+            responseSent = true;
+        }
 
         // Process the request asynchronously
         setImmediate(async () => {
@@ -635,8 +639,6 @@ const handleLoanFinalApproval = async (parsedData, res) => {
                             };
                             
                             console.log('📄 Creating client with payload:', JSON.stringify(clientPayload, null, 2));
-
-                            console.log('Creating client with payload:', JSON.stringify(clientPayload, null, 2));
                             const newClient = await ClientService.createClient(clientPayload);
 
                             if (newClient.status && newClient.response) {
@@ -644,8 +646,10 @@ const handleLoanFinalApproval = async (parsedData, res) => {
                                 console.log(`✅ Client created in CBS with ID: ${clientId}`);
                             }
                         } else {
-                            clientId = existingClient.response.pageItems[0].id;
+                            clientId = existingClientByNin.response.pageItems[0].id;
                             console.log(`✅ Existing client found with ID: ${clientId}`);
+                            // Add client details to mapping
+                            loanMappingData.mifosClientId = clientId;
                         }
 
                         // Add client ID to loan mapping metadata
@@ -663,45 +667,113 @@ const handleLoanFinalApproval = async (parsedData, res) => {
                     }
                 }
 
-                // Update loan mapping in database
-                // Client data should have been stored during LOAN_OFFER_REQUEST
-                await LoanMappingService.updateLoanMapping(loanMappingData);
+                // Get existing loan mapping data
+                const existingLoanData = await LoanMappingService.getByEssApplicationNumber(messageDetails.ApplicationNumber);
+                
+                if (!existingLoanData) {
+                    console.warn('⚠️ No existing loan mapping found for application:', messageDetails.ApplicationNumber);
+                } else {
+                    // Keep the requested amount from existing data
+                    loanMappingData.requestedAmount = existingLoanData.requestedAmount;
 
-                if (messageDetails.Approval === 'APPROVED') {
-                    // Prepare LOAN_DISBURSMENT_NOTIFICATION callback
-                    const callbackData = {
-                        Data: {
-                            Header: {
-                                "Sender": process.env.FSP_NAME || "ZE DONE",
-                                "Receiver": "ESS_UTUMISHI",
-                                "FSPCode": header.FSPCode,
-                                "MsgId": getMessageId("LOAN_DISBURSMENT_NOTIFICATION"),
-                                "MessageType": "LOAN_DISBURSMENT_NOTIFICATION"
-                            },
-                            MessageDetails: {
-                                "ApplicationNumber": messageDetails.ApplicationNumber,
-                                "LoanNumber": messageDetails.LoanNumber,
-                                "FSPReferenceNumber": messageDetails.FSPReferenceNumber,
-                                "DisbursementDate": new Date().toISOString(),
-                                "DisbursementAmount": loanMappingData.requestedAmount,
-                                "Status": "DISBURSED"
-                            }
+                    // Also keep any metadata
+                    loanMappingData.metadata = {
+                        ...existingLoanData.metadata,
+                        ...loanMappingData.metadata,
+                        finalApprovalDetails: {
+                            applicationNumber: messageDetails.ApplicationNumber,
+                            loanNumber: messageDetails.LoanNumber,
+                            fspReferenceNumber: messageDetails.FSPReferenceNumber,
+                            approval: messageDetails.Approval,
+                            reason: messageDetails.Reason
                         }
                     };
+                }
 
-                    // Send callback notification
-                    await sendCallback(callbackData);
+                // Default requested amount if not present
+                if (!loanMappingData.requestedAmount) {
+                    loanMappingData.requestedAmount = messageDetails.requestedAmount || messageDetails.RequestedAmount || "5000000";
+                }
+                
+                // Update loan mapping in database
+                const savedMapping = await LoanMappingService.updateLoanMapping(loanMappingData);
+                console.log('✅ Updated loan mapping:', {
+                    applicationNumber: savedMapping.essApplicationNumber,
+                    loanNumber: savedMapping.essLoanNumberAlias,
+                    requestedAmount: savedMapping.requestedAmount,
+                    clientId: savedMapping.mifosClientId,
+                    status: savedMapping.status
+                });
 
-                    // Update loan status to DISBURSED
-                    await LoanMappingService.updateLoanMapping({
-                        ...loanMappingData,
-                        status: 'DISBURSED',
-                        disbursedAt: new Date().toISOString()
-                    });
+                if (messageDetails.Approval === 'APPROVED') {
+                    try {
+                        // Update loan status to DISBURSED
+                        const disbursementAmount = messageDetails.DisbursementAmount || messageDetails.LoanAmount || savedMapping.requestedAmount;
+                        console.log('💰 Disbursement amount:', disbursementAmount);
+                        
+                        const updatedMapping = await LoanMappingService.updateLoanMapping({
+                            essApplicationNumber: savedMapping.essApplicationNumber,
+                            essLoanNumberAlias: savedMapping.essLoanNumberAlias,
+                            fspReferenceNumber: savedMapping.fspReferenceNumber,
+                            status: 'DISBURSED',
+                            disbursedAmount: disbursementAmount,
+                            disbursedAt: new Date().toISOString(),
+                            metadata: {
+                                ...savedMapping.metadata,
+                                disbursementDetails: {
+                                    amount: disbursementAmount,
+                                    date: new Date().toISOString()
+                                }
+                            }
+                        });
+
+                        // Log updated mapping details
+                        console.log('✅ Loan mapping updated with disbursement details:', {
+                            applicationNumber: updatedMapping.essApplicationNumber,
+                            loanNumber: updatedMapping.essLoanNumberAlias,
+                            status: updatedMapping.status,
+                            requestedAmount: updatedMapping.requestedAmount
+                        });
+
+                        // Prepare LOAN_DISBURSMENT_NOTIFICATION callback
+                        const callbackData = {
+                            Data: {
+                                Header: {
+                                    "Sender": process.env.FSP_NAME || "ZE DONE",
+                                    "Receiver": "ESS_UTUMISHI",
+                                    "FSPCode": header.FSPCode,
+                                    "MsgId": getMessageId("LOAN_DISBURSMENT_NOTIFICATION"),
+                                    "MessageType": "LOAN_DISBURSMENT_NOTIFICATION"
+                                },
+                                MessageDetails: {
+                                    "ApplicationNumber": messageDetails.ApplicationNumber,
+                                    "LoanNumber": messageDetails.LoanNumber,
+                                    "FSPReferenceNumber": messageDetails.FSPReferenceNumber,
+                                    "DisbursementDate": new Date().toISOString(),
+                                    "DisbursementAmount": updatedMapping.disbursedAmount || updatedMapping.requestedAmount,
+                                    "Status": "DISBURSED",
+                                    "StatusCode": "8000",
+                                    "StatusDesc": "Loan disbursed successfully"
+                                }
+                            }
+                        };
+
+                        // Log disbursement notification details
+                        console.log('📤 Sending disbursement notification:', {
+                            applicationNumber: messageDetails.ApplicationNumber,
+                            loanNumber: messageDetails.LoanNumber,
+                            amount: updatedMapping.requestedAmount
+                        });
+
+                        // Send callback notification
+                        await sendCallback(callbackData);
+                    } catch (error) {
+                        console.error('Error in disbursement processing:', error);
+                        throw error;
+                    }
                 }
             } catch (error) {
                 console.error('Error in async processing:', error);
-                // Log the error but don't send response since we already sent acknowledgment
                 await AuditLog.create({
                     eventType: 'LOAN_FINAL_APPROVAL_ERROR',
                     data: {
@@ -725,7 +797,10 @@ const handleLoanFinalApproval = async (parsedData, res) => {
 
     } catch (error) {
         console.error('Error processing loan final approval:', error);
-        return sendErrorResponse(res, '8012', error.message, 'xml', parsedData);
+        if (!responseSent) {
+            return sendErrorResponse(res, '8012', error.message, 'xml', parsedData);
+            responseSent = true;
+        }
     }
 };
 

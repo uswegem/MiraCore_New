@@ -200,40 +200,73 @@ class LoanMappingService {
    */
   static async updateLoanMapping(loanData) {
     try {
-        // First try to find by LoanNumber
+        // Find by application number first
         let mapping = await LoanMapping.findOne({ 
-            $or: [
-                { essLoanNumberAlias: loanData.essLoanId },
-                { fspReferenceNumber: loanData.fspLoanId }
-            ]
+            essApplicationNumber: loanData.essApplicationNumber
         });
 
         if (!mapping) {
-            // If no existing mapping found, create a new one
-            mapping = new LoanMapping({
-                essLoanNumberAlias: loanData.essLoanId,
-                fspReferenceNumber: loanData.fspLoanId,
-                essApplicationNumber: loanData.applicationNumber,
-                status: loanData.status === 'APPROVED' ? 'APPROVED' : 'REJECTED',
-                metadata: {
-                    reason: loanData.reason,
-                    approvalDate: loanData.approvalDate
-                }
+            // If no existing mapping found by application number, try loan number or FSP reference
+            mapping = await LoanMapping.findOne({
+                $or: [
+                    { essLoanNumberAlias: loanData.essLoanNumberAlias },
+                    { fspReferenceNumber: loanData.fspReferenceNumber }
+                ]
             });
-        } else {
-            // Update existing mapping
-            mapping.status = loanData.status === 'APPROVED' ? 'APPROVED' : 'REJECTED';
-            mapping.fspReferenceNumber = loanData.fspLoanId;
-            mapping.metadata = {
-                ...mapping.metadata,
-                reason: loanData.reason,
-                approvalDate: loanData.approvalDate
-            };
         }
 
-        await mapping.save();
-        console.log(`✅ Updated loan mapping for loan: ${loanData.essLoanId}`);
-        return mapping;
+        if (!mapping) {
+            // If still no mapping found, create a new one
+            mapping = new LoanMapping({
+                essApplicationNumber: loanData.essApplicationNumber,
+                essLoanNumberAlias: loanData.essLoanNumberAlias,
+                fspReferenceNumber: loanData.fspReferenceNumber,
+                productCode: loanData.productCode || "17", // Default product code
+                requestedAmount: loanData.requestedAmount || 5000000, // Default amount
+                tenure: loanData.tenure || 24, // Default tenure
+                status: loanData.status,
+                mifosClientId: loanData.mifosClientId,
+                metadata: loanData.metadata || {}
+            });
+
+            if (loanData.status === 'FINAL_APPROVAL_RECEIVED') {
+                mapping.finalApprovalReceivedAt = new Date();
+            } else if (loanData.status === 'DISBURSED') {
+                mapping.disbursedAt = new Date();
+            }
+        } else {
+            // Update fields that are provided in loanData
+            Object.keys(loanData).forEach(key => {
+                if (loanData[key] !== undefined && key !== '_id') {
+                    mapping[key] = loanData[key];
+                }
+            });
+
+            // Special handling for status transitions
+            if (loanData.status === 'FINAL_APPROVAL_RECEIVED' && !mapping.finalApprovalReceivedAt) {
+                mapping.finalApprovalReceivedAt = new Date();
+            } else if (loanData.status === 'DISBURSED' && !mapping.disbursedAt) {
+                mapping.disbursedAt = new Date();
+            }
+
+            // Special handling for metadata to prevent overwriting
+            if (loanData.metadata) {
+                mapping.metadata = {
+                    ...mapping.metadata,
+                    ...loanData.metadata
+                };
+            }
+        }
+
+        const savedMapping = await mapping.save();
+        console.log('✅ Updated loan mapping:', {
+            applicationNumber: savedMapping.essApplicationNumber,
+            loanNumber: savedMapping.essLoanNumberAlias,
+            status: savedMapping.status,
+            requestedAmount: savedMapping.requestedAmount,
+            clientId: savedMapping.mifosClientId
+        });
+        return savedMapping;
     } catch (error) {
         console.error('❌ Error updating loan mapping:', error);
         throw error;
