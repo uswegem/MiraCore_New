@@ -12,6 +12,7 @@ const cbsApi = require('../services/cbs.api');
 const { formatDateForMifos } = require('../utils/dateUtils');
 const { AuditLog } = require('../models/AuditLog');
 const { getMessageId } = require('../utils/messageIdGenerator');
+const LOAN_CONSTANTS = require('../utils/loanConstants');
 
 // Export all functions before they are used
 exports.processRequest = async (req, res) => {
@@ -209,11 +210,16 @@ const handleLoanChargesRequest = async (parsedData, res) => {
 
         // Extract loan details from request
         let requestedAmount = parseFloat(messageDetails.RequestedAmount || messageDetails.LoanAmount);
-        const requestedTenure = parseInt(messageDetails.RequestedTenure || messageDetails.Tenure || 12);
+        // Default to maximum tenure if not provided or is 0
+        let requestedTenure = parseInt(messageDetails.RequestedTenure || messageDetails.Tenure);
+        if (!requestedTenure || requestedTenure === 0) {
+            requestedTenure = LOAN_CONSTANTS.MAX_TENURE;
+            console.log(`Tenure not provided or is 0, defaulting to maximum tenure: ${requestedTenure} months`);
+        }
         const interestRate = 15.0; // 15% per annum
         
         // If requested amount is 0, calculate based on affordability (OneThirdAmount or DeductibleAmount)
-        const MIN_LOAN_AMOUNT = 100000; // Minimum loan amount
+        const MIN_LOAN_AMOUNT = LOAN_CONSTANTS.MIN_LOAN_AMOUNT;
         if (!requestedAmount || requestedAmount === 0) {
             const affordability = parseFloat(messageDetails.OneThirdAmount || messageDetails.DeductibleAmount || messageDetails.DesiredDeductibleAmount || 0);
             console.log(`RequestedAmount is 0, calculating from affordability: ${affordability}`);
@@ -345,15 +351,21 @@ const handleLoanOfferRequest = async (parsedData, res) => {
             nearestBranchCode: messageDetails.NearestBranchCode
         };
 
-        // Calculate loan offer immediately
+        // Calculate loan offer immediately with proper tenure defaulting
+        let offerTenure = parseInt(messageDetails.Tenure);
+        if (!offerTenure || offerTenure === 0) {
+            offerTenure = LOAN_CONSTANTS.MAX_TENURE;
+            console.log(`Tenure not provided or is 0, defaulting to maximum tenure: ${offerTenure} months`);
+        }
+        
         const loanOffer = {
             LoanAmount: messageDetails.RequestedAmount,
             InterestRate: 15.0, // 15% per annum
-            Tenure: messageDetails.Tenure || 12, // Use requested tenure or default to 12 months
+            Tenure: offerTenure,
             MonthlyInstallment: calculateMonthlyInstallment(
                 messageDetails.RequestedAmount,
                 15.0,
-                messageDetails.Tenure || 12
+                offerTenure
             )
         };
 
