@@ -18,49 +18,38 @@ class ClientService {
      */
     static async createClient(clientData) {
         try {
+            const formattedEmploymentDate = clientData.employmentDate ? 
+                new Date(clientData.employmentDate).toISOString().split('T')[0] : null;
+
             const payload = {
                 fullname: clientData.fullname,
                 externalId: clientData.externalId || null,
                 mobileNo: clientData.mobileNo || null,
-                officeId: clientData.officeId || 1, // Default office ID
-                legalFormId: clientData.legalFormId || 1, // 1 = Person, 2 = Entity
-                dateFormat: clientData.dateFormat || "yyyy-MM-dd",
-                locale: clientData.locale || "en",
-                active: clientData.active !== undefined ? clientData.active : true,
-                activationDate: clientData.activationDate || new Date().toISOString().split('T')[0]
-            };
-
-            console.log('🔵 Creating client in CBS:', payload);
-            const response = await cbsApi.post(API_ENDPOINTS.CLIENTS, payload);
-            console.log('🟢 CBS client creation response:', JSON.stringify(response, null, 2));
-            
-            // If client creation was successful, create datatable entry
-            if (response.status && response.response && response.response.clientId) {
-                try {
-                    // Format dates according to Mifos requirements
-                    const formattedEmploymentDate = clientData.employmentDate ? 
-                        new Date(clientData.employmentDate).toISOString().split('T')[0] : null;
-                    
-                    const datatablePayload = {
+                officeId: clientData.officeId || 1,
+                legalFormId: clientData.legalFormId || 1,
+                dateFormat: "yyyy-MM-dd",
+                locale: "en",
+                active: true,
+                activationDate: new Date().toISOString().split('T')[0],
+                // Include datatable fields in main payload
+                datatables: [{
+                    registeredTableName: "client_onboarding",
+                    data: {
                         CheckNumber: clientData.checkNumber || clientData.applicationNumber,
                         EmploymentDate: formattedEmploymentDate,
                         SwiftCode: clientData.swiftCode || null,
                         BankAccountNumber: clientData.bankAccountNumber || null,
                         locale: "en",
                         dateFormat: "yyyy-MM-dd"
-                    };
-                    
-                    console.log('🔵 Creating client datatable entry:', datatablePayload);
-                    const datatableResponse = await cbsApi.post(
-                        `${API_ENDPOINTS.CLIENTS}/${response.response.clientId}/datatables/client_onboarding`, 
-                        datatablePayload
-                    );
-                    console.log('🟢 Datatable creation response:', datatableResponse);
-                } catch (datatableError) {
-                    console.error('🔴 Error creating datatable entry:', datatableError);
-                    // Don't throw here, as client was already created
-                }
-            }
+                    }
+                }]
+            };
+
+            console.log('🔵 Creating client in CBS:', payload);
+            const response = await cbsApi.post(API_ENDPOINTS.CLIENTS, payload);
+            console.log('🟢 CBS client creation response:', JSON.stringify(response, null, 2));
+            
+            // Client creation includes datatable, no need for separate call
             
             return response;
         } catch (error) {
