@@ -285,8 +285,8 @@ const handleLoanChargesRequest = async (parsedData, res) => {
         const totalInterestRateAmount = (requestedAmount * interestRate * requestedTenure) / (12 * 100);
         
         // Net amount after deducting charges
-        const desiredDeductibleAmount = totalProcessingFees + totalInsurance + otherCharges;
-        const netLoanAmount = requestedAmount - desiredDeductibleAmount;
+        const totalDeductions = totalProcessingFees + totalInsurance + otherCharges;
+        const netLoanAmount = requestedAmount - totalDeductions;
         
         // Total amount to pay back (principal + interest)
         const totalAmountToPay = requestedAmount + totalInterestRateAmount;
@@ -304,7 +304,7 @@ const handleLoanChargesRequest = async (parsedData, res) => {
                     "MessageType": "LOAN_CHARGES_RESPONSE"
                 },
                 MessageDetails: {
-                    "DesiredDeductibleAmount": desiredDeductibleAmount,
+                    "DesiredDeductibleAmount": totalDeductions,
                     "TotalInsurance": totalInsurance,
                     "TotalProcessingFees": totalProcessingFees,
                     "TotalInterestRateAmount": totalInterestRateAmount,
