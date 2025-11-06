@@ -218,23 +218,58 @@ const handleLoanChargesRequest = async (parsedData, res) => {
         }
         const interestRate = 15.0; // 15% per annum
         
-        // If requested amount is 0, calculate based on affordability (OneThirdAmount or DeductibleAmount)
+        // Extract repayment capacity fields
+        // Priority: DesiredDeductibleAmount (customer's preferred EMI) > DeductibleAmount (max capacity) > OneThirdAmount
+        const desiredDeductibleAmount = parseFloat(messageDetails.DesiredDeductibleAmount || 0);
+        const deductibleAmount = parseFloat(messageDetails.DeductibleAmount || 0);
+        const oneThirdAmount = parseFloat(messageDetails.OneThirdAmount || 0);
         const MIN_LOAN_AMOUNT = LOAN_CONSTANTS.MIN_LOAN_AMOUNT;
+        
+        // Determine which EMI value to use based on priority
+        let targetEMI = 0;
+        if (desiredDeductibleAmount > 0) {
+            targetEMI = desiredDeductibleAmount;
+            console.log(`Using DesiredDeductibleAmount as target EMI: ${targetEMI}`);
+        } else if (deductibleAmount > 0) {
+            targetEMI = deductibleAmount;
+            console.log(`Using DeductibleAmount as maximum capacity EMI: ${targetEMI}`);
+        } else if (oneThirdAmount > 0) {
+            targetEMI = oneThirdAmount;
+            console.log(`Using OneThirdAmount as fallback EMI: ${targetEMI}`);
+        }
+        
+        console.log(`Customer repayment capacity - DesiredDeductibleAmount: ${desiredDeductibleAmount}, DeductibleAmount: ${deductibleAmount}, OneThirdAmount: ${oneThirdAmount}, Target EMI: ${targetEMI}`);
+        
+        // If requested amount is 0, calculate maximum loan amount based on target EMI
         if (!requestedAmount || requestedAmount === 0) {
-            const affordability = parseFloat(messageDetails.OneThirdAmount || messageDetails.DeductibleAmount || messageDetails.DesiredDeductibleAmount || 0);
-            console.log(`RequestedAmount is 0, calculating from affordability: ${affordability}`);
+            console.log(`RequestedAmount is 0, calculating maximum loan from target EMI: ${targetEMI}`);
             
-            if (affordability > 0 && requestedTenure > 0) {
-                // Calculate maximum loan amount from affordability (reverse calculation)
+            if (targetEMI > 0 && requestedTenure > 0) {
+                // Calculate maximum loan amount from target EMI (reverse calculation)
                 const monthlyRate = interestRate / 100 / 12;
-                const maxAmount = (affordability * (Math.pow(1 + monthlyRate, requestedTenure) - 1)) /
+                const maxAmount = (targetEMI * (Math.pow(1 + monthlyRate, requestedTenure) - 1)) /
                                   (monthlyRate * Math.pow(1 + monthlyRate, requestedTenure));
                 requestedAmount = Math.max(MIN_LOAN_AMOUNT, Math.round(maxAmount));
-                console.log(`Calculated eligible amount from affordability: ${requestedAmount}`);
+                console.log(`Calculated maximum eligible loan amount: ${requestedAmount} (EMI will be: ${targetEMI})`);
             } else {
                 // Default to minimum loan amount if no affordability data
                 requestedAmount = MIN_LOAN_AMOUNT;
                 console.log(`No affordability data, using minimum loan amount: ${requestedAmount}`);
+            }
+        } else {
+            // If requested amount is provided, validate it doesn't exceed customer's repayment capacity
+            if (maxDeductibleAmount > 0) {
+                const calculatedEMI = calculateMonthlyInstallment(requestedAmount, interestRate, requestedTenure);
+                console.log(`Requested amount: ${requestedAmount}, Calculated EMI: ${calculatedEMI}, Max capacity: ${maxDeductibleAmount}`);
+                
+                if (calculatedEMI > maxDeductibleAmount) {
+                    // Adjust loan amount downward to fit within customer's maximum capacity
+                    const monthlyRate = interestRate / 100 / 12;
+                    const adjustedAmount = (maxDeductibleAmount * (Math.pow(1 + monthlyRate, requestedTenure) - 1)) /
+                                          (monthlyRate * Math.pow(1 + monthlyRate, requestedTenure));
+                    requestedAmount = Math.max(MIN_LOAN_AMOUNT, Math.round(adjustedAmount));
+                    console.log(`⚠️ Requested amount exceeds capacity. Adjusted to: ${requestedAmount} (EMI: ${maxDeductibleAmount})`);
+                }
             }
         }
         
