@@ -24,10 +24,10 @@ class ClientService {
                 mobileNo: clientData.mobileNo || null,
                 officeId: clientData.officeId || 1, // Default office ID
                 legalFormId: clientData.legalFormId || 1, // 1 = Person, 2 = Entity
-                dateFormat: clientData.dateFormat || "dd MMMM yyyy",
+                dateFormat: clientData.dateFormat || "yyyy-MM-dd",
                 locale: clientData.locale || "en",
                 active: clientData.active !== undefined ? clientData.active : true,
-                activationDate: clientData.activationDate || new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })
+                activationDate: clientData.activationDate || new Date().toISOString().split('T')[0]
             };
 
             console.log('🔵 Creating client in CBS:', payload);
@@ -37,16 +37,9 @@ class ClientService {
             // If client creation was successful, create datatable entry
             if (response.status && response.response && response.response.clientId) {
                 try {
-                    // Convert employment date to required format
-                    let formattedEmploymentDate = null;
-                    if (clientData.employmentDate) {
-                        const date = new Date(clientData.employmentDate);
-                        formattedEmploymentDate = date.toLocaleDateString('en-GB', { 
-                            day: '2-digit',
-                            month: 'long',
-                            year: 'numeric'
-                        });
-                    }
+                    // Format dates according to Mifos requirements
+                    const formattedEmploymentDate = clientData.employmentDate ? 
+                        new Date(clientData.employmentDate).toISOString().split('T')[0] : null;
                     
                     const datatablePayload = {
                         CheckNumber: clientData.checkNumber || clientData.applicationNumber,
@@ -54,7 +47,7 @@ class ClientService {
                         SwiftCode: clientData.swiftCode || null,
                         BankAccountNumber: clientData.bankAccountNumber || null,
                         locale: "en",
-                        dateFormat: "dd MMMM yyyy"
+                        dateFormat: "yyyy-MM-dd"
                     };
                     
                     console.log('🔵 Creating client datatable entry:', datatablePayload);
