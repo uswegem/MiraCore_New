@@ -30,8 +30,16 @@ class EligibilityService {
       const productDetails = loanOfferDTO.productDetails || {};
       const interestRate = productDetails.interestRate || LOAN_CONSTANTS.DEFAULT_INTEREST_RATE;
       const maxPrincipal = productDetails.maxPrincipal || LOAN_CONSTANTS.MAX_LOAN_AMOUNT;
-      const minPrincipal = productDetails.minPrincipal || LOAN_CONSTANTS.TEST_LOAN_AMOUNT;
+      const minPrincipal = productDetails.minPrincipal || LOAN_CONSTANTS.MIN_LOAN_AMOUNT;
       const maxTenure = productDetails.maxNumberOfRepayments || LOAN_CONSTANTS.MAX_TENURE;
+      
+      // Validate against minimum loan amount
+      if (loanOfferDTO.requestedAmount && loanOfferDTO.requestedAmount < minPrincipal) {
+        throw new ApplicationException(
+          'LOAN_AMOUNT_TOO_LOW',
+          `Requested amount ${loanOfferDTO.requestedAmount} is below minimum ${minPrincipal}`
+        );
+      }
 
       console.log('Using product parameters:', {
         interestRate,
@@ -48,8 +56,12 @@ class EligibilityService {
         // For reverse calculation: use centralRegAffordability as target EMI
         const targetEMI = loanOfferDTO.centralRegAffordability;
         console.log(`Reverse calculation: Using ${targetEMI} as target EMI`);
-        adjustedLoanAmount = this.calculateMaxLoanAmount(targetEMI, interestRate, tenure);
-        calculatedEMI = targetEMI;
+        // Calculate minimum EMI required for MIN_LOAN_AMOUNT
+        const minEMI = this.calculateEMI(LOAN_CONSTANTS.MIN_LOAN_AMOUNT, interestRate, tenure);
+        const effectiveEMI = Math.max(targetEMI, minEMI);
+        console.log(`Min required EMI: ${minEMI}, Using effective EMI: ${effectiveEMI}`);
+        adjustedLoanAmount = this.calculateMaxLoanAmount(effectiveEMI, interestRate, tenure);
+        calculatedEMI = effectiveEMI;
         console.log(`Calculated max loan amount: ${adjustedLoanAmount} for EMI: ${calculatedEMI}`);
       } else {
         // For forward calculation: check if requested amount fits within affordability
@@ -71,7 +83,10 @@ class EligibilityService {
         }
       }
 
-      // Mock eligibility response using dynamic product parameters
+        // Mock eligibility response using dynamic product parameters
+      // Ensure loan amount is not less than minimum principal
+      adjustedLoanAmount = Math.max(adjustedLoanAmount, minPrincipal);
+
       const mockOffer = {
         loanOffer: {
           product: {
@@ -115,10 +130,25 @@ class EligibilityService {
    * Calculate maximum loan amount for a given EMI, interest rate, and tenure
    */
   calculateMaxLoanAmount(targetEMI, annualInterestRate, tenureMonths) {
+    // Minimum loan amount validation
+    const MIN_LOAN_AMOUNT = 100000; // 100,000 minimum
+
     const monthlyRate = annualInterestRate / 100 / 12;
     const maxAmount = (targetEMI * (Math.pow(1 + monthlyRate, tenureMonths) - 1)) /
                       (monthlyRate * Math.pow(1 + monthlyRate, tenureMonths));
-    return Math.round(maxAmount * 100) / 100; // Round to 2 decimal places
+                      
+    // Ensure calculated amount meets minimum requirement
+    const calculatedAmount = Math.max(MIN_LOAN_AMOUNT, Math.round(maxAmount * 100) / 100);
+    
+    // If amount is less than minimum, throw an error
+    if (maxAmount < MIN_LOAN_AMOUNT) {
+      throw new ApplicationException(
+        'LOAN_AMOUNT_TOO_LOW',
+        `Calculated loan amount ${maxAmount} is below minimum ${MIN_LOAN_AMOUNT}`
+      );
+    }
+    
+    return calculatedAmount; // Return amount that meets minimum requirement
   }
 }
 

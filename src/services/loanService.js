@@ -194,6 +194,14 @@ const LoanCalculate = async (data) => {
         console.log(`Calculated Tenure: ${calculatedTenure}`);
 
         // Save initial request to database
+        // Validate final loan amount before saving
+        if (loanAmount < LOAN_CONSTANTS.MIN_LOAN_AMOUNT) {
+            console.warn(`Final loan amount ${loanAmount} is below minimum ${LOAN_CONSTANTS.MIN_LOAN_AMOUNT}`);
+            loanAmount = LOAN_CONSTANTS.MIN_LOAN_AMOUNT;
+            // Recalculate monthly installment based on minimum loan amount
+            monthlyInstallment = calculateInstallment(loanAmount, tenure, interest);
+        }
+
         let possibleLoanChargesEntity = null;
         try {
             possibleLoanChargesEntity = await PossibleLoanCharges.create({
@@ -201,6 +209,8 @@ const LoanCalculate = async (data) => {
                 productName: 'DAS',
                 idNumber: checkNumber,
                 idNumberType: 'CHECK_NUMBER',
+                loanAmount: loanAmount, // Add loan amount to record
+                monthlyInstallment: monthlyInstallment, // Add installment to record
                 request: JSON.stringify(utumishiRequest)
             });
             console.log(`Created PossibleLoanCharges entity with ID: ${possibleLoanChargesEntity._id}`);
@@ -244,7 +254,7 @@ const LoanCalculate = async (data) => {
             totalDeduction: totalEmployeeDeduction || 0,
             basicSalary: basicSalary || 0,
             netSalary: netSalary || 0,
-            loanAmount: requestedAmount || 0,
+            loanAmount: Math.max(requestedAmount || 0, LOAN_CONSTANTS.MIN_LOAN_AMOUNT),
             tenure: calculatedTenure,
             employmentType: 'EMPLOYED_FULL_TIME',
             employerCode: '', // Not provided in request

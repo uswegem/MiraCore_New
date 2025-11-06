@@ -2,7 +2,8 @@
 const LOAN_CONSTANTS = {
   // ===== LOAN AMOUNTS =====
   DEFAULT_LOAN_AMOUNT: 5000000,        // 5,000,000 TZS - Default loan amount when not specified
-  MAX_LOAN_AMOUNT: 120000000,            // 120,000,000 TZS - Maximum eligible loan amount
+  MAX_LOAN_AMOUNT: 120000000,          // 120,000,000 TZS - Maximum eligible loan amount
+  MIN_LOAN_AMOUNT: 100000,             // 100,000 TZS - Minimum eligible loan amount
   TEST_LOAN_AMOUNT: 5000000,           // 5,000,000 TZS - Amount used in tests
 
   // ===== LOAN TERMS =====
