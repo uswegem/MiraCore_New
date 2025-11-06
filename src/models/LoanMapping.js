@@ -55,7 +55,7 @@ const loanMappingSchema = new mongoose.Schema({
   // Status tracking
   status: {
     type: String,
-    enum: ['INITIAL_OFFER', 'APPROVED', 'REJECTED', 'FINAL_APPROVAL_RECEIVED', 'CLIENT_CREATED', 'LOAN_CREATED', 'DISBURSED', 'FAILED'],
+    enum: ['INITIAL_OFFER', 'APPROVED', 'REJECTED', 'CANCELLED', 'FINAL_APPROVAL_RECEIVED', 'CLIENT_CREATED', 'LOAN_CREATED', 'DISBURSED', 'FAILED'],
     default: 'INITIAL_OFFER'
   },
 

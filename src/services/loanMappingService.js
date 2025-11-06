@@ -389,6 +389,46 @@ class LoanMappingService {
       throw error;
     }
   }
+
+  /**
+   * Update loan mapping status with additional metadata
+   */
+  static async updateStatus(essApplicationNumber, newStatus, additionalData = {}) {
+    try {
+      const update = {
+        status: newStatus,
+        updatedAt: new Date(),
+        ...additionalData
+      };
+
+      // If metadata is provided, merge it with existing metadata
+      if (additionalData.metadata) {
+        const existing = await LoanMapping.findOne({ essApplicationNumber });
+        if (existing && existing.metadata) {
+          update.metadata = {
+            ...existing.metadata,
+            ...additionalData.metadata
+          };
+        }
+      }
+
+      const mapping = await LoanMapping.findOneAndUpdate(
+        { essApplicationNumber },
+        update,
+        { new: true }
+      );
+
+      if (!mapping) {
+        throw new Error(`Loan mapping not found for application: ${essApplicationNumber}`);
+      }
+
+      logger.info(`✅ Updated loan mapping status to ${newStatus} for application: ${essApplicationNumber}`);
+      return mapping;
+    } catch (error) {
+      logger.error('❌ Error updating loan mapping status:', error);
+      throw error;
+    }
+  }
 }
 
 module.exports = LoanMappingService;
