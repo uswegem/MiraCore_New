@@ -258,17 +258,18 @@ const handleLoanChargesRequest = async (parsedData, res) => {
             }
         } else {
             // If requested amount is provided, validate it doesn't exceed customer's repayment capacity
-            if (maxDeductibleAmount > 0) {
+            // Use DeductibleAmount (max capacity) for validation
+            if (deductibleAmount > 0) {
                 const calculatedEMI = calculateMonthlyInstallment(requestedAmount, interestRate, requestedTenure);
-                console.log(`Requested amount: ${requestedAmount}, Calculated EMI: ${calculatedEMI}, Max capacity: ${maxDeductibleAmount}`);
+                console.log(`Requested amount: ${requestedAmount}, Calculated EMI: ${calculatedEMI}, Max capacity: ${deductibleAmount}`);
                 
-                if (calculatedEMI > maxDeductibleAmount) {
+                if (calculatedEMI > deductibleAmount) {
                     // Adjust loan amount downward to fit within customer's maximum capacity
                     const monthlyRate = interestRate / 100 / 12;
-                    const adjustedAmount = (maxDeductibleAmount * (Math.pow(1 + monthlyRate, requestedTenure) - 1)) /
+                    const adjustedAmount = (deductibleAmount * (Math.pow(1 + monthlyRate, requestedTenure) - 1)) /
                                           (monthlyRate * Math.pow(1 + monthlyRate, requestedTenure));
                     requestedAmount = Math.max(MIN_LOAN_AMOUNT, Math.round(adjustedAmount));
-                    console.log(`⚠️ Requested amount exceeds capacity. Adjusted to: ${requestedAmount} (EMI: ${maxDeductibleAmount})`);
+                    console.log(`⚠️ Requested amount exceeds capacity. Adjusted to: ${requestedAmount} (EMI: ${deductibleAmount})`);
                 }
             }
         }
