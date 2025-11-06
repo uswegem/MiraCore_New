@@ -279,7 +279,7 @@ class LoanMappingService {
    */
   static async getByEssLoanNumberAlias(essLoanNumberAlias) {
     try {
-      const mapping = await LoanMapping.findOne({ essLoanNumberAlias });
+      const mapping = await LoanMapping.findOne({ essLoanNumberAlias }).lean();
       if (!mapping) {
         throw new Error(`No loan mapping found for ESS loan alias: ${essLoanNumberAlias}`);
       }
@@ -295,7 +295,7 @@ class LoanMappingService {
    */
   static async getByEssApplicationNumber(essApplicationNumber) {
     try {
-      const mapping = await LoanMapping.findOne({ essApplicationNumber });
+      const mapping = await LoanMapping.findOne({ essApplicationNumber }).lean();
       if (!mapping) {
         throw new Error(`No loan mapping found for ESS application: ${essApplicationNumber}`);
       }
@@ -311,7 +311,7 @@ class LoanMappingService {
    */
   static async getByFspReference(fspReferenceNumber) {
     try {
-      const mapping = await LoanMapping.findByFspReference(fspReferenceNumber);
+      const mapping = await LoanMapping.findByFspReference(fspReferenceNumber).lean();
       if (!mapping) {
         throw new Error(`No loan mapping found for FSP reference: ${fspReferenceNumber}`);
       }
@@ -327,7 +327,7 @@ class LoanMappingService {
    */
   static async getByMifosLoanId(mifosLoanId) {
     try {
-      const mapping = await LoanMapping.findByMifosLoanId(mifosLoanId);
+      const mapping = await LoanMapping.findByMifosLoanId(mifosLoanId).lean();
       if (!mapping) {
         throw new Error(`No loan mapping found for MIFOS loan ID: ${mifosLoanId}`);
       }
@@ -357,7 +357,7 @@ class LoanMappingService {
    */
   static async getByStatus(status) {
     try {
-      return await LoanMapping.find({ status }).sort({ createdAt: -1 });
+      return await LoanMapping.find({ status }).sort({ createdAt: -1 }).lean();
     } catch (error) {
       logger.error('❌ Error retrieving loan mappings by status:', error);
       throw error;

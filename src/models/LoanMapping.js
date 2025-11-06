@@ -99,6 +99,10 @@ const loanMappingSchema = new mongoose.Schema({
 loanMappingSchema.index({ essApplicationNumber: 1, essLoanNumber: 1 });
 loanMappingSchema.index({ status: 1 });
 
+// Additional compound indexes for optimized queries
+loanMappingSchema.index({ status: 1, createdAt: -1 }); // Status queries with sorting
+loanMappingSchema.index({ essApplicationNumber: 1, status: 1 }); // Application + status lookups
+
 // Instance methods
 loanMappingSchema.methods.updateStatus = function(newStatus) {
   this.status = newStatus;
@@ -127,7 +131,7 @@ loanMappingSchema.methods.addError = function(stage, error) {
   return this.save();
 };
 
-// Static methods
+// Static methods (return lean queries for read-only operations)
 loanMappingSchema.statics.findByEssLoanNumber = function(essLoanNumber) {
   return this.findOne({ essLoanNumber });
 };

@@ -1,17 +1,45 @@
 const mongoose = require('mongoose');
+const logger = require('../utils/logger');
+
+// Enable query performance monitoring for development
+if (process.env.NODE_ENV === 'development') {
+  mongoose.set('debug', (collectionName, method, query, doc) => {
+    logger.debug('Mongoose Query', {
+      collection: collectionName,
+      method,
+      query,
+      doc: doc ? 'present' : 'none'
+    });
+  });
+}
 
 const connectDB = async () => {
   try {
-    const conn = await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/miracore');
+    // Optimized connection options for production
+    const options = {
+      maxPoolSize: 50,              // Up from default 5 - better concurrent handling
+      minPoolSize: 10,              // Maintain minimum connections
+      socketTimeoutMS: 45000,       // Socket timeout
+      serverSelectionTimeoutMS: 5000,
+      heartbeatFrequencyMS: 10000   // Health check frequency
+    };
 
-    console.log(`MongoDB Connected: ${conn.connection.host}`);
+    const conn = await mongoose.connect(
+      process.env.MONGODB_URI || 'mongodb://localhost:27017/miracore',
+      options
+    );
+
+    logger.info(`MongoDB Connected: ${conn.connection.host}`, {
+      database: conn.connection.name,
+      poolSize: options.maxPoolSize
+    });
     
     // Create initial super admin if doesn't exist
     await createInitialSuperAdmin();
     
   } catch (error) {
-    console.error('MongoDB connection error:', error.message);
-    console.log('Continuing without database connection for testing...');
+    logger.error('MongoDB connection error', { error: error.message, stack: error.stack });
+    logger.info('Continuing without database connection for testing...');
     // process.exit(1); // Commented out for testing
   }
 };
@@ -32,13 +60,13 @@ const createInitialSuperAdmin = async () => {
       });
       
       await superAdmin.save();
-      console.log('Initial Super Admin created:');
-      console.log('   Username: superadmin');
-      console.log('   Password: SuperAdmin123!');
-      console.log('   Change this password immediately!');
+      logger.info('Initial Super Admin created', {
+        username: 'superadmin',
+        note: 'Change default password immediately!'
+      });
     }
   } catch (error) {
-    console.error('Error creating initial super admin:', error);
+    logger.error('Error creating initial super admin', { error: error.message });
   }
 };
 
