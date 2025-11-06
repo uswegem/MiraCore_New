@@ -454,26 +454,140 @@ const handleLoanOfferRequest = async (parsedData, res) => {
 };
 
 const handleTopUpPayOffBalanceRequest = async (parsedData, res) => {
-    // Implement top up pay off balance request
-    logger.info('Processing top up pay off balance request...');
-    const header = parsedData.Document.Data.Header;
-    const responseData = {
-        Data: {
-            Header: {
-                "Sender": process.env.FSP_NAME || "ZE DONE",
-                "Receiver": "ESS_UTUMISHI",
-                "FSPCode": header.FSPCode,
-                "MessageType": "RESPONSE"
-            },
-            MessageDetails: {
-                "Status": "SUCCESS",
-                "StatusCode": "8000",
-                "StatusDesc": "Request received and being processed"
+    try {
+        logger.info('Processing TOP_UP_PAY_0FF_BALANCE_REQUEST...');
+        
+        const header = parsedData.Document.Data.Header;
+        const messageDetails = parsedData.Document.Data.MessageDetails;
+        
+        // Extract request data
+        const checkNumber = messageDetails.CheckNumber;
+        const loanNumber = messageDetails.LoanNumber;
+        const firstName = messageDetails.FirstName;
+        const middleName = messageDetails.MiddleName;
+        const lastName = messageDetails.LastName;
+        
+        logger.info('Top-up balance request details:', {
+            checkNumber,
+            loanNumber,
+            name: `${firstName} ${middleName} ${lastName}`
+        });
+
+        // Find loan mapping to get MIFOS loan ID
+        let mifosLoanId;
+        let fspReferenceNumber;
+        
+        // Try to find by ESS loan number alias
+        try {
+            const loanMapping = await LoanMappingService.getByEssLoanNumberAlias(loanNumber);
+            
+            if (loanMapping && loanMapping.mifosLoanId) {
+                mifosLoanId = loanMapping.mifosLoanId;
+                fspReferenceNumber = loanMapping.fspReferenceNumber || loanMapping.essApplicationNumber;
+                logger.info('Found loan mapping:', { mifosLoanId, fspReferenceNumber });
+            } else {
+                // If not found in mapping, treat loanNumber as MIFOS loan ID directly
+                mifosLoanId = loanNumber;
+                fspReferenceNumber = loanNumber;
+                logger.info('No loan mapping found, using loan number directly as MIFOS ID:', { mifosLoanId });
             }
+        } catch (mappingError) {
+            // If mapping lookup fails, treat loanNumber as MIFOS loan ID directly
+            mifosLoanId = loanNumber;
+            fspReferenceNumber = loanNumber;
+            logger.info('Loan mapping lookup failed, using loan number directly as MIFOS ID:', { 
+                mifosLoanId, 
+                error: mappingError.message 
+            });
         }
-    };
-    const signedResponse = digitalSignature.createSignedXML(responseData.Data);
-    res.status(200).send(signedResponse);
+
+        // Fetch loan details from MIFOS
+        const loanResponse = await api.get(`/v1/loans/${mifosLoanId}?associations=all`);
+        
+        if (!loanResponse.status || !loanResponse.response) {
+            logger.error('Loan not found in MIFOS:', { mifosLoanId });
+            return sendErrorResponse(res, '8005', 'Loan not found', 'xml', parsedData);
+        }
+
+        const loanData = loanResponse.response;
+        logger.info('Loan data retrieved from MIFOS:', {
+            id: loanData.id,
+            accountNo: loanData.accountNo,
+            status: loanData.status?.value,
+            principal: loanData.principal,
+            totalOutstanding: loanData.summary?.totalOutstanding
+        });
+
+        // Calculate dates (7 days from today for validity)
+        const currentDate = new Date();
+        const finalPaymentDate = new Date(currentDate);
+        finalPaymentDate.setDate(finalPaymentDate.getDate() + 7);
+        
+        // Format dates for response (ISO format)
+        const formatDate = (date) => date.toISOString();
+        
+        // Extract loan financial data
+        const totalOutstanding = loanData.summary?.totalOutstanding || 0;
+        const principalOutstanding = loanData.summary?.principalOutstanding || 0;
+        const interestOutstanding = loanData.summary?.interestOutstanding || 0;
+        const feeChargesOutstanding = loanData.summary?.feeChargesOutstanding || 0;
+        const penaltyChargesOutstanding = loanData.summary?.penaltyChargesOutstanding || 0;
+        
+        // Total payoff amount includes all outstanding amounts
+        const totalPayoffAmount = totalOutstanding + feeChargesOutstanding + penaltyChargesOutstanding;
+        
+        // Get last transaction dates
+        const lastDeductionDate = loanData.timeline?.expectedDisbursementDate 
+            ? new Date(loanData.timeline.expectedDisbursementDate).toISOString()
+            : formatDate(currentDate);
+            
+        const lastPayDate = loanData.timeline?.actualDisbursementDate 
+            ? new Date(loanData.timeline.actualDisbursementDate).toISOString()
+            : formatDate(currentDate);
+
+        logger.info('Calculated payoff details:', {
+            totalPayoffAmount: totalPayoffAmount.toFixed(2),
+            totalOutstanding: totalOutstanding.toFixed(2),
+            principalOutstanding: principalOutstanding.toFixed(2),
+            interestOutstanding: interestOutstanding.toFixed(2)
+        });
+
+        // Generate unique payment reference
+        const paymentReferenceNumber = `TOPUP_${Date.now()}_${mifosLoanId}`;
+
+        // Build LOAN_TOP_UP_BALANCE_RESPONSE
+        const responseData = {
+            Data: {
+                Header: {
+                    "Sender": process.env.FSP_NAME || "ZE DONE",
+                    "Receiver": "ESS_UTUMISHI",
+                    "FSPCode": header.FSPCode,
+                    "MsgId": getMessageId('LOAN_TOP_UP_BALANCE_RESPONSE'),
+                    "MessageType": "LOAN_TOP_UP_BALANCE_RESPONSE"
+                },
+                MessageDetails: {
+                    "LoanNumber": loanNumber,
+                    "FSPReferenceNumber": fspReferenceNumber,
+                    "PaymentReferenceNumber": paymentReferenceNumber,
+                    "TotalPayoffAmount": totalPayoffAmount.toFixed(2),
+                    "OutstandingBalance": totalOutstanding.toFixed(2),
+                    "FinalPaymentDate": formatDate(finalPaymentDate),
+                    "LastDeductionDate": lastDeductionDate,
+                    "LastPayDate": lastPayDate,
+                    "EndDate": formatDate(finalPaymentDate)
+                }
+            }
+        };
+
+        logger.info('Sending LOAN_TOP_UP_BALANCE_RESPONSE:', responseData.Data.MessageDetails);
+
+        const signedResponse = digitalSignature.createSignedXML(responseData.Data);
+        res.status(200).send(signedResponse);
+
+    } catch (error) {
+        logger.error('Error processing TOP_UP_PAY_0FF_BALANCE_REQUEST:', error);
+        return sendErrorResponse(res, '8002', `Processing error: ${error.message}`, 'xml', parsedData);
+    }
 };
 
 const handleTopUpOfferRequest = async (parsedData, res) => {
