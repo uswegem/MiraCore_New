@@ -221,17 +221,24 @@ const handleLoanChargesRequest = async (parsedData, res) => {
         const interestRate = 15.0; // 15% per annum
         
         // Extract repayment capacity fields
-        // Priority: DesiredDeductibleAmount (customer's preferred EMI) > DeductibleAmount (max capacity) > OneThirdAmount
+        // CONSERVATIVE APPROACH: DesiredDeductibleAmount must be capped at DeductibleAmount
         const desiredDeductibleAmount = parseFloat(messageDetails.DesiredDeductibleAmount || 0);
         const deductibleAmount = parseFloat(messageDetails.DeductibleAmount || 0);
         const oneThirdAmount = parseFloat(messageDetails.OneThirdAmount || 0);
         const MIN_LOAN_AMOUNT = LOAN_CONSTANTS.MIN_LOAN_AMOUNT;
         
         // Determine which EMI value to use based on priority
+        // CRITICAL: Always cap DesiredDeductibleAmount at DeductibleAmount for safety
         let targetEMI = 0;
         if (desiredDeductibleAmount > 0) {
-            targetEMI = desiredDeductibleAmount;
-            logger.info(`Using DesiredDeductibleAmount as target EMI: ${targetEMI}`);
+            // Cap desired amount at system-calculated capacity
+            if (deductibleAmount > 0 && desiredDeductibleAmount > deductibleAmount) {
+                targetEMI = deductibleAmount;
+                logger.info(`⚠️ DesiredDeductibleAmount (${desiredDeductibleAmount}) exceeds DeductibleAmount (${deductibleAmount}). Capped at DeductibleAmount for safety.`);
+            } else {
+                targetEMI = desiredDeductibleAmount;
+                logger.info(`Using DesiredDeductibleAmount as target EMI: ${targetEMI}`);
+            }
         } else if (deductibleAmount > 0) {
             targetEMI = deductibleAmount;
             logger.info(`Using DeductibleAmount as maximum capacity EMI: ${targetEMI}`);
@@ -393,10 +400,23 @@ const handleLoanOfferRequest = async (parsedData, res) => {
         }
         
         // Determine maximum affordable EMI from available data
+        // CONSERVATIVE APPROACH: DesiredDeductibleAmount must be capped at DeductibleAmount
         let maxAffordableEMI = 0;
-        if (messageDetails.DesiredDeductibleAmount && messageDetails.DesiredDeductibleAmount > 0) {
-            maxAffordableEMI = messageDetails.DesiredDeductibleAmount;
-            logger.info(`Using DesiredDeductibleAmount as max affordable EMI: ${maxAffordableEMI}`);
+        const deductibleAmountOffer = parseFloat(messageDetails.DeductibleAmount || 0);
+        const desiredDeductibleAmountOffer = parseFloat(messageDetails.DesiredDeductibleAmount || 0);
+        
+        if (desiredDeductibleAmountOffer > 0) {
+            // Cap desired amount at system-calculated capacity
+            if (deductibleAmountOffer > 0 && desiredDeductibleAmountOffer > deductibleAmountOffer) {
+                maxAffordableEMI = deductibleAmountOffer;
+                logger.info(`⚠️ DesiredDeductibleAmount (${desiredDeductibleAmountOffer}) exceeds DeductibleAmount (${deductibleAmountOffer}). Capped at DeductibleAmount for safety.`);
+            } else {
+                maxAffordableEMI = desiredDeductibleAmountOffer;
+                logger.info(`Using DesiredDeductibleAmount as max affordable EMI: ${maxAffordableEMI}`);
+            }
+        } else if (deductibleAmountOffer > 0) {
+            maxAffordableEMI = deductibleAmountOffer;
+            logger.info(`Using DeductibleAmount as max affordable EMI: ${maxAffordableEMI}`);
         } else if (messageDetails.OneThirdAmount && messageDetails.OneThirdAmount > 0) {
             maxAffordableEMI = messageDetails.OneThirdAmount;
             logger.info(`Using OneThirdAmount as max affordable EMI: ${maxAffordableEMI}`);

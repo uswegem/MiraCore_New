@@ -176,9 +176,15 @@ const LoanCalculate = async (data) => {
             ? deductibleAmount
             : Math.floor((netSalary || 0) - (oneThirdAmount || 0));
 
+        // CONSERVATIVE APPROACH: Cap DesiredDeductibleAmount at maxAffordableEMI (DeductibleAmount)
         const desirableEMI = desiredDeductibleAmount && desiredDeductibleAmount > 0
             ? Math.min(desiredDeductibleAmount, maxAffordableEMI)
             : maxAffordableEMI;
+        
+        // Log warning if capping occurred
+        if (desiredDeductibleAmount > 0 && desiredDeductibleAmount > maxAffordableEMI) {
+            logger.warn(`⚠️ DesiredDeductibleAmount (${desiredDeductibleAmount}) exceeds maxAffordableEMI (${maxAffordableEMI}). Capped for affordability.`);
+        }
 
         // Calculate retirement months left
         const retirementMonthsLeft = calculateMonthsUntilRetirement(retirementDate);
