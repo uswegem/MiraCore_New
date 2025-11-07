@@ -392,16 +392,55 @@ const handleLoanOfferRequest = async (parsedData, res) => {
             logger.info(`Tenure not provided or is 0, defaulting to maximum tenure: ${offerTenure} months`);
         }
         
+        // Determine maximum affordable EMI from available data
+        let maxAffordableEMI = 0;
+        if (messageDetails.DesiredDeductibleAmount && messageDetails.DesiredDeductibleAmount > 0) {
+            maxAffordableEMI = messageDetails.DesiredDeductibleAmount;
+            logger.info(`Using DesiredDeductibleAmount as max affordable EMI: ${maxAffordableEMI}`);
+        } else if (messageDetails.OneThirdAmount && messageDetails.OneThirdAmount > 0) {
+            maxAffordableEMI = messageDetails.OneThirdAmount;
+            logger.info(`Using OneThirdAmount as max affordable EMI: ${maxAffordableEMI}`);
+        } else if (messageDetails.NetSalary && messageDetails.NetSalary > 0) {
+            maxAffordableEMI = messageDetails.NetSalary * 0.33; // Fallback to 1/3 of net salary
+            logger.info(`Calculated max affordable EMI as 1/3 of NetSalary: ${maxAffordableEMI}`);
+        }
+        
+        let requestedAmount = messageDetails.RequestedAmount || 0;
+        
+        // If requested amount is provided, validate it doesn't exceed affordability
+        if (requestedAmount > 0 && maxAffordableEMI > 0) {
+            const calculatedEMI = calculateMonthlyInstallment(requestedAmount, 15.0, offerTenure);
+            logger.info(`Requested amount: ${requestedAmount}, Calculated EMI: ${calculatedEMI}, Max affordable: ${maxAffordableEMI}`);
+            
+            if (calculatedEMI > maxAffordableEMI) {
+                // Adjust loan amount downward to fit within customer's maximum capacity
+                const adjustedAmount = LoanCalculations.calculateMaxLoanFromEMI(maxAffordableEMI, 15.0, offerTenure);
+                requestedAmount = Math.max(LOAN_CONSTANTS.MIN_LOAN_AMOUNT, Math.round(adjustedAmount));
+                logger.info(`⚠️ Requested amount exceeds affordability. Adjusted from ${messageDetails.RequestedAmount} to ${requestedAmount} (EMI: ${maxAffordableEMI})`);
+            }
+        } else if (requestedAmount === 0 && maxAffordableEMI > 0) {
+            // Calculate maximum loan from affordability
+            requestedAmount = Math.round(LoanCalculations.calculateMaxLoanFromEMI(maxAffordableEMI, 15.0, offerTenure));
+            requestedAmount = Math.max(requestedAmount, LOAN_CONSTANTS.MIN_LOAN_AMOUNT);
+            logger.info(`Calculated loan amount from affordability: ${requestedAmount} (EMI: ${maxAffordableEMI})`);
+        } else {
+            // No affordability data, use minimum loan amount
+            requestedAmount = Math.max(requestedAmount, LOAN_CONSTANTS.MIN_LOAN_AMOUNT);
+            logger.info(`Using minimum loan amount: ${requestedAmount}`);
+        }
+        
         const loanOffer = {
-            LoanAmount: messageDetails.RequestedAmount,
+            LoanAmount: requestedAmount,
             InterestRate: 15.0, // 15% per annum
             Tenure: offerTenure,
             MonthlyInstallment: calculateMonthlyInstallment(
-                messageDetails.RequestedAmount,
+                requestedAmount,
                 15.0,
                 offerTenure
             )
         };
+        
+        logger.info('Final loan offer:', loanOffer);
 
         // Store in loan mapping with all client, loan, and employment data
         logger.info('💾 Storing client data for application:', messageDetails.ApplicationNumber);
