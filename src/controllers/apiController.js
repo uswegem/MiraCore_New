@@ -310,7 +310,7 @@ const handleLoanChargesRequest = async (parsedData, res) => {
                     "MessageType": "LOAN_CHARGES_RESPONSE"
                 },
                 MessageDetails: {
-                    "DesiredDeductibleAmount": desiredDeductibleAmount,
+                    "DesiredDeductibleAmount": monthlyReturnAmount,
                     "TotalInsurance": totalInsurance,
                     "TotalProcessingFees": totalProcessingFees,
                     "TotalInterestRateAmount": totalInterestRateAmount,
