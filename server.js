@@ -11,6 +11,7 @@ const apiRouter = require('./src/routes/api');
 const authRoutes = require('./src/routes/auth');
 const userRoutes = require('./src/routes/users');
 const auditRoutes = require('./src/routes/audit');
+const messageRoutes = require('./src/routes/messages');
 
 // Import middleware
 const { verifySignatureMiddleware } = require('./src/middleware/signatureMiddleware');
@@ -72,16 +73,16 @@ app.use((req, res, next) => {
     const contentType = req.headers['content-type'];
     
     logger.info('📨 Incoming Request:');
-    logger.info('   Method:', req.method);
-    logger.info('   Path:', req.path);
-    logger.info('   Full URL:', req.protocol + '://' + req.get('host') + req.originalUrl);
-    logger.info('   Content-Type:', contentType);
-    logger.info('   Source IP:', req.ip || req.connection.remoteAddress || req.socket.remoteAddress || 'unknown');
-    logger.info('   X-Forwarded-For:', req.get('X-Forwarded-For') || 'none');
-    logger.info('   X-Real-IP:', req.get('X-Real-IP') || 'none');
-    logger.info('   User-Agent:', req.get('User-Agent') || 'not provided');
-    logger.info('   All Headers:', JSON.stringify(req.headers, null, 2));
-    logger.info('   Body type:', typeof req.body);
+    logger.info(`   Method: ${req.method}`);
+    logger.info(`   Path: ${req.path}`);
+    logger.info(`   Full URL: ${req.protocol}://${req.get('host')}${req.originalUrl}`);
+    logger.info(`   Content-Type: ${contentType}`);
+    logger.info(`   Source IP: ${req.ip || req.connection.remoteAddress || req.socket.remoteAddress || 'unknown'}`);
+    logger.info(`   X-Forwarded-For: ${req.get('X-Forwarded-For') || 'none'}`);
+    logger.info(`   X-Real-IP: ${req.get('X-Real-IP') || 'none'}`);
+    logger.info(`   User-Agent: ${req.get('User-Agent') || 'not provided'}`);
+    logger.info(`   All Headers: ${JSON.stringify(req.headers, null, 2)}`);
+    logger.info(`   Body type: ${typeof req.body}`);
     
     // Handle XML content
     if (contentType && (contentType.includes('application/xml') || contentType.includes('text/xml'))) {
@@ -98,20 +99,22 @@ app.use((req, res, next) => {
 // 5. Debug middleware
 app.use((req, res, next) => {
     logger.info('=== INCOMING REQUEST ===');
-    logger.info('Method:', req.method);
-    logger.info('Path:', req.path);
-    logger.info('Content-Type:', req.get('Content-Type'));
-    logger.info('Body exists:', !!req.body);
+    logger.info(`Method: ${req.method}`);
+    logger.info(`Path: ${req.path}`);
+    logger.info(`Content-Type: ${req.get('Content-Type')}`);
+    logger.info(`Body exists: ${!!req.body}`);
     
     if (req.body) {
         if (typeof req.body === 'string') {
             logger.info('Body type: XML/String');
-            logger.info('Body length:', req.body.length);
-            logger.info('Body sample:', req.body.substring(0, 200));
+            logger.info(`Body length: ${req.body.length}`);
+            logger.info(`Body sample: ${req.body.substring(0, 500)}`);
+            logger.info(`Full XML Body: ${req.body}`);  // Add full XML content
         } else if (typeof req.body === 'object') {
             logger.info('Body type: JSON/Object');
-            logger.info('Body keys:', Object.keys(req.body));
-            logger.info('Body sample:', JSON.stringify(req.body).substring(0, 200));
+            logger.info(`Body keys: ${Object.keys(req.body).join(', ')}`);
+            logger.info(`Body sample: ${JSON.stringify(req.body).substring(0, 500)}`);
+            logger.info(`Full JSON Body: ${JSON.stringify(req.body, null, 2)}`);  // Add full JSON content
         }
     }
     logger.info('========================');
@@ -134,6 +137,9 @@ app.use('/api/v1/users', userRoutes);
 
 // Audit routes (protected)
 app.use('/api/v1/audit', auditRoutes);
+
+// Message management routes (protected)
+app.use('/api/v1/messages', messageRoutes);
 
 // Miracore API routes
 app.use('/api', apiRouter);
