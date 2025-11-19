@@ -11,7 +11,7 @@ const apiRouter = require('./src/routes/api');
 const authRoutes = require('./src/routes/auth');
 const userRoutes = require('./src/routes/users');
 const auditRoutes = require('./src/routes/audit');
-const messageRoutes = require('./src/routes/messages');
+// const messageRoutes = require('./src/routes/messages'); // Temporarily commented out
 
 // Import middleware
 const { verifySignatureMiddleware } = require('./src/middleware/signatureMiddleware');
@@ -138,8 +138,8 @@ app.use('/api/v1/users', userRoutes);
 // Audit routes (protected)
 app.use('/api/v1/audit', auditRoutes);
 
-// Message management routes (protected)
-app.use('/api/v1/messages', messageRoutes);
+// Message management routes (protected) - Temporarily commented out
+// app.use('/api/v1/messages', messageRoutes);
 
 // Miracore API routes
 app.use('/api', apiRouter);
