@@ -310,16 +310,16 @@ const handleLoanChargesRequest = async (parsedData, res) => {
                     "MessageType": "LOAN_CHARGES_RESPONSE"
                 },
                 MessageDetails: {
-                    "DesiredDeductibleAmount": monthlyReturnAmount,
-                    "TotalInsurance": totalInsurance,
-                    "TotalProcessingFees": totalProcessingFees,
-                    "TotalInterestRateAmount": totalInterestRateAmount,
-                    "OtherCharges": otherCharges,
-                    "NetLoanAmount": netLoanAmount,
-                    "TotalAmountToPay": totalAmountToPay,
+                    "DesiredDeductibleAmount": monthlyReturnAmount.toFixed(2),
+                    "TotalInsurance": totalInsurance.toFixed(2),
+                    "TotalProcessingFees": totalProcessingFees.toFixed(2),
+                    "TotalInterestRateAmount": totalInterestRateAmount.toFixed(2),
+                    "OtherCharges": otherCharges.toFixed(2),
+                    "NetLoanAmount": netLoanAmount.toFixed(2),
+                    "TotalAmountToPay": totalAmountToPay.toFixed(2),
                     "Tenure": requestedTenure,
-                    "EligibleAmount": requestedAmount,
-                    "MonthlyReturnAmount": monthlyReturnAmount
+                    "EligibleAmount": requestedAmount.toFixed(2),
+                    "MonthlyReturnAmount": monthlyReturnAmount.toFixed(2)
                 }
             }
         };
