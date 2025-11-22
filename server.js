@@ -118,6 +118,32 @@ app.use((req, res, next) => {
         }
     }
     logger.info('========================');
+
+    // Intercept response to log outgoing data
+    const originalSend = res.send;
+    res.send = function(data) {
+        logger.info('📤 OUTGOING RESPONSE:');
+        logger.info(`Status Code: ${res.statusCode}`);
+        logger.info(`Content-Type: ${res.get('Content-Type') || 'not set'}`);
+        
+        if (data && typeof data === 'string') {
+            logger.info(`Response Length: ${data.length}`);
+            if (data.includes('<?xml') || data.includes('<Document>')) {
+                logger.info('Response Type: XML');
+                logger.info(`Full Response XML: ${data}`);
+            } else {
+                logger.info(`Response Sample: ${data.substring(0, 500)}`);
+                logger.info(`Full Response Content: ${data}`);
+            }
+        } else if (data && typeof data === 'object') {
+            logger.info('Response Type: JSON');
+            logger.info(`Full Response JSON: ${JSON.stringify(data, null, 2)}`);
+        }
+        logger.info('📤 ========================');
+        
+        return originalSend.call(this, data);
+    };
+
     next();
 });
 
