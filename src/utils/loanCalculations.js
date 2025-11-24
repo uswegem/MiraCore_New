@@ -72,9 +72,9 @@ class LoanCalculations {
    */
   static calculateCharges(loanAmount) {
     return {
-      processingFee: Math.round(loanAmount * LOAN_CONSTANTS.ADMIN_FEE_RATE * 100) / 100,
-      insurance: Math.round(loanAmount * LOAN_CONSTANTS.INSURANCE_RATE * 100) / 100,
-      otherCharges: LOAN_CONSTANTS.OTHER_CHARGES // Fixed other charges from constants
+      processingFee: Math.round(loanAmount * (LOAN_CONSTANTS?.ADMIN_FEE_RATE || 0.02) * 100) / 100,
+      insurance: Math.round(loanAmount * (LOAN_CONSTANTS?.INSURANCE_RATE || 0.015) * 100) / 100,
+      otherCharges: LOAN_CONSTANTS?.OTHER_CHARGES || 50000 // Fixed other charges from constants with fallback
     };
   }
 }

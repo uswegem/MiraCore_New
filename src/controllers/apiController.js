@@ -285,7 +285,7 @@ const handleLoanChargesRequest = async (parsedData, res) => {
         // Calculate charges
         const totalProcessingFees = requestedAmount * 0.02; // 2% processing fee
         const totalInsurance = requestedAmount * 0.01; // 1% insurance
-        const otherCharges = LOAN_CONSTANTS.OTHER_CHARGES; // Other charges (e.g., legal fees)
+        const otherCharges = LOAN_CONSTANTS?.OTHER_CHARGES || 50000; // Other charges (e.g., legal fees)
         
         // Calculate interest for the entire tenure
         const totalInterestRateAmount = (requestedAmount * interestRate * requestedTenure) / (12 * 100);
@@ -502,7 +502,7 @@ const handleLoanOfferRequest = async (parsedData, res) => {
         // Use same calculation logic as LOAN_CHARGES_REQUEST
         const totalInterestRateAmount = (loanAmount * interestRate * tenure) / (12 * 100);
         const totalAmountToPay = loanAmount + totalInterestRateAmount;
-        const otherCharges = LOAN_CONSTANTS.OTHER_CHARGES; // Same fixed amount as LOAN_CHARGES_REQUEST (legal fees)
+        const otherCharges = LOAN_CONSTANTS?.OTHER_CHARGES || 50000; // Same fixed amount as LOAN_CHARGES_REQUEST (legal fees)
         const loanNumber = generateLoanNumber();
         
         logger.info(`Calculated using LOAN_CHARGES_REQUEST logic - LoanAmount: ${loanAmount}, TotalAmountToPay: ${totalAmountToPay}, OtherCharges: ${otherCharges}`);
