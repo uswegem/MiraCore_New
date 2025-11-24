@@ -17,6 +17,7 @@ const LOAN_CONSTANTS = {
   DEFAULT_INTEREST_RATE: 24,           // 24% - Default annual interest rate
   ADMIN_FEE_RATE: 0.02,                // 2% - Administration fee rate
   INSURANCE_RATE: 0.015,               // 1.5% - Insurance rate
+  OTHER_CHARGES: 50000,                // 50,000 TZS - Fixed other charges (legal fees, etc.)
   TOTAL_LOAN_MULTIPLIER: 1.1,          // 110% - Total loan amount multiplier (principal + interest)
 
   // ===== NPA AND RISK CONSTANTS =====

@@ -534,10 +534,8 @@ const handleLoanOfferRequest = async (parsedData, res) => {
                     "MessageType": "RESPONSE"
                 },
                 MessageDetails: {
-                    "ApplicationNumber": messageDetails.ApplicationNumber,
-                    "Status": "SUCCESS",
-                    "StatusCode": "8000",
-                    "StatusDesc": "Loan offer request received and being processed"
+                    "ResponseCode": "8000",
+                    "Description": "Success"
                 }
             }
         };
