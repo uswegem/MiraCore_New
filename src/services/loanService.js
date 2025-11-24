@@ -376,10 +376,24 @@ const LoanCalculate = async (data) => {
         // Calculate response values
         const totalInterestRateAmount = (loanOffer.loanOffer.bpi || 0) + loanOffer.loanOffer.totalInterestAmount;
 
+        // Ensure MonthlyReturnAmount never exceeds DesiredDeductibleAmount (final validation)
+        const calculatedMonthlyEMI = loanOffer.loanOffer.product.totalMonthlyInst || 0;
+        const customerDesiredEMI = parseFloat(desiredDeductibleAmount) || 0;
+        const finalMonthlyEMI = customerDesiredEMI > 0 
+            ? Math.min(calculatedMonthlyEMI, customerDesiredEMI)
+            : calculatedMonthlyEMI;
+
+        // Log if capping occurred for debugging
+        if (calculatedMonthlyEMI > customerDesiredEMI && customerDesiredEMI > 0) {
+            logger.warn(`🔧 Final EMI capping: ${calculatedMonthlyEMI} → ${finalMonthlyEMI} (capped at DesiredDeductibleAmount: ${customerDesiredEMI})`);
+        }
+
+        const tenure = loanOffer.loanOffer.product.loanTerm || 0;
+
         const response = {
-            monthlyReturnAmount: (loanOffer.loanOffer.product.totalMonthlyInst || 0).toFixed(2),
-            tenure: loanOffer.loanOffer.product.loanTerm || 0,
-            totalAmountToPay: ((loanOffer.loanOffer.product.totalMonthlyInst || 0) * (loanOffer.loanOffer.product.loanTerm || 0)).toFixed(2),
+            monthlyReturnAmount: finalMonthlyEMI.toFixed(2),
+            tenure: tenure,
+            totalAmountToPay: (finalMonthlyEMI * tenure).toFixed(2),
             netLoanAmount: (loanOffer.loanOffer.product.loanAmount || 0).toFixed(2),
             eligibleAmount: (loanOffer.loanOffer.product.loanAmount || 0).toFixed(2),
             totalInterestRateAmount: totalInterestRateAmount.toFixed(2),
@@ -463,10 +477,24 @@ async function doForwardOffer(possibleLoanChargesEntity, loanOfferDTO, requested
 
     const totalInterestRateAmount = (forwardLoanOffer.loanOffer.bpi || 0) + (forwardLoanOffer.loanOffer.totalInterestAmount || 0);
 
+    // Ensure MonthlyReturnAmount never exceeds DesiredDeductibleAmount (final validation for forward loans)
+    const calculatedMonthlyEMI = forwardLoanOffer.loanOffer.product.totalMonthlyInst || 0;
+    const customerDesiredEMI = parseFloat(desiredDeductibleAmount) || 0;
+    const finalMonthlyEMI = customerDesiredEMI > 0 
+        ? Math.min(calculatedMonthlyEMI, customerDesiredEMI)
+        : calculatedMonthlyEMI;
+
+    // Log if capping occurred for debugging
+    if (calculatedMonthlyEMI > customerDesiredEMI && customerDesiredEMI > 0) {
+        logger.warn(`🔧 Final EMI capping (Forward): ${calculatedMonthlyEMI} → ${finalMonthlyEMI} (capped at DesiredDeductibleAmount: ${customerDesiredEMI})`);
+    }
+
+    const tenure = forwardLoanOffer.loanOffer.product.loanTerm || 0;
+
     const response = {
-        monthlyReturnAmount: (forwardLoanOffer.loanOffer.product.totalMonthlyInst || 0).toFixed(2),
-        tenure: forwardLoanOffer.loanOffer.product.loanTerm || 0,
-        totalAmountToPay: ((forwardLoanOffer.loanOffer.product.totalMonthlyInst || 0) * (forwardLoanOffer.loanOffer.product.loanTerm || 0)).toFixed(2),
+        monthlyReturnAmount: finalMonthlyEMI.toFixed(2),
+        tenure: tenure,
+        totalAmountToPay: (finalMonthlyEMI * tenure).toFixed(2),
         netLoanAmount: (forwardLoanOffer.loanOffer.product.loanAmount || 0).toFixed(2),
         eligibleAmount: (forwardLoanOffer.loanOffer.product.loanAmount || 0).toFixed(2),
         totalInterestRateAmount: totalInterestRateAmount.toFixed(2),
