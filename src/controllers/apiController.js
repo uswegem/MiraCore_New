@@ -724,26 +724,88 @@ const handleTopUpPayOffBalanceRequest = async (parsedData, res) => {
 };
 
 const handleTopUpOfferRequest = async (parsedData, res) => {
-    // Implement top up offer request
-    logger.info('Processing top up offer request...');
-    const header = parsedData.Document.Data.Header;
-    const responseData = {
-        Data: {
-            Header: {
-                "Sender": process.env.FSP_NAME || "ZE DONE",
-                "Receiver": "ESS_UTUMISHI",
-                "FSPCode": header.FSPCode,
-                "MessageType": "RESPONSE"
-            },
-            MessageDetails: {
-                "Status": "SUCCESS",
-                "StatusCode": "8000",
-                "StatusDesc": "Request received and being processed"
+    try {
+        logger.info('Processing TOP_UP_OFFER_REQUEST...');
+        const header = parsedData.Document.Data.Header;
+        const messageDetails = parsedData.Document.Data.MessageDetails;
+
+        // Send immediate ACK response
+        const ackResponseData = {
+            Data: {
+                Header: {
+                    "Sender": process.env.FSP_NAME || "ZE DONE",
+                    "Receiver": "ESS_UTUMISHI",
+                    "FSPCode": header.FSPCode,
+                    "MsgId": getMessageId("RESPONSE"),
+                    "MessageType": "RESPONSE"
+                },
+                MessageDetails: {
+                    "ResponseCode": "8000",
+                    "Description": "Success"
+                }
             }
+        };
+
+        // Sign and send the immediate ACK response
+        const ackSignedResponse = digitalSignature.createSignedXML(ackResponseData.Data);
+        res.status(200).send(ackSignedResponse);
+        logger.info('✅ Sent immediate ACK response for TOP_UP_OFFER_REQUEST');
+
+        // Schedule LOAN_INITIAL_APPROVAL_NOTIFICATION to be sent via callback after 20 seconds
+        setTimeout(async () => {
+            try {
+                logger.info('⏰ Sending delayed LOAN_INITIAL_APPROVAL_NOTIFICATION callback for TOP_UP_OFFER_REQUEST...');
+                
+                // Generate loan details for top-up (use similar logic to LOAN_OFFER_REQUEST)
+                const loanAmount = parseFloat(messageDetails.RequestedAmount) || LOAN_CONSTANTS.MIN_LOAN_AMOUNT;
+                const interestRate = 15.0; // 15% per annum
+                const tenure = parseInt(messageDetails.Tenure) || LOAN_CONSTANTS.MAX_TENURE;
+                
+                // Calculate total amount to pay
+                const totalInterestRateAmount = (loanAmount * interestRate * tenure) / (12 * 100);
+                const totalAmountToPay = loanAmount + totalInterestRateAmount;
+                const otherCharges = LOAN_CONSTANTS?.OTHER_CHARGES || 50000;
+                const loanNumber = generateLoanNumber();
+                
+                const approvalResponseData = {
+                    Header: {
+                        "Sender": process.env.FSP_NAME || "ZE DONE",
+                        "Receiver": "ESS_UTUMISHI",
+                        "FSPCode": header.FSPCode,
+                        "MsgId": getMessageId("LOAN_INITIAL_APPROVAL_NOTIFICATION"),
+                        "MessageType": "LOAN_INITIAL_APPROVAL_NOTIFICATION"
+                    },
+                    MessageDetails: {
+                        "ApplicationNumber": messageDetails.ApplicationNumber,
+                        "Reason": "Top-Up Loan Request Approved",
+                        "FSPReferenceNumber": generateFSPReferenceNumber(),
+                        "LoanNumber": loanNumber,
+                        "TotalAmountToPay": totalAmountToPay.toFixed(2),
+                        "OtherCharges": otherCharges.toFixed(2),
+                        "Approval": "APPROVED"
+                    }
+                };
+
+                logger.info('📤 Sending TOP_UP_OFFER_REQUEST callback with data:', {
+                    ApplicationNumber: messageDetails.ApplicationNumber,
+                    LoanNumber: loanNumber,
+                    TotalAmountToPay: totalAmountToPay.toFixed(2),
+                    OtherCharges: otherCharges.toFixed(2)
+                });
+
+                await sendCallback(approvalResponseData);
+                logger.info('✅ TOP_UP_OFFER_REQUEST callback sent successfully');
+            } catch (callbackError) {
+                logger.error('❌ Error sending TOP_UP_OFFER_REQUEST callback:', callbackError);
+            }
+        }, 20000); // 20 seconds delay
+
+    } catch (error) {
+        logger.error('❌ Error processing TOP_UP_OFFER_REQUEST:', error);
+        if (!res.headersSent) {
+            return sendErrorResponse(res, '8002', `Processing error: ${error.message}`, 'xml', parsedData);
         }
-    };
-    const signedResponse = digitalSignature.createSignedXML(responseData.Data);
-    res.status(200).send(signedResponse);
+    }
 };
 
 const handleTakeoverPayOffBalanceRequest = async (parsedData, res) => {
