@@ -523,31 +523,63 @@ const handleLoanOfferRequest = async (parsedData, res) => {
             // Continue with response even if storage fails
         }
 
-        // Send LOAN_INITIAL_APPROVAL_NOTIFICATION immediately
-        const responseData = {
+        // Send immediate ACK response
+        const ackResponseData = {
             Data: {
                 Header: {
                     "Sender": process.env.FSP_NAME || "ZE DONE",
                     "Receiver": "ESS_UTUMISHI",
                     "FSPCode": header.FSPCode,
-                    "MsgId": getMessageId("LOAN_INITIAL_APPROVAL_NOTIFICATION"),
-                    "MessageType": "LOAN_INITIAL_APPROVAL_NOTIFICATION"
+                    "MsgId": getMessageId("LOAN_OFFER_ACK"),
+                    "MessageType": "LOAN_OFFER_ACK"
                 },
                 MessageDetails: {
                     "ApplicationNumber": messageDetails.ApplicationNumber,
-                    "Reason": "Loan Request Approved",
-                    "FSPReferenceNumber": header.FSPReferenceNumber || messageDetails.CheckNumber || messageDetails.ApplicationNumber,
-                    "LoanNumber": loanNumber,
-                    "TotalAmountToPay": totalAmountToPay.toFixed(2),
-                    "OtherCharges": otherCharges.toFixed(2),
-                    "Approval": "APPROVED"
+                    "Status": "RECEIVED",
+                    "Message": "Loan offer request received and being processed"
                 }
             }
         };
 
-        // Sign and send the response
-        const signedResponse = digitalSignature.createSignedXML(responseData.Data);
-        res.status(200).send(signedResponse);
+        // Sign and send the immediate ACK response
+        const ackSignedResponse = digitalSignature.createSignedXML(ackResponseData.Data);
+        res.status(200).send(ackSignedResponse);
+        logger.info('✅ Sent immediate ACK response for LOAN_OFFER_REQUEST');
+
+        // Schedule LOAN_INITIAL_APPROVAL_NOTIFICATION to be sent via callback after 20 seconds
+        setTimeout(async () => {
+            try {
+                logger.info('⏰ Sending delayed LOAN_INITIAL_APPROVAL_NOTIFICATION callback...');
+                
+                const approvalResponseData = {
+                    Header: {
+                        "Sender": process.env.FSP_NAME || "ZE DONE",
+                        "Receiver": "ESS_UTUMISHI",
+                        "FSPCode": header.FSPCode,
+                        "MsgId": getMessageId("LOAN_INITIAL_APPROVAL_NOTIFICATION"),
+                        "MessageType": "LOAN_INITIAL_APPROVAL_NOTIFICATION"
+                    },
+                    MessageDetails: {
+                        "ApplicationNumber": messageDetails.ApplicationNumber,
+                        "Reason": "Loan Request Approved",
+                        "FSPReferenceNumber": header.FSPReferenceNumber || messageDetails.CheckNumber || messageDetails.ApplicationNumber,
+                        "LoanNumber": loanNumber,
+                        "TotalAmountToPay": totalAmountToPay.toFixed(2),
+                        "OtherCharges": otherCharges.toFixed(2),
+                        "Approval": "APPROVED"
+                    }
+                };
+
+                // Send callback using the callback utility
+                await sendCallback(approvalResponseData);
+                logger.info('✅ Successfully sent LOAN_INITIAL_APPROVAL_NOTIFICATION callback');
+
+            } catch (callbackError) {
+                logger.error('❌ Error sending LOAN_INITIAL_APPROVAL_NOTIFICATION callback:', callbackError);
+            }
+        }, 20000); // 20 seconds delay
+
+        logger.info('🕐 Scheduled LOAN_INITIAL_APPROVAL_NOTIFICATION to be sent in 20 seconds');
 
     } catch (error) {
         logger.error('Error processing loan offer request:', error);
