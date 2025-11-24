@@ -530,13 +530,14 @@ const handleLoanOfferRequest = async (parsedData, res) => {
                     "Sender": process.env.FSP_NAME || "ZE DONE",
                     "Receiver": "ESS_UTUMISHI",
                     "FSPCode": header.FSPCode,
-                    "MsgId": getMessageId("LOAN_OFFER_ACK"),
-                    "MessageType": "LOAN_OFFER_ACK"
+                    "MsgId": getMessageId("RESPONSE"),
+                    "MessageType": "RESPONSE"
                 },
                 MessageDetails: {
                     "ApplicationNumber": messageDetails.ApplicationNumber,
-                    "Status": "RECEIVED",
-                    "Message": "Loan offer request received and being processed"
+                    "Status": "SUCCESS",
+                    "StatusCode": "8000",
+                    "StatusDesc": "Loan offer request received and being processed"
                 }
             }
         };
