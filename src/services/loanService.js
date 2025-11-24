@@ -388,12 +388,12 @@ const LoanCalculate = async (data) => {
             logger.warn(`🔧 Final EMI capping: ${calculatedMonthlyEMI} → ${finalMonthlyEMI} (capped at DesiredDeductibleAmount: ${customerDesiredEMI})`);
         }
 
-        const tenure = loanOffer.loanOffer.product.loanTerm || 0;
+        const tenureValue = loanOffer.loanOffer.product.loanTerm || 0;
 
         const response = {
             monthlyReturnAmount: finalMonthlyEMI.toFixed(2),
-            tenure: tenure,
-            totalAmountToPay: (finalMonthlyEMI * tenure).toFixed(2),
+            tenure: tenureValue,
+            totalAmountToPay: (finalMonthlyEMI * tenureValue).toFixed(2),
             netLoanAmount: (loanOffer.loanOffer.product.loanAmount || 0).toFixed(2),
             eligibleAmount: (loanOffer.loanOffer.product.loanAmount || 0).toFixed(2),
             totalInterestRateAmount: totalInterestRateAmount.toFixed(2),
@@ -489,12 +489,12 @@ async function doForwardOffer(possibleLoanChargesEntity, loanOfferDTO, requested
         logger.warn(`🔧 Final EMI capping (Forward): ${calculatedMonthlyEMI} → ${finalMonthlyEMI} (capped at DesiredDeductibleAmount: ${customerDesiredEMI})`);
     }
 
-    const tenure = forwardLoanOffer.loanOffer.product.loanTerm || 0;
+    const tenureValue = forwardLoanOffer.loanOffer.product.loanTerm || 0;
 
     const response = {
         monthlyReturnAmount: finalMonthlyEMI.toFixed(2),
-        tenure: tenure,
-        totalAmountToPay: (finalMonthlyEMI * tenure).toFixed(2),
+        tenure: tenureValue,
+        totalAmountToPay: (finalMonthlyEMI * tenureValue).toFixed(2),
         netLoanAmount: (forwardLoanOffer.loanOffer.product.loanAmount || 0).toFixed(2),
         eligibleAmount: (forwardLoanOffer.loanOffer.product.loanAmount || 0).toFixed(2),
         totalInterestRateAmount: totalInterestRateAmount.toFixed(2),
