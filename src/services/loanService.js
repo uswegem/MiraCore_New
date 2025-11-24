@@ -186,6 +186,9 @@ const LoanCalculate = async (data) => {
             logger.warn(`⚠️ DesiredDeductibleAmount (${desiredDeductibleAmount}) exceeds maxAffordableEMI (${maxAffordableEMI}). Capped for affordability.`);
         }
 
+        // Log the EMI constraint being used for loan calculation
+        logger.info(`💰 Using EMI constraint: ${desirableEMI} (ensures MonthlyReturnAmount ≤ DesiredDeductibleAmount)`);
+
         // Calculate retirement months left
         const retirementMonthsLeft = calculateMonthsUntilRetirement(retirementDate);
 
@@ -272,9 +275,7 @@ const LoanCalculate = async (data) => {
             employerCode: '', // Not provided in request
             employerName: '', // Not provided in request
             newLoanOfferExpected: true,
-            centralRegAffordability: affordabilityType === LOAN_CONSTANTS.AFFORDABILITY_TYPE.REVERSE
-                ? desirableEMI  // For reverse: use DesiredDeductibleAmount (capped at DeductibleAmount)
-                : deductibleAmount, // For forward: use DeductibleAmount as max constraint
+            centralRegAffordability: desirableEMI, // Always use customer's DesiredDeductibleAmount (capped at max affordability)
             // Add MIFOS product parameters with fallback to constants
             productDetails: productDetails || {
                 interestRate: LOAN_CONSTANTS.DEFAULT_INTEREST_RATE,

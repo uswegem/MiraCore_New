@@ -1,13 +1,19 @@
 const logger = require('../utils/logger');
 const axios = require('axios');
 const digitalSignature = require('../utils/signatureUtils');
+const { logOutgoingMessage, updateMessageLog } = require('../utils/messageLogger');
 
 const THIRD_PARTY_BASE_URL = process.env.THIRD_PARTY_BASE_URL;
 const API_TIMEOUT = parseInt(process.env.API_TIMEOUT) || 30000;
 
-async function forwardToThirdParty(signedXml, messageType) {
+async function forwardToThirdParty(signedXml, messageType, metadata = {}, userId = null) {
+  let messageLog = null;
+
   try {
     logger.info(' Preparing to send to ESS...');
+    
+    // Log the outgoing message
+    messageLog = await logOutgoingMessage(signedXml, messageType, metadata, userId);
     
     // Check if URL is configured
     if (!THIRD_PARTY_BASE_URL) {
@@ -51,6 +57,12 @@ async function forwardToThirdParty(signedXml, messageType) {
     // Handle specific error codes in response data
     if (response.status !== 200 || (response.data && response.data.ResponseCode === '9005')) {
       logger.error('ESS returned error response:', response.data);
+      
+      // Update message log with failure
+      if (messageLog) {
+        await updateMessageLog(messageLog.messageId, 'failed', response.data, 'ESS returned error response');
+      }
+      
       throw new Error('ESS returned error: ' + (response.data.Description || 'Unknown error'));
     }
     
@@ -61,10 +73,20 @@ async function forwardToThirdParty(signedXml, messageType) {
       logger.info('ESS Response: No body');
     }
     
+    // Update message log with success
+    if (messageLog) {
+      await updateMessageLog(messageLog.messageId, 'sent', response.data);
+    }
+    
     return response.data;
 
   } catch (error) {
     logger.error('ESS Communication Error:');
+    
+    // Update message log with error
+    if (messageLog) {
+      await updateMessageLog(messageLog.messageId, 'failed', null, error.message);
+    }
     
     if (error.code === 'ENOTFOUND') {
       throw new Error(`Cannot connect to ESS: ${error.hostname} not found`);
