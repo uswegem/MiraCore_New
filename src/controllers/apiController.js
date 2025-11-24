@@ -299,6 +299,13 @@ const handleLoanChargesRequest = async (parsedData, res) => {
         
         // Monthly installment
         const monthlyReturnAmount = calculateMonthlyInstallment(requestedAmount, interestRate, requestedTenure);
+        
+        // Apply EMI constraint validation - ensure MonthlyReturnAmount doesn't exceed customer's DesiredDeductibleAmount
+        const constrainedMonthlyReturnAmount = Math.min(monthlyReturnAmount, targetEMI);
+        if (constrainedMonthlyReturnAmount < monthlyReturnAmount) {
+            logger.info(`EMI constraint applied - Original: ${monthlyReturnAmount.toFixed(2)}, Constrained: ${constrainedMonthlyReturnAmount.toFixed(2)}, Customer Max: ${targetEMI.toFixed(2)}`);
+        }
+        const finalMonthlyReturnAmount = constrainedMonthlyReturnAmount;
 
         const responseData = {
             Data: {
@@ -310,7 +317,7 @@ const handleLoanChargesRequest = async (parsedData, res) => {
                     "MessageType": "LOAN_CHARGES_RESPONSE"
                 },
                 MessageDetails: {
-                    "DesiredDeductibleAmount": monthlyReturnAmount.toFixed(2),
+                    "DesiredDeductibleAmount": finalMonthlyReturnAmount.toFixed(2),
                     "TotalInsurance": totalInsurance.toFixed(2),
                     "TotalProcessingFees": totalProcessingFees.toFixed(2),
                     "TotalInterestRateAmount": totalInterestRateAmount.toFixed(2),
@@ -319,10 +326,35 @@ const handleLoanChargesRequest = async (parsedData, res) => {
                     "TotalAmountToPay": totalAmountToPay.toFixed(2),
                     "Tenure": requestedTenure,
                     "EligibleAmount": requestedAmount.toFixed(2),
-                    "MonthlyReturnAmount": monthlyReturnAmount.toFixed(2)
+                    "MonthlyReturnAmount": finalMonthlyReturnAmount.toFixed(2)
                 }
             }
         };
+        
+        // Store charge calculation results for later use in LOAN_INITIAL_APPROVAL_NOTIFICATION
+        try {
+            const checkNumber = messageDetails.CheckNumber;
+            if (checkNumber) {
+                const chargeCalculationData = {
+                    totalAmountToPay: totalAmountToPay.toFixed(2),
+                    otherCharges: otherCharges.toFixed(2),
+                    totalInsurance: totalInsurance.toFixed(2),
+                    totalProcessingFees: totalProcessingFees.toFixed(2),
+                    totalInterestRateAmount: totalInterestRateAmount.toFixed(2),
+                    netLoanAmount: netLoanAmount.toFixed(2),
+                    eligibleAmount: requestedAmount.toFixed(2),
+                    tenure: requestedTenure,
+                    calculatedAt: new Date().toISOString()
+                };
+                
+                // Try to update existing loan mapping with charge calculation data
+                await LoanMappingService.storeChargeCalculation(checkNumber, chargeCalculationData);
+                logger.info('✅ Stored charge calculation data for CheckNumber:', checkNumber);
+            }
+        } catch (storageError) {
+            logger.warn('⚠️ Failed to store charge calculation data:', storageError.message);
+            // Continue with response even if storage fails
+        }
         
         const signedResponse = digitalSignature.createSignedXML(responseData.Data);
         res.status(200).send(signedResponse);
@@ -462,6 +494,19 @@ const handleLoanOfferRequest = async (parsedData, res) => {
         
         logger.info('Final loan offer:', loanOffer);
 
+        // Calculate TotalAmountToPay and OtherCharges using same logic as LOAN_CHARGES_REQUEST
+        const loanAmount = parseFloat(loanOffer.LoanAmount) || 0;
+        const interestRate = parseFloat(loanOffer.InterestRate) || 0;
+        const tenure = parseFloat(loanOffer.Tenure) || 0;
+        
+        // Use same calculation logic as LOAN_CHARGES_REQUEST
+        const totalInterestRateAmount = (loanAmount * interestRate * tenure) / (12 * 100);
+        const totalAmountToPay = loanAmount + totalInterestRateAmount;
+        const otherCharges = 50000; // Same fixed amount as LOAN_CHARGES_REQUEST (legal fees)
+        const loanNumber = generateLoanNumber();
+        
+        logger.info(`Calculated using LOAN_CHARGES_REQUEST logic - LoanAmount: ${loanAmount}, TotalAmountToPay: ${totalAmountToPay}, OtherCharges: ${otherCharges}`);
+
         // Store in loan mapping with all client, loan, and employment data
         logger.info('💾 Storing client data for application:', messageDetails.ApplicationNumber);
         try {
@@ -490,14 +535,12 @@ const handleLoanOfferRequest = async (parsedData, res) => {
                 },
                 MessageDetails: {
                     "ApplicationNumber": messageDetails.ApplicationNumber,
-                    "FSPReferenceNumber": header.FSPReferenceNumber,
-                    "ApprovedAmount": loanOffer.LoanAmount,
-                    "ApprovedTenure": loanOffer.Tenure,
-                    "InterestRate": loanOffer.InterestRate,
-                    "MonthlyInstallment": loanOffer.MonthlyInstallment,
-                    "Status": "APPROVED",
-                    "StatusCode": "8000",
-                    "StatusDesc": "Loan request approved"
+                    "Reason": "Loan Request Approved",
+                    "FSPReferenceNumber": header.FSPReferenceNumber || messageDetails.CheckNumber || messageDetails.ApplicationNumber,
+                    "LoanNumber": loanNumber,
+                    "TotalAmountToPay": totalAmountToPay.toFixed(2),
+                    "OtherCharges": otherCharges.toFixed(2),
+                    "Approval": "APPROVED"
                 }
             }
         };
