@@ -249,23 +249,16 @@ const handleLoanChargesRequest = async (parsedData, res) => {
         
         logger.info(`Customer repayment capacity - DesiredDeductibleAmount: ${desiredDeductibleAmount}, DeductibleAmount: ${deductibleAmount}, OneThirdAmount: ${oneThirdAmount}, Target EMI: ${targetEMI}`);
         
-        // If requested amount is 0, calculate the maximum affordable loan
-        if (!requestedAmount || requestedAmount === 0) {
-            logger.info(`RequestedAmount is 0, calculating maximum loan from target EMI: ${targetEMI}`);
-            if (targetEMI > 0 && requestedTenure > 0) {
-                // Calculate maximum loan amount from target EMI (reverse calculation)
-                const maxAmount = LoanCalculations.calculateMaxLoanFromEMI(targetEMI, interestRate, requestedTenure);
-                requestedAmount = Math.max(MIN_LOAN_AMOUNT, Math.round(maxAmount));
-                logger.info(`Calculated maximum eligible loan amount: ${requestedAmount} (EMI will be: ${targetEMI})`);
-            } else {
-                // Default to minimum loan amount if no affordability data
-                requestedAmount = MIN_LOAN_AMOUNT;
-                logger.info(`No affordability data, using minimum loan amount: ${requestedAmount}`);
-            }
+        // Always calculate the maximum affordable loan amount based on repayment capacity
+        if (targetEMI > 0 && requestedTenure > 0) {
+            // Calculate maximum loan amount from target EMI (reverse calculation)
+            const maxAmount = LoanCalculations.calculateMaxLoanFromEMI(targetEMI, interestRate, requestedTenure);
+            requestedAmount = Math.max(MIN_LOAN_AMOUNT, Math.round(maxAmount));
+            logger.info(`Calculated maximum eligible loan amount: ${requestedAmount} (EMI will be: ${targetEMI})`);
         } else {
-            // If RequestedAmount > 0, use the provided amount but cap the calculated EMI to the DeductibleAmount
-            logger.info(`Using provided RequestedAmount: ${requestedAmount}`);
-            // The EMI will be capped later in the calculation
+            // Default to minimum loan amount if no affordability data
+            requestedAmount = MIN_LOAN_AMOUNT;
+            logger.info(`No affordability data, using minimum loan amount: ${requestedAmount}`);
         }
         
         // Ensure amount meets minimum requirement
