@@ -249,9 +249,6 @@ const handleLoanChargesRequest = async (parsedData, res) => {
         
         logger.info(`Customer repayment capacity - DesiredDeductibleAmount: ${desiredDeductibleAmount}, DeductibleAmount: ${deductibleAmount}, OneThirdAmount: ${oneThirdAmount}, Target EMI: ${targetEMI}`);
         
-        // Extract requested amount
-        let requestedAmount = parseFloat(messageDetails.RequestedAmount || messageDetails.LoanAmount);
-        
         // If requested amount is 0, calculate the maximum affordable loan
         if (!requestedAmount || requestedAmount === 0) {
             logger.info(`RequestedAmount is 0, calculating maximum loan from target EMI: ${targetEMI}`);
