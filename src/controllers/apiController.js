@@ -210,85 +210,90 @@ const handleLoanChargesRequest = async (parsedData, res) => {
         const header = parsedData.Document.Data.Header;
         const messageDetails = parsedData.Document.Data.MessageDetails;
 
-        // Extract loan details from request
+        // Input validation
         let requestedAmount = parseFloat(messageDetails.RequestedAmount || messageDetails.LoanAmount);
-        // Default to maximum tenure if not provided or is 0
         let requestedTenure = parseInt(messageDetails.RequestedTenure || messageDetails.Tenure);
-        if (!requestedTenure || requestedTenure === 0) {
+        if (!requestedTenure || requestedTenure <= 0) {
             requestedTenure = LOAN_CONSTANTS.MAX_TENURE;
             logger.info(`Tenure not provided or is 0, defaulting to maximum tenure: ${requestedTenure} months`);
         }
+        // Validate retirement
+        const retirementMonthsLeft = require('../utils/loanUtils').calculateMonthsUntilRetirement(messageDetails.RetirementDate);
+        requestedTenure = require('../utils/loanUtils').validateRetirementAge(requestedTenure, retirementMonthsLeft);
+        if (!requestedTenure || requestedTenure <= 0) {
+            requestedTenure = LOAN_CONSTANTS.DEFAULT_TENURE;
+            logger.info(`Tenure adjusted for retirement: ${requestedTenure} months`);
+        }
+
         const interestRate = 15.0; // 15% per annum
-        
-        // Extract repayment capacity fields
-        // CONSERVATIVE APPROACH: DesiredDeductibleAmount must be capped at DeductibleAmount
+
+        // Repayment capacity
         const desiredDeductibleAmount = parseFloat(messageDetails.DesiredDeductibleAmount || 0);
         const deductibleAmount = parseFloat(messageDetails.DeductibleAmount || 0);
         const oneThirdAmount = parseFloat(messageDetails.OneThirdAmount || 0);
         const MIN_LOAN_AMOUNT = LOAN_CONSTANTS.MIN_LOAN_AMOUNT;
-        
-        // Determine which EMI value to use based on priority
-        // CRITICAL: Always cap DesiredDeductibleAmount at DeductibleAmount for safety
+
+        // Modular EMI selection
         let targetEMI = 0;
         if (desiredDeductibleAmount > 0) {
-            // Cap desired amount at system-calculated capacity
             if (deductibleAmount > 0 && desiredDeductibleAmount > deductibleAmount) {
                 targetEMI = deductibleAmount;
-                logger.info(`⚠️ DesiredDeductibleAmount (${desiredDeductibleAmount}) exceeds DeductibleAmount (${deductibleAmount}). Capped at DeductibleAmount for safety.`);
+                logger.info(`DesiredDeductibleAmount (${desiredDeductibleAmount}) exceeds DeductibleAmount (${deductibleAmount}), capped.`);
             } else {
                 targetEMI = desiredDeductibleAmount;
                 logger.info(`Using DesiredDeductibleAmount as target EMI: ${targetEMI}`);
             }
         } else if (deductibleAmount > 0) {
             targetEMI = deductibleAmount;
-            logger.info(`Using DeductibleAmount as maximum capacity EMI: ${targetEMI}`);
+            logger.info(`Using DeductibleAmount as EMI: ${targetEMI}`);
         } else if (oneThirdAmount > 0) {
             targetEMI = oneThirdAmount;
             logger.info(`Using OneThirdAmount as fallback EMI: ${targetEMI}`);
         }
-        
-        logger.info(`Customer repayment capacity - DesiredDeductibleAmount: ${desiredDeductibleAmount}, DeductibleAmount: ${deductibleAmount}, OneThirdAmount: ${oneThirdAmount}, Target EMI: ${targetEMI}`);
-        
-        // Always calculate the maximum affordable loan amount based on repayment capacity
+
+        logger.info(`Repayment capacity - DesiredDeductibleAmount: ${desiredDeductibleAmount}, DeductibleAmount: ${deductibleAmount}, OneThirdAmount: ${oneThirdAmount}, Target EMI: ${targetEMI}`);
+
+        // Calculate max affordable loan
+        let maxAffordableAmount = MIN_LOAN_AMOUNT;
         if (targetEMI > 0 && requestedTenure > 0) {
-            // Calculate maximum loan amount from target EMI (reverse calculation)
-            const maxAmount = LoanCalculations.calculateMaxLoanFromEMI(targetEMI, interestRate, requestedTenure);
-            requestedAmount = Math.max(MIN_LOAN_AMOUNT, Math.round(maxAmount));
-            logger.info(`Calculated maximum eligible loan amount: ${requestedAmount} (EMI will be: ${targetEMI})`);
-        } else {
-            // Default to minimum loan amount if no affordability data
-            requestedAmount = MIN_LOAN_AMOUNT;
-            logger.info(`No affordability data, using minimum loan amount: ${requestedAmount}`);
+            maxAffordableAmount = require('../utils/loanCalculations').calculateMaxLoanFromEMI(targetEMI, interestRate, requestedTenure);
         }
-        
+
+        // Cap requested amount at max affordable
+        if (!requestedAmount || requestedAmount <= 0) {
+            requestedAmount = Math.max(MIN_LOAN_AMOUNT, Math.round(maxAffordableAmount));
+            logger.info(`RequestedAmount is 0, using max affordable: ${requestedAmount}`);
+        } else if (requestedAmount > maxAffordableAmount) {
+            logger.info(`RequestedAmount (${requestedAmount}) exceeds max affordable (${maxAffordableAmount}), capping.`);
+            requestedAmount = Math.max(MIN_LOAN_AMOUNT, Math.round(maxAffordableAmount));
+        } else {
+            logger.info(`Using provided RequestedAmount: ${requestedAmount}`);
+        }
+
         // Ensure amount meets minimum requirement
         requestedAmount = Math.max(requestedAmount, MIN_LOAN_AMOUNT);
 
-        // Calculate charges
-        const totalProcessingFees = requestedAmount * 0.02; // 2% processing fee
-        const totalInsurance = requestedAmount * 0.01; // 1% insurance
-        const otherCharges = LOAN_CONSTANTS?.OTHER_CHARGES || 50000; // Other charges (e.g., legal fees)
-        
-        // Calculate interest for the entire tenure
-        const totalInterestRateAmount = (requestedAmount * interestRate * requestedTenure) / (12 * 100);
-        
-        // Net amount after deducting charges
+        // Calculate charges modularly
+        const charges = require('../utils/loanCalculations').calculateCharges(requestedAmount);
+        const totalProcessingFees = charges.processingFee;
+        const totalInsurance = charges.insurance;
+        const otherCharges = charges.otherCharges;
+
+        // Interest and net loan
+        const totalInterestRateAmount = require('../utils/loanCalculations').calculateTotalInterest(requestedAmount, interestRate, requestedTenure);
         const totalDeductions = totalProcessingFees + totalInsurance + otherCharges;
         const netLoanAmount = requestedAmount - totalDeductions;
-        
-        // Total amount to pay back (principal + interest)
         const totalAmountToPay = requestedAmount + totalInterestRateAmount;
-        
-        // Monthly installment
-        const monthlyReturnAmount = calculateMonthlyInstallment(requestedAmount, interestRate, requestedTenure);
-        
-        // Apply EMI constraint validation - ensure MonthlyReturnAmount doesn't exceed customer's DesiredDeductibleAmount
-        const constrainedMonthlyReturnAmount = Math.min(monthlyReturnAmount, targetEMI);
-        if (constrainedMonthlyReturnAmount < monthlyReturnAmount) {
-            logger.info(`EMI constraint applied - Original: ${monthlyReturnAmount.toFixed(2)}, Constrained: ${constrainedMonthlyReturnAmount.toFixed(2)}, Customer Max: ${targetEMI.toFixed(2)}`);
-        }
-        const finalMonthlyReturnAmount = constrainedMonthlyReturnAmount;
 
+        // Monthly installment
+        const monthlyReturnAmount = require('../utils/loanCalculations').calculateEMI(requestedAmount, interestRate, requestedTenure);
+        // Apply EMI constraint
+        const finalMonthlyReturnAmount = Math.min(monthlyReturnAmount, targetEMI);
+        if (finalMonthlyReturnAmount < monthlyReturnAmount) {
+            logger.info(`EMI constraint applied - Original: ${monthlyReturnAmount.toFixed(2)}, Constrained: ${finalMonthlyReturnAmount.toFixed(2)}, Customer Max: ${targetEMI.toFixed(2)}`);
+        }
+
+        // Prepare response
         const responseData = {
             Data: {
                 Header: {
@@ -312,8 +317,8 @@ const handleLoanChargesRequest = async (parsedData, res) => {
                 }
             }
         };
-        
-        // Store charge calculation results for later use in LOAN_INITIAL_APPROVAL_NOTIFICATION
+
+        // Store charge calculation results for later use
         try {
             const checkNumber = messageDetails.CheckNumber;
             if (checkNumber) {
@@ -328,16 +333,13 @@ const handleLoanChargesRequest = async (parsedData, res) => {
                     tenure: requestedTenure,
                     calculatedAt: new Date().toISOString()
                 };
-                
-                // Try to update existing loan mapping with charge calculation data
                 await LoanMappingService.storeChargeCalculation(checkNumber, chargeCalculationData);
-                logger.info('✅ Stored charge calculation data for CheckNumber:', checkNumber);
+                logger.info('Stored charge calculation data for CheckNumber:', checkNumber);
             }
         } catch (storageError) {
-            logger.warn('⚠️ Failed to store charge calculation data:', storageError.message);
-            // Continue with response even if storage fails
+            logger.warn('Failed to store charge calculation data:', storageError.message);
         }
-        
+
         const signedResponse = digitalSignature.createSignedXML(responseData.Data);
         res.status(200).send(signedResponse);
     } catch (error) {
@@ -484,7 +486,7 @@ const handleLoanOfferRequest = async (parsedData, res) => {
         // Use same calculation logic as LOAN_CHARGES_REQUEST
         const totalInterestRateAmount = (loanAmount * interestRate * tenure) / (12 * 100);
         const totalAmountToPay = loanAmount + totalInterestRateAmount;
-        const otherCharges = LOAN_CONSTANTS?.OTHER_CHARGES || 50000; // Same fixed amount as LOAN_CHARGES_REQUEST (legal fees)
+        const otherCharges = LOAN_CONSTANTS?.OTHER_CHARGES || 50000;
         const loanNumber = generateLoanNumber();
         
         logger.info(`Calculated using LOAN_CHARGES_REQUEST logic - LoanAmount: ${loanAmount}, TotalAmountToPay: ${totalAmountToPay}, OtherCharges: ${otherCharges}`);
