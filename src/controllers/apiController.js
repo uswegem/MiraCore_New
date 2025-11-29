@@ -274,12 +274,11 @@ const handleLoanChargesRequest = async (parsedData, res) => {
 
         // Calculate EMI for the eligible amount
         let monthlyReturnAmount = require('../utils/loanCalculations').calculateEMI(eligibleAmount, interestRate, requestedTenure);
-        // Ensure EMI doesn't exceed target EMI for safety
+        // Ensure EMI doesn't exceed DeductibleAmount (targetEMI) for safety
         if (monthlyReturnAmount > targetEMI) {
-            logger.warn(`Calculated EMI (${monthlyReturnAmount}) exceeds target EMI (${targetEMI}), capping.`);
+            logger.warn(`Calculated EMI (${monthlyReturnAmount}) exceeds DeductibleAmount (${targetEMI}), capping EMI.`);
             monthlyReturnAmount = targetEMI;
-            // Recalculate eligible amount to fit within target EMI
-            eligibleAmount = require('../utils/loanCalculations').calculateMaxLoanFromEMI(targetEMI, interestRate, requestedTenure);
+            // Keep eligibleAmount as is (RequestedAmount capped), don't recalculate loan amount
         }
 
         // Ensure amount meets minimum requirement
