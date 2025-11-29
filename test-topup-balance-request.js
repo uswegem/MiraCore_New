@@ -42,10 +42,10 @@ async function testTopUpBalanceRequest() {
     console.log(signedXml.substring(0, 500) + '...');
 
     try {
-        console.log('\n🌐 Sending request to http://localhost:3002/api/loan...');
+        console.log('\n🌐 Sending request to http://135.181.33.13:3002/api/loan...');
         
-        // Send to local server
-        const response = await axios.post('http://localhost:3002/api/loan', signedXml, {
+        // Send to remote server
+        const response = await axios.post('http://135.181.33.13:3002/api/loan', signedXml, {
             headers: {
                 'Content-Type': 'application/xml'
             },

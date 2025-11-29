@@ -3,6 +3,23 @@ const logger = require('./logger');
 const { format } = require('date-fns');
 const LOAN_CONSTANTS = require('./loanConstants');
 
+// Improved date handling with fallback
+const { differenceInMonths, parseISO } = (() => {
+  try {
+    const df = require('date-fns');
+    return { differenceInMonths: df.differenceInMonths, parseISO: df.parseISO };
+  } catch (e) {
+    return {
+      parseISO: (s) => new Date(s),
+      differenceInMonths: (later, earlier) => {
+        const yDiff = later.getFullYear() - earlier.getFullYear();
+        const mDiff = later.getMonth() - earlier.getMonth();
+        return yDiff * 12 + mDiff;
+      }
+    };
+  }
+})();
+
 /**
  * Format date to Utumishi format
  */
@@ -32,31 +49,48 @@ function constructName(firstName, middleName, lastName) {
 /**
  * Validate retirement age and adjust tenure
  */
-function validateRetirementAge(tenure, retirementMonthsLeft) {
-  if (!retirementMonthsLeft || retirementMonthsLeft <= 0) {
-    return tenure || LOAN_CONSTANTS.DEFAULT_TENURE;
+function validateRetirementAge(tenure, retirementMonthsLeft, options = {}) {
+  const maxTenure = options.maxTenure || LOAN_CONSTANTS.MAX_TENURE || 240;
+  let t = parseInt(tenure || 0, 10);
+  if (!t || t <= 0) t = LOAN_CONSTANTS.DEFAULT_TENURE || maxTenure;
+  if (typeof retirementMonthsLeft === 'number' && retirementMonthsLeft > 0) {
+    t = Math.min(t, retirementMonthsLeft, maxTenure);
+  } else {
+    t = Math.min(t, maxTenure);
   }
-
-  if (tenure === null || tenure === undefined) {
-    return retirementMonthsLeft > LOAN_CONSTANTS.DEFAULT_TENURE ? null : retirementMonthsLeft;
-  }
-
-  return tenure < retirementMonthsLeft ? tenure : retirementMonthsLeft;
+  return Math.max(0, t);
 }
 
 /**
  * Calculate months until retirement
  */
-function calculateMonthsUntilRetirement(retirementDate) {
-  if (!retirementDate) return null;
+function calculateMonthsUntilRetirement(retirementInput) {
+  if (!retirementInput && retirementInput !== 0) {
+    return 1000; // Large number if unknown
+  }
+  if (typeof retirementInput === 'number' || /^\d+$/.test(String(retirementInput))) {
+    const n = parseInt(retirementInput, 10);
+    if (!isNaN(n)) {
+      return Math.max(0, n);
+    }
+  }
+  try {
+    const dt = parseISO(String(retirementInput));
+    const now = new Date();
+    const months = differenceInMonths(dt, now);
+    return Math.max(0, months);
+  } catch (e) {
+    return 1000;
+  }
+}
 
-  const retirement = new Date(retirementDate);
-  const now = new Date();
-
-  const yearsDiff = retirement.getFullYear() - now.getFullYear();
-  const monthsDiff = retirement.getMonth() - now.getMonth();
-
-  return yearsDiff * 12 + monthsDiff;
+/**
+ * Safe parse float
+ */
+function safeParseFloat(v, defaultValue = 0) {
+  if (v === null || v === undefined || v === '') return defaultValue;
+  const n = parseFloat(String(v).replace(/,/g, ''));
+  return Number.isFinite(n) ? n : defaultValue;
 }
 
 /**
@@ -76,6 +110,7 @@ module.exports = {
   constructName,
   validateRetirementAge,
   calculateMonthsUntilRetirement,
+  safeParseFloat,
   ApplicationException,
   LOAN_CONSTANTS
 };

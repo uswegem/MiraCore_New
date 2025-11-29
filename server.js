@@ -5,6 +5,7 @@ const rateLimit = require('express-rate-limit');
 const dotenv = require('dotenv');
 dotenv.config();
 const logger = require('./src/utils/logger');
+const keepAliveService = require('./src/services/keepAliveService');
 
 // Import routes
 const apiRouter = require('./src/routes/api');
@@ -313,6 +314,10 @@ const server = app.listen(PORT, async () => {
 
         logger.info('✅ Server ready and database connected');
         
+        // Start Utumishi keep-alive service
+        logger.info('🔗 Starting Utumishi keep-alive service...');
+        keepAliveService.start();
+        
         // Signal PM2 that app is ready (for cluster mode)
         if (process.send) {
             process.send('ready');
@@ -347,6 +352,9 @@ const server = app.listen(PORT, async () => {
 process.on('SIGTERM', async () => {
     logger.info('SIGTERM received, shutting down gracefully');
     
+    // Stop keep-alive service
+    keepAliveService.stop();
+    
     server.close(async () => {
         logger.info('HTTP server closed');
         
@@ -372,6 +380,9 @@ process.on('SIGTERM', async () => {
 
 process.on('SIGINT', async () => {
     logger.info('SIGINT received, shutting down gracefully');
+    
+    // Stop keep-alive service
+    keepAliveService.stop();
     
     server.close(async () => {
         logger.info('HTTP server closed');

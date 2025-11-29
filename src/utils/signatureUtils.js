@@ -212,8 +212,10 @@ class DigitalSignature {
         pretty: false,
         indent: '',
         newline: '',
-        allowEmpty: false, // Don't create empty tags
-        normalize: false // Don't auto-normalize as we handle it ourselves
+        allowEmpty: false,
+        normalize: false,
+        spacebeforeslash: '',
+        trim: true
       },
       xmldec: {
         version: '1.0',
@@ -237,12 +239,12 @@ class DigitalSignature {
     const dataElement = this.extractDataElement(xmlWithoutSignature);
     
     // Generate signature for the Data part ONLY
-    const signature = this.generateSignature(dataElement);
+    const signature = this.generateSignature(dataElement).trim();
     
     // Build final XML with signature
     const finalDoc = {
       Data: dataObject,
-      Signature: signature
+      Signature: signature.trim()
     };
 
     const signedXml = builder.buildObject(finalDoc);
