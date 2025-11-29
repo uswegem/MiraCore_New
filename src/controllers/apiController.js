@@ -295,7 +295,7 @@ const handleLoanChargesRequest = async (parsedData, res) => {
                     "MessageType": "LOAN_CHARGES_RESPONSE"
                 },
                 MessageDetails: {
-                    "DesiredDeductibleAmount": finalMonthlyReturnAmount.toFixed(2),
+                    "DesiredDeductibleAmount": monthlyReturnAmount.toFixed(2),
                     "TotalInsurance": totalInsurance.toFixed(2),
                     "TotalProcessingFees": totalProcessingFees.toFixed(2),
                     "TotalInterestRateAmount": totalInterestRateAmount.toFixed(2),
@@ -304,7 +304,7 @@ const handleLoanChargesRequest = async (parsedData, res) => {
                     "TotalAmountToPay": totalAmountToPay.toFixed(2),
                     "Tenure": requestedTenure,
                     "EligibleAmount": eligibleAmount.toFixed(2),
-                    "MonthlyReturnAmount": finalMonthlyReturnAmount.toFixed(2)
+                    "MonthlyReturnAmount": monthlyReturnAmount.toFixed(2)
                 }
             }
         };
