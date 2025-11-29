@@ -259,26 +259,15 @@ const handleLoanChargesRequest = async (parsedData, res) => {
             maxAffordableAmount = require('../utils/loanCalculations').calculateMaxLoanFromEMI(targetEMI, interestRate, requestedTenure);
         }
 
-        // Consider RequestedAmount but cap at max affordable for consistency
+        // Unified calculation for consistency: Always use max affordable loan at target EMI
         let eligibleAmount = maxAffordableAmount;
-        if (requestedAmount > 0) {
-            if (requestedAmount <= maxAffordableAmount) {
-                eligibleAmount = requestedAmount;
-                logger.info(`Using RequestedAmount: ${requestedAmount} (within max affordable: ${maxAffordableAmount})`);
-            } else {
-                logger.info(`RequestedAmount (${requestedAmount}) exceeds max affordable (${maxAffordableAmount}), capping.`);
-            }
-        } else {
-            logger.info(`RequestedAmount is 0, using max affordable: ${eligibleAmount}`);
-        }
+        let monthlyReturnAmount = targetEMI;
 
-        // Calculate EMI for the eligible amount
-        let monthlyReturnAmount = require('../utils/loanCalculations').calculateEMI(eligibleAmount, interestRate, requestedTenure);
-        // Ensure EMI doesn't exceed DeductibleAmount (targetEMI) for safety
-        if (monthlyReturnAmount > targetEMI) {
-            logger.warn(`Calculated EMI (${monthlyReturnAmount}) exceeds DeductibleAmount (${targetEMI}), capping EMI.`);
-            monthlyReturnAmount = targetEMI;
-            // Keep eligibleAmount as is (RequestedAmount capped), don't recalculate loan amount
+        // Log RequestedAmount for reference, but ignore for calculation
+        if (requestedAmount > 0) {
+            logger.info(`RequestedAmount (${requestedAmount}) provided, but using max affordable (${eligibleAmount}) for consistency.`);
+        } else {
+            logger.info(`Using max affordable: ${eligibleAmount}`);
         }
 
         // Ensure amount meets minimum requirement
