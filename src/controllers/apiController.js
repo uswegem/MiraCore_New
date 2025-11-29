@@ -262,8 +262,8 @@ const handleLoanChargesRequest = async (parsedData, res) => {
         let monthlyReturnAmount = 0;
 
         if (affordabilityType === 'FORWARD') {
-            // Forward: Maximize eligibility, RequestedAmount considered for type determination
-            eligibleAmount = maxAffordableLoan;
+            // Forward: Consider RequestedAmount, maximize eligibility by capping at max affordable
+            eligibleAmount = Math.min(requestedAmount, maxAffordableLoan);
             monthlyReturnAmount = require('../utils/loanCalculations').calculateEMI(eligibleAmount, interestRate, requestedTenure);
             logger.info(`Forward calculation: RequestedAmount=${requestedAmount}, MaxAffordable=${maxAffordableLoan.toFixed(2)}, EligibleAmount=${eligibleAmount}, MonthlyReturnAmount=${monthlyReturnAmount}`);
         } else {
