@@ -213,9 +213,15 @@ const handleLoanChargesRequest = async (parsedData, res) => {
         // Input validation
         let requestedAmount = parseFloat(messageDetails.RequestedAmount || messageDetails.LoanAmount);
         let requestedTenure = parseInt(messageDetails.RequestedTenure || messageDetails.Tenure);
-        if (!requestedTenure || requestedTenure <= 0) {
-            requestedTenure = LOAN_CONSTANTS.MAX_TENURE;
-            logger.info(`Tenure not provided or is 0, defaulting to maximum tenure: ${requestedTenure} months`);
+        // Tenure logic: if provided, use it; else if requestedAmount >0, use DEFAULT_TENURE; else null
+        if (requestedTenure > 0) {
+            // Use provided tenure
+        } else if (requestedAmount > 0) {
+            requestedTenure = LOAN_CONSTANTS.DEFAULT_TENURE;
+            logger.info(`Tenure not provided but RequestedAmount >0, defaulting to default tenure: ${requestedTenure} months`);
+        } else {
+            requestedTenure = null; // Will be handled later
+            logger.info(`Tenure not provided and RequestedAmount=0, setting to null for reverse calculation`);
         }
         // Validate retirement
         const retirementMonthsLeft = require('../utils/loanUtils').calculateMonthsUntilRetirement(messageDetails.RetirementDate);
