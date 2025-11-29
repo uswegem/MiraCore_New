@@ -239,46 +239,38 @@ const handleLoanChargesRequest = async (parsedData, res) => {
         const oneThirdAmount = parseFloat(messageDetails.OneThirdAmount || 0);
         const MIN_LOAN_AMOUNT = LOAN_CONSTANTS.MIN_LOAN_AMOUNT;
 
-        // Modular EMI selection
-        let targetEMI = 0;
+        // Calculate maxAffordableEMI (equivalent to maxAffordableEMI in Kotlin)
+        const maxAffordableEMI = deductibleAmount > 0 ? deductibleAmount : 0; // Assuming DeductibleAmount is provided
+
+        // Calculate desirableEMI (capped desired)
+        let desirableEMI = 0;
         if (desiredDeductibleAmount > 0) {
-            if (deductibleAmount > 0 && desiredDeductibleAmount > deductibleAmount) {
-                targetEMI = deductibleAmount;
-                logger.info(`DesiredDeductibleAmount (${desiredDeductibleAmount}) exceeds DeductibleAmount (${deductibleAmount}), capped.`);
-            } else {
-                targetEMI = desiredDeductibleAmount;
-                logger.info(`Using DesiredDeductibleAmount as target EMI: ${targetEMI}`);
-            }
-        } else if (deductibleAmount > 0) {
-            targetEMI = deductibleAmount;
-            logger.info(`Using DeductibleAmount as EMI: ${targetEMI}`);
-        } else if (oneThirdAmount > 0) {
-            targetEMI = oneThirdAmount;
-            logger.info(`Using OneThirdAmount as fallback EMI: ${targetEMI}`);
-        }
-
-        logger.info(`Repayment capacity - DesiredDeductibleAmount: ${desiredDeductibleAmount}, DeductibleAmount: ${deductibleAmount}, OneThirdAmount: ${oneThirdAmount}, Target EMI: ${targetEMI}`);
-
-        // Calculate max affordable loan
-        let maxAffordableAmount = MIN_LOAN_AMOUNT;
-        if (targetEMI > 0 && requestedTenure > 0) {
-            maxAffordableAmount = require('../utils/loanCalculations').calculateMaxLoanFromEMI(targetEMI, interestRate, requestedTenure);
-        }
-
-        // Unified calculation: Use RequestedAmount if provided and matches max affordable, else use max affordable
-        let eligibleAmount = maxAffordableAmount;
-        let monthlyReturnAmount = targetEMI;
-
-        if (requestedAmount > 0 && Math.abs(requestedAmount - maxAffordableAmount) < 1) { // Allow small rounding differences
-            eligibleAmount = requestedAmount;
-            logger.info(`RequestedAmount (${requestedAmount}) matches max affordable, using it for EligibleAmount.`);
-        } else if (requestedAmount > 0) {
-            logger.info(`RequestedAmount (${requestedAmount}) does not match max affordable (${maxAffordableAmount}), using max affordable for consistency.`);
+            desirableEMI = Math.min(desiredDeductibleAmount, maxAffordableEMI);
         } else {
-            logger.info(`No RequestedAmount provided, using max affordable: ${eligibleAmount}`);
+            desirableEMI = maxAffordableEMI;
         }
 
-        // Ensure amount meets minimum requirement
+        // Determine affordabilityType
+        const affordabilityType = (requestedAmount === 0 || requestedTenure === null) ? 'REVERSE' : 'FORWARD';
+
+        logger.info(`AffordabilityType: ${affordabilityType}, RequestedAmount: ${requestedAmount}, Tenure: ${requestedTenure}`);
+
+        let eligibleAmount = 0;
+        let monthlyReturnAmount = 0;
+
+        if (affordabilityType === 'FORWARD') {
+            // Forward: Use RequestedAmount as EligibleAmount, calculate EMI
+            eligibleAmount = requestedAmount;
+            monthlyReturnAmount = require('../utils/loanCalculations').calculateEMI(eligibleAmount, interestRate, requestedTenure);
+            logger.info(`Forward calculation: EligibleAmount = ${eligibleAmount}, MonthlyReturnAmount = ${monthlyReturnAmount}`);
+        } else {
+            // Reverse: Use max affordable from desirableEMI
+            eligibleAmount = require('../utils/loanCalculations').calculateMaxLoanFromEMI(desirableEMI, interestRate, requestedTenure);
+            monthlyReturnAmount = desirableEMI;
+            logger.info(`Reverse calculation: EligibleAmount = ${eligibleAmount}, MonthlyReturnAmount = ${monthlyReturnAmount}`);
+        }
+
+        // Ensure minimum
         eligibleAmount = Math.max(eligibleAmount, MIN_LOAN_AMOUNT);
 
         // Calculate charges modularly using eligibleAmount
