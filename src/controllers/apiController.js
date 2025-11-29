@@ -259,39 +259,30 @@ const handleLoanChargesRequest = async (parsedData, res) => {
             maxAffordableAmount = require('../utils/loanCalculations').calculateMaxLoanFromEMI(targetEMI, interestRate, requestedTenure);
         }
 
-        // Cap requested amount at max affordable
-        if (!requestedAmount || requestedAmount <= 0) {
-            requestedAmount = Math.max(MIN_LOAN_AMOUNT, Math.round(maxAffordableAmount));
-            logger.info(`RequestedAmount is 0, using max affordable: ${requestedAmount}`);
-        } else if (requestedAmount > maxAffordableAmount) {
-            logger.info(`RequestedAmount (${requestedAmount}) exceeds max affordable (${maxAffordableAmount}), capping.`);
-            requestedAmount = Math.max(MIN_LOAN_AMOUNT, Math.round(maxAffordableAmount));
-        } else {
-            logger.info(`Using provided RequestedAmount: ${requestedAmount}`);
+        // Unify calculation: Always use reverse-style (max loan from target EMI)
+        // This ensures consistent responses regardless of RequestedAmount
+        let eligibleAmount = maxAffordableAmount;
+        let monthlyReturnAmount = targetEMI;
+
+        // Log if RequestedAmount was provided but ignored for consistency
+        if (requestedAmount > 0) {
+            logger.info(`RequestedAmount (${requestedAmount}) provided but using max affordable (${eligibleAmount}) for consistency.`);
         }
 
         // Ensure amount meets minimum requirement
-        requestedAmount = Math.max(requestedAmount, MIN_LOAN_AMOUNT);
+        eligibleAmount = Math.max(eligibleAmount, MIN_LOAN_AMOUNT);
 
-        // Calculate charges modularly
-        const charges = require('../utils/loanCalculations').calculateCharges(requestedAmount);
+        // Calculate charges modularly using eligibleAmount
+        const charges = require('../utils/loanCalculations').calculateCharges(eligibleAmount);
         const totalProcessingFees = charges.processingFee;
         const totalInsurance = charges.insurance;
         const otherCharges = charges.otherCharges;
 
-        // Interest and net loan
-        const totalInterestRateAmount = require('../utils/loanCalculations').calculateTotalInterest(requestedAmount, interestRate, requestedTenure);
+        // Interest and net loan using eligibleAmount
+        const totalInterestRateAmount = require('../utils/loanCalculations').calculateTotalInterest(eligibleAmount, interestRate, requestedTenure);
         const totalDeductions = totalProcessingFees + totalInsurance + otherCharges;
-        const netLoanAmount = requestedAmount - totalDeductions;
-        const totalAmountToPay = requestedAmount + totalInterestRateAmount;
-
-        // Monthly installment
-        const monthlyReturnAmount = require('../utils/loanCalculations').calculateEMI(requestedAmount, interestRate, requestedTenure);
-        // Apply EMI constraint
-        const finalMonthlyReturnAmount = Math.min(monthlyReturnAmount, targetEMI);
-        if (finalMonthlyReturnAmount < monthlyReturnAmount) {
-            logger.info(`EMI constraint applied - Original: ${monthlyReturnAmount.toFixed(2)}, Constrained: ${finalMonthlyReturnAmount.toFixed(2)}, Customer Max: ${targetEMI.toFixed(2)}`);
-        }
+        const netLoanAmount = eligibleAmount - totalDeductions;
+        const totalAmountToPay = eligibleAmount + totalInterestRateAmount;
 
         // Prepare response
         const responseData = {
@@ -312,7 +303,7 @@ const handleLoanChargesRequest = async (parsedData, res) => {
                     "NetLoanAmount": netLoanAmount.toFixed(2),
                     "TotalAmountToPay": totalAmountToPay.toFixed(2),
                     "Tenure": requestedTenure,
-                    "EligibleAmount": requestedAmount.toFixed(2),
+                    "EligibleAmount": eligibleAmount.toFixed(2),
                     "MonthlyReturnAmount": finalMonthlyReturnAmount.toFixed(2)
                 }
             }
@@ -329,7 +320,7 @@ const handleLoanChargesRequest = async (parsedData, res) => {
                     totalProcessingFees: totalProcessingFees.toFixed(2),
                     totalInterestRateAmount: totalInterestRateAmount.toFixed(2),
                     netLoanAmount: netLoanAmount.toFixed(2),
-                    eligibleAmount: requestedAmount.toFixed(2),
+                    eligibleAmount: eligibleAmount.toFixed(2),
                     tenure: requestedTenure,
                     calculatedAt: new Date().toISOString()
                 };
