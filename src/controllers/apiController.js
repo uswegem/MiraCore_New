@@ -255,19 +255,22 @@ const handleLoanChargesRequest = async (parsedData, res) => {
 
         logger.info(`AffordabilityType: ${affordabilityType}, RequestedAmount: ${requestedAmount}, Tenure: ${requestedTenure}`);
 
+        // Calculate max affordable loan amount
+        const maxAffordableLoan = require('../utils/loanCalculations').calculateMaxLoanFromEMI(desirableEMI, interestRate, requestedTenure);
+
         let eligibleAmount = 0;
         let monthlyReturnAmount = 0;
 
         if (affordabilityType === 'FORWARD') {
-            // Forward: Use RequestedAmount as EligibleAmount, calculate EMI
-            eligibleAmount = requestedAmount;
+            // Forward: Use the minimum of RequestedAmount and max affordable loan
+            eligibleAmount = Math.min(requestedAmount, maxAffordableLoan);
             monthlyReturnAmount = require('../utils/loanCalculations').calculateEMI(eligibleAmount, interestRate, requestedTenure);
-            logger.info(`Forward calculation: EligibleAmount = ${eligibleAmount}, MonthlyReturnAmount = ${monthlyReturnAmount}`);
+            logger.info(`Forward calculation: RequestedAmount=${requestedAmount}, MaxAffordable=${maxAffordableLoan.toFixed(2)}, EligibleAmount=${eligibleAmount}, MonthlyReturnAmount=${monthlyReturnAmount}`);
         } else {
-            // Reverse: Use max affordable from desirableEMI
-            eligibleAmount = require('../utils/loanCalculations').calculateMaxLoanFromEMI(desirableEMI, interestRate, requestedTenure);
+            // Reverse: Use max affordable loan
+            eligibleAmount = maxAffordableLoan;
             monthlyReturnAmount = desirableEMI;
-            logger.info(`Reverse calculation: EligibleAmount = ${eligibleAmount}, MonthlyReturnAmount = ${monthlyReturnAmount}`);
+            logger.info(`Reverse calculation: EligibleAmount=${eligibleAmount}, MonthlyReturnAmount=${monthlyReturnAmount}`);
         }
 
         // Ensure minimum
