@@ -259,14 +259,27 @@ const handleLoanChargesRequest = async (parsedData, res) => {
             maxAffordableAmount = require('../utils/loanCalculations').calculateMaxLoanFromEMI(targetEMI, interestRate, requestedTenure);
         }
 
-        // Unify calculation: Always use reverse-style (max loan from target EMI)
-        // This ensures consistent responses regardless of RequestedAmount
+        // Consider RequestedAmount but cap at max affordable for consistency
         let eligibleAmount = maxAffordableAmount;
-        let monthlyReturnAmount = targetEMI;
-
-        // Log if RequestedAmount was provided but ignored for consistency
         if (requestedAmount > 0) {
-            logger.info(`RequestedAmount (${requestedAmount}) provided but using max affordable (${eligibleAmount}) for consistency.`);
+            if (requestedAmount <= maxAffordableAmount) {
+                eligibleAmount = requestedAmount;
+                logger.info(`Using RequestedAmount: ${requestedAmount} (within max affordable: ${maxAffordableAmount})`);
+            } else {
+                logger.info(`RequestedAmount (${requestedAmount}) exceeds max affordable (${maxAffordableAmount}), capping.`);
+            }
+        } else {
+            logger.info(`RequestedAmount is 0, using max affordable: ${eligibleAmount}`);
+        }
+
+        // Calculate EMI for the eligible amount
+        let monthlyReturnAmount = require('../utils/loanCalculations').calculateEMI(eligibleAmount, interestRate, requestedTenure);
+        // Ensure EMI doesn't exceed target EMI for safety
+        if (monthlyReturnAmount > targetEMI) {
+            logger.warn(`Calculated EMI (${monthlyReturnAmount}) exceeds target EMI (${targetEMI}), capping.`);
+            monthlyReturnAmount = targetEMI;
+            // Recalculate eligible amount to fit within target EMI
+            eligibleAmount = require('../utils/loanCalculations').calculateMaxLoanFromEMI(targetEMI, interestRate, requestedTenure);
         }
 
         // Ensure amount meets minimum requirement
