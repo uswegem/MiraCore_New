@@ -1,4 +1,5 @@
 const axios = require('axios');
+require('dotenv').config();
 
 async function verifyClient() {
     try {
@@ -9,8 +10,8 @@ async function verifyClient() {
                 'fineract-platform-tenantid': 'zedone-uat'
             },
             auth: {
-                username: 'ess_creater',
-                password: 'Jothan@123456'
+                username: process.env.CBS_MAKER_USERNAME,
+                password: process.env.CBS_MAKER_PASSWORD
             }
         });
         console.log('\nClient Status:', JSON.stringify(response.data, null, 2));

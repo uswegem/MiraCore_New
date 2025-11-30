@@ -16,6 +16,18 @@ const { getMessageId } = require('../utils/messageIdGenerator');
 const LOAN_CONSTANTS = require('../utils/loanConstants');
 const LoanCalculations = require('../utils/loanCalculations');
 
+const parser = new xml2js.Parser({
+    explicitArray: false,
+    mergeAttrs: true,
+    normalize: true,
+    trim: true
+});
+
+const builder = new xml2js.Builder({
+    rootName: 'Document',
+    renderOpts: { pretty: false }
+});
+
 // Export all functions before they are used
 exports.processRequest = async (req, res) => {
     const contentType = req.get('Content-Type');
@@ -88,18 +100,6 @@ exports.processRequest = async (req, res) => {
     }
 };
 
-const parser = new xml2js.Parser({
-    explicitArray: false,
-    mergeAttrs: true,
-    normalize: true,
-    trim: true
-});
-
-const builder = new xml2js.Builder({
-    rootName: 'Document',
-    renderOpts: { pretty: false }
-});
-
 // Helper function to calculate monthly installment
 // DEPRECATED: Use LoanCalculations.calculateEMI instead
 function calculateMonthlyInstallment(principal, annualRate, termMonths) {
@@ -112,76 +112,6 @@ function generateLoanNumber() {
     const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
     return `LOAN${timestamp}${random}`;
 }
-
-// Main request processor
-const processRequest = async (req, res) => {
-    const contentType = req.get('Content-Type');
-    logger.info('Processing request in AUTO-SIGNATURE mode');
-    logger.info('Content-Type:', contentType);
-    logger.info('Raw body type:', typeof req.body);
-    logger.info('Raw body:', req.body);
-
-    try {
-        let xmlData;
-        let parsedData;
-
-        if (contentType && contentType.includes('application/json')) {
-            logger.info('🔄 Converting JSON to XML...');
-            if (!req.body || typeof req.body !== 'object') {
-                return sendErrorResponse(res, '8001', 'Invalid JSON data', 'json', null);
-            }
-            xmlData = convertProductJSONToXML(req.body);
-            try {
-                parsedData = await parser.parseStringPromise(xmlData);
-            } catch (parseError) {
-                return sendErrorResponse(res, '8001', 'Failed to convert JSON to XML: ' + parseError.message, 'json', null);
-            }
-        } else if (contentType && (contentType.includes('application/xml') || contentType.includes('text/xml'))) {
-            logger.info('Processing XML directly...');
-            xmlData = req.body;
-            if (!xmlData) {
-                return sendErrorResponse(res, '8001', 'XML data is required', 'xml', parsedData);
-            }
-            try {
-                parsedData = await parser.parseStringPromise(xmlData);
-                const debugSender = parsedData?.Document?.Data?.Header?.Sender;
-                logger.info('DEBUG: Parsed <Sender> from request:', debugSender);
-                const TypeMessage = parsedData?.Document?.Data.Header?.MessageType;
-                
-                switch (TypeMessage) {
-                    case 'LOAN_CHARGES_REQUEST':
-                        return await handleLoanChargesRequest(parsedData, res);
-                    case 'LOAN_OFFER_REQUEST':
-                        return await handleLoanOfferRequest(parsedData, res);
-                    case 'LOAN_FINAL_APPROVAL_NOTIFICATION':
-                        return await handleLoanFinalApproval(parsedData, res);
-                    case 'LOAN_CANCELLATION_NOTIFICATION':
-                        return await handleLoanCancellation(parsedData, res);
-                    case 'TOP_UP_PAY_0FF_BALANCE_REQUEST':
-                        return await handleTopUpPayOffBalanceRequest(parsedData, res);
-                    case 'TOP_UP_OFFER_REQUEST':
-                        return await handleTopUpOfferRequest(parsedData, res);
-                    case 'TAKEOVER_PAY_OFF_BALANCE_REQUEST':
-                        return await handleTakeoverPayOffBalanceRequest(parsedData, res);
-                    case 'LOAN_TAKEOVER_OFFER_REQUEST':
-                        return await handleLoanTakeoverOfferRequest(parsedData, res);
-                    case 'TAKEOVER_PAYMENT_NOTIFICATION':
-                        return await handleTakeoverPaymentNotification(parsedData, res);
-                    default:
-                        return await forwardToESS(parsedData, res, contentType);
-                }
-            } catch (parseError) {
-                return sendErrorResponse(res, '8001', 'Invalid XML format: ' + parseError.message, 'xml', parsedData);
-            }
-        } else {
-            return sendErrorResponse(res, '8001', 'Unsupported Content-Type. Use application/json or application/xml', 'json', null);
-        }
-    } catch (error) {
-        logger.error('Controller error:', error);
-        const contentType = req.get('Content-Type');
-        return sendErrorResponse(res, '8011', 'Error processing request: ' + error.message, contentType.includes('json') ? 'json' : 'xml', null);
-    }
-};
 
 const handleMifosWebhook = async (req, res) => {
     // Implement webhook handling

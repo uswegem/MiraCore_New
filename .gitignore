@@ -38,6 +38,8 @@ private-key.pem
 public-cert.crt
 .env.test.local
 .env.production.local
+test_private_key.pem
+test_certificate.crt
 
 
 
