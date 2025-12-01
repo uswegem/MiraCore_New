@@ -11,39 +11,51 @@ const handleLoanChargesRequest = async (parsedData, res) => {
         const header = parsedData.Document.Data.Header;
         const messageDetails = parsedData.Document.Data.MessageDetails;
 
-        // Input validation
-        let requestedAmount = parseFloat(messageDetails.RequestedAmount || messageDetails.LoanAmount);
-        let requestedTenure = parseInt(messageDetails.RequestedTenure || messageDetails.Tenure);
-        // Tenure logic: if provided, use it; else if requestedAmount >0, use DEFAULT_TENURE; else null
-        if (requestedTenure > 0) {
-            // Use provided tenure
-        } else if (requestedAmount > 0) {
-            requestedTenure = LOAN_CONSTANTS.DEFAULT_TENURE;
-            logger.info(`Tenure not provided but RequestedAmount >0, defaulting to default tenure: ${requestedTenure} months`);
-        } else {
-            requestedTenure = null; // Will be handled later
-            logger.info(`Tenure not provided and RequestedAmount=0, setting to null for reverse calculation`);
-        }
-        // Validate retirement
-        const retirementMonthsLeft = require('../utils/loanUtils').calculateMonthsUntilRetirement(messageDetails.RetirementDate);
-        requestedTenure = require('../utils/loanUtils').validateRetirementAge(requestedTenure, retirementMonthsLeft);
-        if (!requestedTenure || requestedTenure <= 0) {
-            requestedTenure = LOAN_CONSTANTS.DEFAULT_TENURE;
-            logger.info(`Tenure adjusted for retirement: ${requestedTenure} months`);
+        // Input validation - handle optional fields
+        let requestedAmount = messageDetails.RequestedAmount !== undefined ? parseFloat(messageDetails.RequestedAmount || messageDetails.LoanAmount) : null;
+        let requestedTenure = messageDetails.Tenure !== undefined ? parseInt(messageDetails.RequestedTenure || messageDetails.Tenure) : null;
+        let deductibleAmount = messageDetails.DeductibleAmount !== undefined ? parseFloat(messageDetails.DeductibleAmount) : null;
+
+        // Determine affordability type based on presence of RequestedAmount
+        const affordabilityType = (requestedAmount === null || requestedAmount === 0) ? 'REVERSE' : 'FORWARD';
+
+        // Set defaults and validate tenure
+        if (requestedTenure === null || requestedTenure === 0) {
+            if (affordabilityType === 'FORWARD') {
+                requestedTenure = LOAN_CONSTANTS.DEFAULT_TENURE;
+                logger.info(`Tenure not provided but RequestedAmount >0, defaulting to default tenure: ${requestedTenure} months`);
+            } else {
+                requestedTenure = null; // Will be determined by reverse calculation
+                logger.info(`Tenure not provided for reverse calculation, will optimize`);
+            }
         }
 
-        const interestRate = 15.0; // 15% per annum
+        // Validate retirement if tenure is set
+        if (requestedTenure !== null) {
+            const retirementMonthsLeft = require('../utils/loanUtils').calculateMonthsUntilRetirement(messageDetails.RetirementDate);
+            requestedTenure = require('../utils/loanUtils').validateRetirementAge(requestedTenure, retirementMonthsLeft);
+            if (!requestedTenure || requestedTenure <= 0) {
+                requestedTenure = LOAN_CONSTANTS.DEFAULT_TENURE;
+                logger.info(`Tenure adjusted for retirement: ${requestedTenure} months`);
+            }
+        }
 
-        // Repayment capacity
+        // Repayment capacity - handle optional DeductibleAmount
         const desiredDeductibleAmount = parseFloat(messageDetails.DesiredDeductibleAmount || 0);
-        const deductibleAmount = parseFloat(messageDetails.DeductibleAmount || 0);
         const oneThirdAmount = parseFloat(messageDetails.OneThirdAmount || 0);
         const MIN_LOAN_AMOUNT = LOAN_CONSTANTS.MIN_LOAN_AMOUNT;
 
-        // Calculate maxAffordableEMI (equivalent to maxAffordableEMI in Kotlin)
-        const maxAffordableEMI = deductibleAmount > 0 ? deductibleAmount : 0; // Assuming DeductibleAmount is provided
+        // Calculate maxAffordableEMI based on available deduction capacity
+        let maxAffordableEMI = 0;
+        if (deductibleAmount !== null && deductibleAmount > 0) {
+            maxAffordableEMI = deductibleAmount;
+        } else if (oneThirdAmount > 0) {
+            maxAffordableEMI = oneThirdAmount; // Fallback to 1/3 rule
+        } else {
+            maxAffordableEMI = 0; // No deduction limit provided
+        }
 
-        // Calculate desirableEMI (capped desired)
+        // Calculate desirableEMI (capped desired deduction)
         let desirableEMI = 0;
         if (desiredDeductibleAmount > 0) {
             desirableEMI = Math.min(desiredDeductibleAmount, maxAffordableEMI);
@@ -51,10 +63,31 @@ const handleLoanChargesRequest = async (parsedData, res) => {
             desirableEMI = maxAffordableEMI;
         }
 
-        // Determine affordabilityType
-        const affordabilityType = (requestedAmount === 0 || requestedTenure === null) ? 'REVERSE' : 'FORWARD';
+        logger.info(`AffordabilityType: ${affordabilityType}, RequestedAmount: ${requestedAmount}, Tenure: ${requestedTenure}, DeductibleAmount: ${deductibleAmount}, MaxAffordableEMI: ${maxAffordableEMI}`);
 
-        logger.info(`AffordabilityType: ${affordabilityType}, RequestedAmount: ${requestedAmount}, Tenure: ${requestedTenure}`);
+        // Ensure tenure is set for calculations
+        if (requestedTenure === null) {
+            if (affordabilityType === 'REVERSE') {
+                // For reverse calculation, optimize tenure to maximize eligible amount
+                // Try different tenures and find the one that gives maximum loan amount
+                let maxEligibleAmount = 0;
+                let optimalTenure = LOAN_CONSTANTS.DEFAULT_TENURE;
+                let optimalMonthlyReturn = desirableEMI;
+
+                const possibleTenures = [12, 24, 36, 48, 60, 72, 84, 96]; // Common tenure options
+                for (const tenure of possibleTenures) {
+                    const testLoanAmount = require('../utils/loanCalculations').calculateMaxLoanFromEMI(desirableEMI, interestRate, tenure);
+                    if (testLoanAmount > maxEligibleAmount) {
+                        maxEligibleAmount = testLoanAmount;
+                        optimalTenure = tenure;
+                    }
+                }
+                requestedTenure = optimalTenure;
+                logger.info(`Optimized tenure for reverse calculation: ${requestedTenure} months, MaxEligibleAmount: ${maxEligibleAmount}`);
+            } else {
+                requestedTenure = LOAN_CONSTANTS.DEFAULT_TENURE;
+            }
+        }
 
         // Calculate max affordable loan amount
         const maxAffordableLoan = require('../utils/loanCalculations').calculateMaxLoanFromEMI(desirableEMI, interestRate, requestedTenure);
@@ -74,7 +107,15 @@ const handleLoanChargesRequest = async (parsedData, res) => {
             logger.info(`Reverse calculation: EligibleAmount=${eligibleAmount}, MonthlyReturnAmount=${monthlyReturnAmount}`);
         }
 
-        // Ensure minimum
+        // Ensure EMI doesn't exceed maxAffordableEMI
+        if (monthlyReturnAmount > maxAffordableEMI) {
+            // Recalculate with capped EMI
+            eligibleAmount = require('../utils/loanCalculations').calculateMaxLoanFromEMI(maxAffordableEMI, interestRate, requestedTenure);
+            monthlyReturnAmount = maxAffordableEMI;
+            logger.info(`EMI capped to maxAffordableEMI: EligibleAmount=${eligibleAmount}, MonthlyReturnAmount=${monthlyReturnAmount}`);
+        }
+
+        // Ensure minimum loan amount
         eligibleAmount = Math.max(eligibleAmount, MIN_LOAN_AMOUNT);
 
         // Calculate charges modularly using eligibleAmount
