@@ -4,6 +4,7 @@ const { sendErrorResponse } = require('../../utils/responseUtils');
 const { getMessageId } = require('../../utils/messageIdGenerator');
 const LOAN_CONSTANTS = require('../../utils/loanConstants');
 const loanUtils = require('../../utils/loanUtils');
+const loanCalculations = require('../../utils/loanCalculations');
 const LoanMappingService = require('../../services/loanMappingService');
 
 const handleLoanChargesRequest = async (parsedData, res) => {
@@ -77,7 +78,7 @@ const handleLoanChargesRequest = async (parsedData, res) => {
 
                 const possibleTenures = [12, 24, 36, 48, 60, 72, 84, 96]; // Common tenure options
                 for (const tenure of possibleTenures) {
-                    const testLoanAmount = require('../utils/loanCalculations').calculateMaxLoanFromEMI(desirableEMI, interestRate, tenure);
+                    const testLoanAmount = loanCalculations.calculateMaxLoanFromEMI(desirableEMI, interestRate, tenure);
                     if (testLoanAmount > maxEligibleAmount) {
                         maxEligibleAmount = testLoanAmount;
                         optimalTenure = tenure;
@@ -91,7 +92,7 @@ const handleLoanChargesRequest = async (parsedData, res) => {
         }
 
         // Calculate max affordable loan amount
-        const maxAffordableLoan = require('../utils/loanCalculations').calculateMaxLoanFromEMI(desirableEMI, interestRate, requestedTenure);
+        const maxAffordableLoan = loanCalculations.calculateMaxLoanFromEMI(desirableEMI, interestRate, requestedTenure);
 
         let eligibleAmount = 0;
         let monthlyReturnAmount = 0;
@@ -99,7 +100,7 @@ const handleLoanChargesRequest = async (parsedData, res) => {
         if (affordabilityType === 'FORWARD') {
             // Forward: Consider RequestedAmount, maximize eligibility by capping at max affordable
             eligibleAmount = Math.min(requestedAmount, maxAffordableLoan);
-            monthlyReturnAmount = require('../utils/loanCalculations').calculateEMI(eligibleAmount, interestRate, requestedTenure);
+            monthlyReturnAmount = loanCalculations.calculateEMI(eligibleAmount, interestRate, requestedTenure);
             logger.info(`Forward calculation: RequestedAmount=${requestedAmount}, MaxAffordable=${maxAffordableLoan.toFixed(2)}, EligibleAmount=${eligibleAmount}, MonthlyReturnAmount=${monthlyReturnAmount}`);
         } else {
             // Reverse: Maximize eligibility
@@ -111,7 +112,7 @@ const handleLoanChargesRequest = async (parsedData, res) => {
         // Ensure EMI doesn't exceed maxAffordableEMI
         if (monthlyReturnAmount > maxAffordableEMI) {
             // Recalculate with capped EMI
-            eligibleAmount = require('../utils/loanCalculations').calculateMaxLoanFromEMI(maxAffordableEMI, interestRate, requestedTenure);
+            eligibleAmount = loanCalculations.calculateMaxLoanFromEMI(maxAffordableEMI, interestRate, requestedTenure);
             monthlyReturnAmount = maxAffordableEMI;
             logger.info(`EMI capped to maxAffordableEMI: EligibleAmount=${eligibleAmount}, MonthlyReturnAmount=${monthlyReturnAmount}`);
         }
@@ -120,13 +121,13 @@ const handleLoanChargesRequest = async (parsedData, res) => {
         eligibleAmount = Math.max(eligibleAmount, MIN_LOAN_AMOUNT);
 
         // Calculate charges modularly using eligibleAmount
-        const charges = require('../utils/loanCalculations').calculateCharges(eligibleAmount);
+        const charges = loanCalculations.calculateCharges(eligibleAmount);
         const totalProcessingFees = charges.processingFee;
         const totalInsurance = charges.insurance;
         const otherCharges = charges.otherCharges;
 
         // Interest and net loan using eligibleAmount
-        const totalInterestRateAmount = require('../utils/loanCalculations').calculateTotalInterest(eligibleAmount, interestRate, requestedTenure);
+        const totalInterestRateAmount = loanCalculations.calculateTotalInterest(eligibleAmount, interestRate, requestedTenure);
         const totalDeductions = totalProcessingFees + totalInsurance + otherCharges;
         const netLoanAmount = eligibleAmount - totalDeductions;
         const totalAmountToPay = eligibleAmount + totalInterestRateAmount;
