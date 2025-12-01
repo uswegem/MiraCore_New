@@ -3,7 +3,7 @@ const digitalSignature = require('../../utils/signatureUtils');
 const { sendErrorResponse } = require('../../utils/responseUtils');
 const { getMessageId } = require('../../utils/messageIdGenerator');
 const LOAN_CONSTANTS = require('../../utils/loanConstants');
-const loanUtils = require('../utils/loanUtils');
+const loanUtils = require('../../utils/loanUtils');
 const LoanMappingService = require('../../services/loanMappingService');
 
 const handleLoanChargesRequest = async (parsedData, res) => {
