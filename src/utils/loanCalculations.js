@@ -1,4 +1,5 @@
 const LOAN_CONSTANTS = require('./loanConstants');
+const cacheService = require('./cacheService');
 
 // Use Decimal.js-light for precision if available
 let Decimal;
@@ -33,20 +34,44 @@ class LoanCalculations {
    * @param {number} tenureMonths - Loan tenure in months
    * @returns {number} Monthly EMI amount
    */
-  static calculateEMI(principal, annualInterestRate, tenureMonths) {
+  static async calculateEMI(principal, annualInterestRate, tenureMonths) {
     if (!principal || principal <= 0) return 0;
     if (!tenureMonths || tenureMonths <= 0) return 0;
+
+    // Create cache key for this calculation
+    const cacheKey = `calc_emi:${principal}:${annualInterestRate}:${tenureMonths}`;
+
+    // Try to get cached result first
+    const cachedResult = cacheService.get ?
+      await cacheService.get(cacheKey) :
+      null;
+
+    if (cachedResult) {
+      return cachedResult;
+    }
 
     const monthlyRate = annualInterestRate / 100 / 12;
 
     if (monthlyRate === 0) {
-      return round2(principal / tenureMonths);
+      const result = round2(principal / tenureMonths);
+      // Cache the result
+      if (cacheService.set) {
+        await cacheService.set(cacheKey, result, 1800); // 30 minutes
+      }
+      return result;
     }
 
     const emi = (principal * monthlyRate * Math.pow(1 + monthlyRate, tenureMonths)) /
                 (Math.pow(1 + monthlyRate, tenureMonths) - 1);
 
-    return round2(emi);
+    const result = round2(emi);
+
+    // Cache the result
+    if (cacheService.set) {
+      await cacheService.set(cacheKey, result, 1800); // 30 minutes
+    }
+
+    return result;
   }
 
   /**
@@ -56,20 +81,44 @@ class LoanCalculations {
    * @param {number} tenureMonths - Loan tenure in months
    * @returns {number} Maximum loan amount
    */
-  static calculateMaxLoanFromEMI(targetEMI, annualInterestRate, tenureMonths) {
+  static async calculateMaxLoanFromEMI(targetEMI, annualInterestRate, tenureMonths) {
     if (!targetEMI || targetEMI <= 0) return 0;
     if (!tenureMonths || tenureMonths <= 0) return 0;
+
+    // Create cache key for this calculation
+    const cacheKey = `calc_max_loan:${targetEMI}:${annualInterestRate}:${tenureMonths}`;
+
+    // Try to get cached result first
+    const cachedResult = cacheService.get ?
+      await cacheService.get(cacheKey) :
+      null;
+
+    if (cachedResult) {
+      return cachedResult;
+    }
 
     const monthlyRate = annualInterestRate / 100 / 12;
 
     if (monthlyRate === 0) {
-      return round2(targetEMI * tenureMonths);
+      const result = round2(targetEMI * tenureMonths);
+      // Cache the result
+      if (cacheService.set) {
+        await cacheService.set(cacheKey, result, 1800); // 30 minutes
+      }
+      return result;
     }
 
     const maxAmount = (targetEMI * (Math.pow(1 + monthlyRate, tenureMonths) - 1)) /
                       (monthlyRate * Math.pow(1 + monthlyRate, tenureMonths));
 
-    return Math.max(LOAN_CONSTANTS.MIN_LOAN_AMOUNT, round2(maxAmount));
+    const result = Math.max(LOAN_CONSTANTS.MIN_LOAN_AMOUNT, round2(maxAmount));
+
+    // Cache the result
+    if (cacheService.set) {
+      await cacheService.set(cacheKey, result, 1800); // 30 minutes
+    }
+
+    return result;
   }
 
   /**
@@ -79,9 +128,9 @@ class LoanCalculations {
    * @param {number} tenureMonths - Loan tenure in months
    * @returns {number} Total interest amount
    */
-  static calculateTotalInterest(principal, annualInterestRate, tenureMonths) {
+  static async calculateTotalInterest(principal, annualInterestRate, tenureMonths) {
     if (!principal || principal <= 0) return 0;
-    const emi = this.calculateEMI(principal, annualInterestRate, tenureMonths);
+    const emi = await this.calculateEMI(principal, annualInterestRate, tenureMonths);
     const totalPaid = emi * tenureMonths;
     const totalInterest = totalPaid - principal;
     return round2(totalInterest);
@@ -107,13 +156,13 @@ class LoanCalculations {
    * @param {number} tenureMonths
    * @returns {array} Schedule
    */
-  static amortizationSchedule(principal, annualRatePercent, tenureMonths) {
+  static async amortizationSchedule(principal, annualRatePercent, tenureMonths) {
     const schedule = [];
     if (!principal || principal <= 0 || !tenureMonths || tenureMonths <= 0) return schedule;
 
     const r = annualRatePercent / 100 / 12;
     let balance = principal;
-    const emi = this.calculateEMI(principal, annualRatePercent, tenureMonths);
+    const emi = await this.calculateEMI(principal, annualRatePercent, tenureMonths);
 
     for (let m = 1; m <= tenureMonths; m++) {
       const interest = balance * r;
@@ -142,6 +191,17 @@ class LoanCalculations {
     }
 
     return schedule;
+  }
+
+  /**
+   * Calculate monthly installment (deprecated, use calculateEMI)
+   * @param {number} principal - Loan principal amount
+   * @param {number} annualRate - Annual interest rate (percentage)
+   * @param {number} termMonths - Loan tenure in months
+   * @returns {number} Monthly installment amount
+   */
+  static async calculateMonthlyInstallment(principal, annualRate, termMonths) {
+    return await this.calculateEMI(principal, annualRate, termMonths);
   }
 }
 

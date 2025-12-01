@@ -1,12 +1,12 @@
 const LoanCalculations = require('../src/utils/loanCalculations');
 
 describe('Loan Calculations', () => {
-  test('calculateEMI should return correct monthly installment', () => {
+  test('calculateEMI should return correct monthly installment', async () => {
     const principal = 1000000; // 1M TZS
     const annualRate = 15; // 15%
     const tenureMonths = 24;
 
-    const emi = LoanCalculations.calculateEMI(principal, annualRate, tenureMonths);
+    const emi = await LoanCalculations.calculateEMI(principal, annualRate, tenureMonths);
     expect(emi).toBeGreaterThan(0);
     expect(typeof emi).toBe('number');
   });
@@ -21,12 +21,12 @@ describe('Loan Calculations', () => {
     expect(charges.processingFee).toBeGreaterThan(0);
   });
 
-  test('calculateMaxLoanFromEMI should return correct loan amount', () => {
+  test('calculateMaxLoanFromEMI should return correct loan amount', async () => {
     const emi = 50000;
     const annualRate = 15;
     const tenureMonths = 24;
 
-    const loanAmount = LoanCalculations.calculateMaxLoanFromEMI(emi, annualRate, tenureMonths);
+    const loanAmount = await LoanCalculations.calculateMaxLoanFromEMI(emi, annualRate, tenureMonths);
     expect(loanAmount).toBeGreaterThan(0);
     expect(typeof loanAmount).toBe('number');
   });

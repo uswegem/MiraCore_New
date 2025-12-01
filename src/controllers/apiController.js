@@ -15,6 +15,7 @@ const { AuditLog } = require('../models/AuditLog');
 const { getMessageId } = require('../utils/messageIdGenerator');
 const LOAN_CONSTANTS = require('../utils/loanConstants');
 const LoanCalculations = require('../utils/loanCalculations');
+const { generateLoanNumber } = require('../utils/loanUtils');
 
 const parser = new xml2js.Parser({
     explicitArray: false,
@@ -110,16 +111,6 @@ exports.processRequest = async (req, res) => {
 
 // Helper function to calculate monthly installment
 // DEPRECATED: Use LoanCalculations.calculateEMI instead
-function calculateMonthlyInstallment(principal, annualRate, termMonths) {
-    return LoanCalculations.calculateEMI(principal, annualRate, termMonths);
-}
-
-// Helper function to generate loan number
-function generateLoanNumber() {
-    const timestamp = Date.now().toString();
-    const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-    return `LOAN${timestamp}${random}`;
-}
 
 const handleTopUpPayOffBalanceRequest = async (parsedData, res) => {
     try {

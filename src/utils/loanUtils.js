@@ -105,6 +105,16 @@ class ApplicationException extends Error {
   }
 }
 
+/**
+ * Generate a unique loan number
+ * @returns {string} Generated loan number
+ */
+function generateLoanNumber() {
+    const timestamp = Date.now().toString();
+    const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+    return `LOAN${timestamp}${random}`;
+}
+
 module.exports = {
   formattedToUtumishiDate,
   constructName,
@@ -112,5 +122,6 @@ module.exports = {
   calculateMonthsUntilRetirement,
   safeParseFloat,
   ApplicationException,
+  generateLoanNumber,
   LOAN_CONSTANTS
 };

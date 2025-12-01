@@ -5,19 +5,11 @@ const { sendCallback } = require('../../utils/callbackUtils');
 const { getMessageId } = require('../../utils/messageIdGenerator');
 const LOAN_CONSTANTS = require('../../utils/loanConstants');
 const LoanCalculations = require('../../utils/loanCalculations');
+const { generateLoanNumber } = require('../../utils/loanUtils');
 const LoanMappingService = require('../../services/loanMappingService');
 
 // Helper function to calculate monthly installment
-function calculateMonthlyInstallment(principal, annualRate, termMonths) {
-    return LoanCalculations.calculateEMI(principal, annualRate, termMonths);
-}
-
-// Helper function to generate loan number
-function generateLoanNumber() {
-    const timestamp = Date.now().toString();
-    const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-    return `LOAN${timestamp}${random}`;
-}
+const calculateMonthlyInstallment = LoanCalculations.calculateMonthlyInstallment.bind(LoanCalculations);
 
 const handleLoanOfferRequest = async (parsedData, res) => {
     try {

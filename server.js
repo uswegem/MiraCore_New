@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const compression = require('compression');
 const dotenv = require('dotenv');
 dotenv.config();
 const logger = require('./src/utils/logger');
@@ -47,7 +48,19 @@ connectDB();
 app.use(helmet());
 app.use(cors());
 
-// 2. Rate limiting
+// 2. Compression
+app.use(compression({
+    level: 6, // Good balance between speed and compression
+    threshold: 1024, // Only compress responses > 1KB
+    filter: (req, res) => {
+        if (req.headers['x-no-compression']) {
+            return false;
+        }
+        return compression.filter(req, res);
+    }
+}));
+
+// 3. Rate limiting
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 100
@@ -72,28 +85,35 @@ app.use(express.text({
 // 4. Custom content-type middleware
 app.use((req, res, next) => {
     const contentType = req.headers['content-type'];
-    
-    logger.info('📨 Incoming Request:');
-    logger.info(`   Method: ${req.method}`);
-    logger.info(`   Path: ${req.path}`);
-    logger.info(`   Full URL: ${req.protocol}://${req.get('host')}${req.originalUrl}`);
-    logger.info(`   Content-Type: ${contentType}`);
-    logger.info(`   Source IP: ${req.ip || req.connection.remoteAddress || req.socket.remoteAddress || 'unknown'}`);
-    logger.info(`   X-Forwarded-For: ${req.get('X-Forwarded-For') || 'none'}`);
-    logger.info(`   X-Real-IP: ${req.get('X-Real-IP') || 'none'}`);
-    logger.info(`   User-Agent: ${req.get('User-Agent') || 'not provided'}`);
-    logger.info(`   All Headers: ${JSON.stringify(req.headers, null, 2)}`);
-    logger.info(`   Body type: ${typeof req.body}`);
-    
+
+    // Only log detailed request info in debug mode
+    if (logger.level === 'debug' || process.env.NODE_ENV === 'development') {
+        logger.info('📨 Incoming Request:');
+        logger.info(`   Method: ${req.method}`);
+        logger.info(`   Path: ${req.path}`);
+        logger.info(`   Full URL: ${req.protocol}://${req.get('host')}${req.originalUrl}`);
+        logger.info(`   Content-Type: ${contentType}`);
+        logger.info(`   Source IP: ${req.ip || req.connection.remoteAddress || req.socket.remoteAddress || 'unknown'}`);
+        logger.info(`   X-Forwarded-For: ${req.get('X-Forwarded-For') || 'none'}`);
+        logger.info(`   X-Real-IP: ${req.get('X-Real-IP') || 'none'}`);
+        logger.info(`   User-Agent: ${req.get('User-Agent') || 'not provided'}`);
+        logger.info(`   All Headers: ${JSON.stringify(req.headers, null, 2)}`);
+        logger.info(`   Body type: ${typeof req.body}`);
+    } else {
+        logger.info(`📨 ${req.method} ${req.path} - ${contentType || 'no content-type'}`);
+    }
+
     // Handle XML content
     if (contentType && (contentType.includes('application/xml') || contentType.includes('text/xml'))) {
         if (Buffer.isBuffer(req.body)) {
             // Convert buffer to string for XML
             req.body = req.body.toString('utf8');
-            logger.info('   📝 Converted buffer to XML string');
+            if (logger.level === 'debug') {
+                logger.info('   📝 Converted buffer to XML string');
+            }
         }
     }
-    
+
     next();
 });
 

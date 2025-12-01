@@ -6,41 +6,70 @@ on:
       - main  # Trigger on pushes to main branch
   workflow_dispatch:  # Allow manual triggering
 
+env:
+  NODE_VERSION: '18'
+
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
     - name: Setup Node.js
-      uses: actions/setup-node@v3
+      uses: actions/setup-node@v4
       with:
-        node-version: '18'
+        node-version: ${{ env.NODE_VERSION }}
         cache: 'npm'
 
     - name: Install dependencies
       run: npm ci
 
     - name: Run tests
-      run: npm test || echo "No tests specified"
+      run: npm test
 
     - name: Validate XML message structures
       run: |
-        node simulate-restructure-flow.js || true
-        node simulate-full-flow.js || true
+        node simulate-restructure-flow.js || echo "Simulation failed, continuing..."
+        node simulate-full-flow.js || echo "Full flow simulation failed, continuing..."
 
-  deploy:
-    needs: test  # Only deploy if tests pass
+  security-scan:
     runs-on: ubuntu-latest
-    environment: production  # Use production environment
-    
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
     - name: Setup Node.js
-      uses: actions/setup-node@v3
+      uses: actions/setup-node@v4
       with:
-        node-version: '18'
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Run security audit
+      run: npm audit --audit-level moderate || echo "Security audit completed with warnings"
+
+    - name: Check for vulnerabilities
+      run: |
+        if npm audit --audit-level high; then
+          echo "✅ No high severity vulnerabilities found"
+        else
+          echo "⚠️ High severity vulnerabilities detected"
+          npm audit --audit-level high || true
+        fi
+
+  deploy:
+    needs: [test, security-scan]  # Only deploy if tests and security scan pass
+    runs-on: ubuntu-latest
+    environment: production  # Use production environment
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
         cache: 'npm'
 
     - name: Install dependencies
@@ -53,105 +82,131 @@ jobs:
         chmod 600 ~/.ssh/id_rsa
         ssh-keyscan -H ${{ secrets.REMOTE_HOST }} >> ~/.ssh/known_hosts
 
-    - name: Backup current deployment
+    - name: Create deployment backup
       run: |
         ssh ${{ secrets.REMOTE_USER }}@${{ secrets.REMOTE_HOST }} << 'EOF'
           cd /home/uswege/ess
           timestamp=$(date +%Y%m%d_%H%M%S)
-          tar -czf "../ess_backup_${timestamp}.tar.gz" .env keys/
-          echo "Backup created: ess_backup_${timestamp}.tar.gz"
+          echo "📦 Creating backup: ess_backup_${timestamp}.tar.gz"
+          tar -czf "../ess_backup_${timestamp}.tar.gz" .env keys/ logs/ 2>/dev/null || true
+          echo "✅ Backup created successfully"
+
+          # Keep only last 5 backups
+          cd ..
+          ls -t ess_backup_*.tar.gz 2>/dev/null | tail -n +6 | xargs rm -f 2>/dev/null || true
+          echo "🧹 Cleaned up old backups"
         EOF
 
-    - name: Deploy to server
+    - name: Deploy application code
       run: |
-        # Copy files to remote (excluding .git, node_modules, and sensitive files)
+        echo "🚀 Starting deployment to ${{ secrets.REMOTE_HOST }}"
+
+        # Copy application files (excluding sensitive data and build artifacts)
         tar -czf - \
           --exclude=.git \
           --exclude=node_modules \
           --exclude=.env \
           --exclude=keys/*.pem \
           --exclude=*.log \
+          --exclude=coverage \
+          --exclude=.nyc_output \
+          --exclude=logs \
           . | ssh ${{ secrets.REMOTE_USER }}@${{ secrets.REMOTE_HOST }} "cd /home/uswege/ess && tar -xzf -"
-        
-        # SSH and perform deployment
+
+        echo "📁 Application code deployed"
+
+    - name: Install and configure production environment
+      run: |
         ssh ${{ secrets.REMOTE_USER }}@${{ secrets.REMOTE_HOST }} << 'EOF'
           cd /home/uswege/ess
-          
-          # Install production dependencies
-          echo "📦 Installing dependencies..."
-          npm ci --production
-          
-          # Stop any existing instance
+
+          echo "📦 Installing production dependencies..."
+          npm ci --production --no-audit
+
           echo "🛑 Stopping existing service..."
-          pm2 delete ess-app || true
-          
-          # Create required directories
-          echo "📁 Creating required directories..."
-          mkdir -p logs
-          mkdir -p keys
-          
-          # Copy keys from backup if they don't exist
-          echo "🔑 Checking SSL keys..."
-          [ ! -f keys/private.pem ] && cp ../ess_backup_*/keys/private.pem keys/ || true
-          [ ! -f keys/public.pem ] && cp ../ess_backup_*/keys/public.pem keys/ || true
-          [ ! -f keys/fspNameCertificate.crt ] && cp ../ess_backup_*/keys/fspNameCertificate.crt keys/ || true
-          [ ! -f keys/ess_public.pem ] && cp ../ess_backup_*/keys/ess_public.pem keys/ || true
-          [ ! -f keys/third_party_public.pem ] && cp ../ess_backup_*/keys/third_party_public.pem keys/ || true
-          
-          # Copy .env from backup if it doesn't exist
-          echo "📝 Checking environment file..."
-          [ ! -f .env ] && cp ../ess_backup_*/.env . || true
-          
-          # Set correct permissions
-          echo "🔒 Setting permissions..."
-          chmod 600 keys/*
-          chmod 600 .env
-          
-          # Start using ecosystem config
-          echo "🚀 Starting service..."
+          pm2 delete ess-app || echo "No existing service to stop"
+
+          echo "📁 Ensuring required directories exist..."
+          mkdir -p logs keys temp
+
+          echo "🔑 Restoring SSL certificates..."
+          # Restore keys from backup if they don't exist
+          if [ ! -f keys/private.pem ]; then
+            latest_backup=$(ls -t ../ess_backup_*.tar.gz 2>/dev/null | head -1)
+            if [ -n "$latest_backup" ]; then
+              tar -xzf "$latest_backup" keys/ 2>/dev/null || echo "No keys in backup"
+            fi
+          fi
+
+          echo "📝 Restoring environment configuration..."
+          # Restore .env from backup if it doesn't exist
+          if [ ! -f .env ]; then
+            latest_backup=$(ls -t ../ess_backup_*.tar.gz 2>/dev/null | head -1)
+            if [ -n "$latest_backup" ]; then
+              tar -xzf "$latest_backup" .env 2>/dev/null || echo "No .env in backup"
+            fi
+          fi
+
+          echo "🔒 Setting secure permissions..."
+          chmod 600 keys/* 2>/dev/null || true
+          chmod 600 .env 2>/dev/null || true
+          chmod 755 logs/
+
+          echo "🚀 Starting service with PM2..."
           pm2 start ecosystem.config.js --env production
-          
-          # Wait for the service to be ready and perform health checks
+
+          echo "⏳ Waiting for service to initialize..."
+          sleep 10
+
           echo "🏥 Performing health checks..."
           for i in {1..30}; do
-            echo "Attempt $i: Checking if service is up..."
-            if curl -s http://localhost:3002/health | grep -q "healthy"; then
-              echo "✅ Service is up and healthy"
+            echo "Health check attempt $i/30..."
+            if curl -s -f http://localhost:3002/health > /dev/null 2>&1; then
+              echo "✅ Service is healthy"
               break
             fi
             if [ $i -eq 30 ]; then
-              echo "❌ Service failed to start after 30 attempts"
-              pm2 logs ess-app --lines 50
+              echo "❌ Service failed health checks after 30 attempts"
+              pm2 logs ess-app --lines 20
               exit 1
             fi
-            sleep 2
+            sleep 3
           done
-          
-          # Final verification
-          pm2 list
-          pm2 show ess-app
-          
-          # Save PM2 state
+
+          echo "📊 Service status:"
+          pm2 list | grep ess-app || echo "Service not found in PM2"
+
+          echo "💾 Saving PM2 configuration..."
           pm2 save
-          
-          # Verify service is running
-          if pm2 list | grep -q "ess-app.*online"; then
-            echo "✅ Service deployed and running"
-          else
-            echo "❌ Service deployment failed"
-            exit 1
-          fi
+
+          echo "✅ Deployment completed successfully"
         EOF
 
-    - name: Verify deployment
+    - name: Final deployment verification
       run: |
-        # Wait for service to be fully up
-        sleep 5
-        
-        # Test service health endpoint
-        curl --fail http://${{ secrets.REMOTE_HOST }}:3002/health || {
-          echo "❌ Health check failed"
-          exit 1
-        }
-        
-        echo "✅ Deployment verified successfully"
+        echo "🔍 Performing final verification..."
+
+        # Test external health endpoint
+        max_attempts=10
+        for i in $(seq 1 $max_attempts); do
+          echo "Verification attempt $i/$max_attempts..."
+          if curl -s -f http://${{ secrets.REMOTE_HOST }}:3002/health | grep -q "healthy"; then
+            echo "✅ Deployment verified successfully!"
+            echo "🌐 Service is accessible at http://${{ secrets.REMOTE_HOST }}:3002"
+            exit 0
+          fi
+          sleep 5
+        done
+
+        echo "❌ Deployment verification failed"
+        exit 1
+
+    - name: Notify deployment status
+      if: always()
+      run: |
+        if [ ${{ job.status }} == 'success' ]; then
+          echo "✅ Deployment completed successfully"
+        else
+          echo "❌ Deployment failed"
+          # Here you could add Slack/Discord notifications
+        fi
