@@ -89,7 +89,6 @@ class CacheService {
       this.client = null;
     }
   }
-  }
 
   async get(key) {
     if (!this.isConnected) return null;
