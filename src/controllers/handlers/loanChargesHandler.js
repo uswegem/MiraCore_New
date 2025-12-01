@@ -105,19 +105,31 @@ const handleLoanChargesRequest = async (parsedData, res) => {
         let monthlyReturnAmount = 0;
 
         if (affordabilityType === 'FORWARD') {
-            // Forward: Consider RequestedAmount, but ensure EMI doesn't exceed capacity
-            const requestedEligible = Math.min(requestedAmount, maxAffordableLoan);
-            const requestedEMI = await loanCalculations.calculateEMI(requestedEligible, interestRate, requestedTenure);
+            // Forward: RequestedAmount is the desired NET loan amount (what borrower wants to receive)
+            // We need to calculate the gross amount (eligible amount) that will yield this net amount
             
-            // If calculated EMI exceeds capacity, recalculate with max affordable EMI
-            if (requestedEMI > maxAffordableEMI) {
+            // Step 1: Calculate what gross amount would be needed to achieve the requested net amount
+            // Formula: GrossAmount = NetAmount / (1 - totalFeeRate)
+            const totalFeeRate = (LOAN_CONSTANTS?.ADMIN_FEE_RATE || 0.02) + (LOAN_CONSTANTS?.INSURANCE_RATE || 0.015);
+            const otherChargesAmount = LOAN_CONSTANTS?.OTHER_CHARGES || 50000;
+            
+            // Calculate required gross amount: (RequestedNet + OtherCharges) / (1 - percentageFees)
+            const requiredGrossAmount = (requestedAmount + otherChargesAmount) / (1 - totalFeeRate);
+            
+            // Step 2: Check if this gross amount fits within EMI capacity
+            const requestedEMI = await loanCalculations.calculateEMI(requiredGrossAmount, interestRate, requestedTenure);
+            
+            // Step 3: Determine final eligibleAmount based on EMI capacity
+            if (requestedEMI <= maxAffordableEMI && requiredGrossAmount <= maxAffordableLoan) {
+                // Requested amount fits within capacity
+                eligibleAmount = requiredGrossAmount;
+                monthlyReturnAmount = requestedEMI;
+                logger.info(`Forward calculation: RequestedNet=${requestedAmount}, RequiredGross=${requiredGrossAmount.toFixed(2)}, EMI=${requestedEMI.toFixed(2)}, within capacity`);
+            } else {
+                // Requested amount exceeds capacity, use maximum affordable
                 eligibleAmount = maxAffordableLoan;
                 monthlyReturnAmount = desirableEMI;
-                logger.info(`Forward calculation (EMI-capped): RequestedAmount=${requestedAmount}, EMI would be ${requestedEMI.toFixed(2)} but max is ${maxAffordableEMI}, using MaxAffordable=${maxAffordableLoan.toFixed(2)}, EligibleAmount=${eligibleAmount}, MonthlyReturnAmount=${monthlyReturnAmount}`);
-            } else {
-                eligibleAmount = requestedEligible;
-                monthlyReturnAmount = requestedEMI;
-                logger.info(`Forward calculation: RequestedAmount=${requestedAmount}, MaxAffordable=${maxAffordableLoan.toFixed(2)}, EligibleAmount=${eligibleAmount}, MonthlyReturnAmount=${monthlyReturnAmount}`);
+                logger.info(`Forward calculation (EMI-capped): RequestedNet=${requestedAmount} requires EMI=${requestedEMI.toFixed(2)} but max is ${maxAffordableEMI}, using MaxAffordable=${maxAffordableLoan.toFixed(2)}`);
             }
         } else {
             // Reverse: Maximize eligibility within EMI capacity
