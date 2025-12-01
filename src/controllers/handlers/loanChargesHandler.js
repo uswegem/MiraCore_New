@@ -3,6 +3,7 @@ const digitalSignature = require('../../utils/signatureUtils');
 const { sendErrorResponse } = require('../../utils/responseUtils');
 const { getMessageId } = require('../../utils/messageIdGenerator');
 const LOAN_CONSTANTS = require('../../utils/loanConstants');
+const loanUtils = require('../utils/loanUtils');
 const LoanMappingService = require('../../services/loanMappingService');
 
 const handleLoanChargesRequest = async (parsedData, res) => {
@@ -32,8 +33,8 @@ const handleLoanChargesRequest = async (parsedData, res) => {
 
         // Validate retirement if tenure is set
         if (requestedTenure !== null) {
-            const retirementMonthsLeft = require('../utils/loanUtils').calculateMonthsUntilRetirement(messageDetails.RetirementDate);
-            requestedTenure = require('../utils/loanUtils').validateRetirementAge(requestedTenure, retirementMonthsLeft);
+            const retirementMonthsLeft = loanUtils.calculateMonthsUntilRetirement(messageDetails.RetirementDate);
+            requestedTenure = loanUtils.validateRetirementAge(requestedTenure, retirementMonthsLeft);
             if (!requestedTenure || requestedTenure <= 0) {
                 requestedTenure = LOAN_CONSTANTS.DEFAULT_TENURE;
                 logger.info(`Tenure adjusted for retirement: ${requestedTenure} months`);
