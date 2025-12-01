@@ -21,6 +21,9 @@ const handleLoanChargesRequest = async (parsedData, res) => {
         // Determine affordability type based on presence of RequestedAmount
         const affordabilityType = (requestedAmount === null || requestedAmount === 0) ? 'REVERSE' : 'FORWARD';
 
+        // Set interest rate from constants
+        const interestRate = LOAN_CONSTANTS.DEFAULT_INTEREST_RATE;
+
         // Set defaults and validate tenure
         if (requestedTenure === null || requestedTenure === 0) {
             if (affordabilityType === 'FORWARD') {
