@@ -157,7 +157,6 @@ const handleLoanOfferRequest = async (parsedData, res) => {
         const totalInsurance = charges.insurance;
         const otherCharges = charges.otherCharges;
         const totalAmountToPay = loanAmount + totalInterestRateAmount;
-        const otherCharges = LOAN_CONSTANTS?.OTHER_CHARGES || 50000;
         const loanNumber = generateLoanNumber();
 
         logger.info(`Calculated using LOAN_CHARGES_REQUEST logic - LoanAmount: ${loanAmount}, TotalAmountToPay: ${totalAmountToPay}, OtherCharges: ${otherCharges}`);
