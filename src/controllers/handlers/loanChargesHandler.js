@@ -3,9 +3,13 @@ const digitalSignature = require('../../utils/signatureUtils');
 const { sendErrorResponse } = require('../../utils/responseUtils');
 const { getMessageId } = require('../../utils/messageIdGenerator');
 const LOAN_CONSTANTS = require('../../utils/loanConstants');
-const loanUtils = require('../../utils/loanUtils');
 const loanCalculations = require('../../utils/loanCalculations');
 const LoanMappingService = require('../../services/loanMappingService');
+
+// Import loanUtils functions directly to avoid path issues
+const path = require('path');
+const loanUtilsPath = path.resolve(__dirname, '../../utils/loanUtils.js');
+const loanUtils = require(loanUtilsPath);
 
 const handleLoanChargesRequest = async (parsedData, res) => {
     try {
