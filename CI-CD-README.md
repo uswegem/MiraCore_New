@@ -2,7 +2,7 @@
 
 ## Overview
 
-This repository uses GitHub Actions for automated CI/CD pipelines that handle testing, security scanning, and deployment to staging and production environments.
+This repository uses GitHub Actions for automated CI/CD pipelines that handle testing, security scanning, and deployment to production environment.
 
 ## Workflows
 
@@ -25,14 +25,6 @@ This repository uses GitHub Actions for automated CI/CD pipelines that handle te
   - Automated deployment with backup
   - Health checks and verification
 
-### 3. Staging Deployment (`staging-deploy.yml`)
-- **Trigger**: Push to `develop`/`staging` branches or manual dispatch
-- **Purpose**: Deploy to staging environment for testing
-- **Jobs**:
-  - Test execution
-  - Staging environment deployment
-  - Health verification
-
 ## Required Secrets
 
 Configure these secrets in your GitHub repository settings:
@@ -40,41 +32,30 @@ Configure these secrets in your GitHub repository settings:
 ### Production Deployment
 ```
 SSH_PRIVATE_KEY     # Private SSH key for production server access
-REMOTE_HOST         # Production server hostname/IP
-REMOTE_USER         # SSH username for production server
 ```
 
-### Staging Deployment (Optional)
-```
-STAGING_SSH_PRIVATE_KEY  # Private SSH key for staging server
-STAGING_HOST            # Staging server hostname/IP
-STAGING_USER            # SSH username for staging server
-```
+Note: REMOTE_HOST, REMOTE_USER, and REMOTE_PATH are now configured as environment variables in the workflow.
 
 ## Environment Configuration
 
 ### Production Environment
 - **Port**: 3002
 - **PM2 Process**: `ess-app`
+- **Server**: 135.181.33.13
+- **User**: uswege
+- **Path**: /home/uswege/ess
 - **Health Check**: `http://localhost:3002/health`
-
-### Staging Environment
-- **Port**: 3003
-- **PM2 Process**: `ess-staging`
-- **Health Check**: `http://localhost:3003/health`
 
 ## Deployment Process
 
 ### Automatic Deployment
 1. Push code to `main` branch → Production deployment
-2. Push code to `develop` branch → Staging deployment
-3. Create pull request → PR checks run
+2. Create pull request → PR checks run
 
 ### Manual Deployment
 1. Go to Actions tab in GitHub
-2. Select desired workflow
+2. Select "Deploy to Production" workflow
 3. Click "Run workflow"
-4. Choose environment (for staging workflow)
 
 ## Backup Strategy
 
@@ -161,8 +142,6 @@ npm start
 ## Branch Strategy
 
 - `main`: Production-ready code
-- `develop`: Development integration branch
-- `staging`: Staging environment deployments
 - Feature branches: Individual feature development
 
 ## Contact
