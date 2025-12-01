@@ -106,20 +106,24 @@ const handleLoanOfferRequest = async (parsedData, res) => {
 
         let requestedAmount = messageDetails.RequestedAmount || 0;
 
+        // Use consistent interest rate from constants
+        const interestRate = LOAN_CONSTANTS.DEFAULT_INTEREST_RATE;
+        
         // If requested amount is provided, validate it doesn't exceed affordability
         if (requestedAmount > 0 && maxAffordableEMI > 0) {
-            const calculatedEMI = calculateMonthlyInstallment(requestedAmount, 15.0, offerTenure);
-            logger.info(`Requested amount: ${requestedAmount}, Calculated EMI: ${calculatedEMI}, Max affordable: ${maxAffordableEMI}`);
+            const calculatedEMI = await LoanCalculations.calculateEMI(requestedAmount, interestRate, offerTenure);
+            logger.info(`Requested amount: ${requestedAmount}, Calculated EMI: ${calculatedEMI.toFixed(2)}, Max affordable: ${maxAffordableEMI}`);
 
             if (calculatedEMI > maxAffordableEMI) {
                 // Adjust loan amount downward to fit within customer's maximum capacity
-                const adjustedAmount = LoanCalculations.calculateMaxLoanFromEMI(maxAffordableEMI, 15.0, offerTenure);
+                const adjustedAmount = await LoanCalculations.calculateMaxLoanFromEMI(maxAffordableEMI, interestRate, offerTenure);
                 requestedAmount = Math.max(LOAN_CONSTANTS.MIN_LOAN_AMOUNT, Math.round(adjustedAmount));
                 logger.info(`⚠️ Requested amount exceeds affordability. Adjusted from ${messageDetails.RequestedAmount} to ${requestedAmount} (EMI: ${maxAffordableEMI})`);
             }
         } else if (requestedAmount === 0 && maxAffordableEMI > 0) {
-            // Calculate maximum loan from affordability
-            requestedAmount = Math.round(LoanCalculations.calculateMaxLoanFromEMI(maxAffordableEMI, 15.0, offerTenure));
+            // Calculate maximum loan from affordability (same logic as REVERSE calculation)
+            const maxLoanAmount = await LoanCalculations.calculateMaxLoanFromEMI(maxAffordableEMI, interestRate, offerTenure);
+            requestedAmount = Math.round(maxLoanAmount);
             requestedAmount = Math.max(requestedAmount, LOAN_CONSTANTS.MIN_LOAN_AMOUNT);
             logger.info(`Calculated loan amount from affordability: ${requestedAmount} (EMI: ${maxAffordableEMI})`);
         } else {
@@ -130,11 +134,11 @@ const handleLoanOfferRequest = async (parsedData, res) => {
 
         const loanOffer = {
             LoanAmount: requestedAmount,
-            InterestRate: 15.0, // 15% per annum
+            InterestRate: interestRate, // Use consistent rate from constants
             Tenure: offerTenure,
-            MonthlyInstallment: calculateMonthlyInstallment(
+            MonthlyInstallment: await LoanCalculations.calculateEMI(
                 requestedAmount,
-                15.0,
+                interestRate,
                 offerTenure
             )
         };
@@ -143,11 +147,15 @@ const handleLoanOfferRequest = async (parsedData, res) => {
 
         // Calculate TotalAmountToPay and OtherCharges using same logic as LOAN_CHARGES_REQUEST
         const loanAmount = parseFloat(loanOffer.LoanAmount) || 0;
-        const interestRate = parseFloat(loanOffer.InterestRate) || 0;
+        const offerInterestRate = parseFloat(loanOffer.InterestRate) || 0;
         const tenure = parseFloat(loanOffer.Tenure) || 0;
 
         // Use same calculation logic as LOAN_CHARGES_REQUEST
-        const totalInterestRateAmount = (loanAmount * interestRate * tenure) / (12 * 100);
+        const totalInterestRateAmount = await LoanCalculations.calculateTotalInterest(loanAmount, offerInterestRate, tenure);
+        const charges = LoanCalculations.calculateCharges(loanAmount);
+        const totalProcessingFees = charges.processingFee;
+        const totalInsurance = charges.insurance;
+        const otherCharges = charges.otherCharges;
         const totalAmountToPay = loanAmount + totalInterestRateAmount;
         const otherCharges = LOAN_CONSTANTS?.OTHER_CHARGES || 50000;
         const loanNumber = generateLoanNumber();

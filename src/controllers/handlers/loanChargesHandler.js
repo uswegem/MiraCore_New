@@ -81,7 +81,7 @@ const handleLoanChargesRequest = async (parsedData, res) => {
 
                 const possibleTenures = [12, 24, 36, 48, 60, 72, 84, 96]; // Common tenure options
                 for (const tenure of possibleTenures) {
-                    const testLoanAmount = loanCalculations.calculateMaxLoanFromEMI(desirableEMI, interestRate, tenure);
+                    const testLoanAmount = await loanCalculations.calculateMaxLoanFromEMI(desirableEMI, interestRate, tenure);
                     if (testLoanAmount > maxEligibleAmount) {
                         maxEligibleAmount = testLoanAmount;
                         optimalTenure = tenure;
@@ -95,29 +95,39 @@ const handleLoanChargesRequest = async (parsedData, res) => {
         }
 
         // Calculate max affordable loan amount
-        const maxAffordableLoan = loanCalculations.calculateMaxLoanFromEMI(desirableEMI, interestRate, requestedTenure);
+        const maxAffordableLoan = await loanCalculations.calculateMaxLoanFromEMI(desirableEMI, interestRate, requestedTenure);
 
         let eligibleAmount = 0;
         let monthlyReturnAmount = 0;
 
         if (affordabilityType === 'FORWARD') {
-            // Forward: Consider RequestedAmount, maximize eligibility by capping at max affordable
-            eligibleAmount = Math.min(requestedAmount, maxAffordableLoan);
-            monthlyReturnAmount = loanCalculations.calculateEMI(eligibleAmount, interestRate, requestedTenure);
-            logger.info(`Forward calculation: RequestedAmount=${requestedAmount}, MaxAffordable=${maxAffordableLoan.toFixed(2)}, EligibleAmount=${eligibleAmount}, MonthlyReturnAmount=${monthlyReturnAmount}`);
+            // Forward: Consider RequestedAmount, but ensure EMI doesn't exceed capacity
+            const requestedEligible = Math.min(requestedAmount, maxAffordableLoan);
+            const requestedEMI = await loanCalculations.calculateEMI(requestedEligible, interestRate, requestedTenure);
+            
+            // If calculated EMI exceeds capacity, recalculate with max affordable EMI
+            if (requestedEMI > maxAffordableEMI) {
+                eligibleAmount = maxAffordableLoan;
+                monthlyReturnAmount = desirableEMI;
+                logger.info(`Forward calculation (EMI-capped): RequestedAmount=${requestedAmount}, EMI would be ${requestedEMI.toFixed(2)} but max is ${maxAffordableEMI}, using MaxAffordable=${maxAffordableLoan.toFixed(2)}, EligibleAmount=${eligibleAmount}, MonthlyReturnAmount=${monthlyReturnAmount}`);
+            } else {
+                eligibleAmount = requestedEligible;
+                monthlyReturnAmount = requestedEMI;
+                logger.info(`Forward calculation: RequestedAmount=${requestedAmount}, MaxAffordable=${maxAffordableLoan.toFixed(2)}, EligibleAmount=${eligibleAmount}, MonthlyReturnAmount=${monthlyReturnAmount}`);
+            }
         } else {
-            // Reverse: Maximize eligibility
+            // Reverse: Maximize eligibility within EMI capacity
             eligibleAmount = maxAffordableLoan;
             monthlyReturnAmount = desirableEMI;
             logger.info(`Reverse calculation: EligibleAmount=${eligibleAmount}, MonthlyReturnAmount=${monthlyReturnAmount}`);
         }
 
-        // Ensure EMI doesn't exceed maxAffordableEMI
+        // Final validation: Ensure EMI doesn't exceed maxAffordableEMI (safety check)
         if (monthlyReturnAmount > maxAffordableEMI) {
-            // Recalculate with capped EMI
-            eligibleAmount = loanCalculations.calculateMaxLoanFromEMI(maxAffordableEMI, interestRate, requestedTenure);
+            // This should not happen with the improved logic above, but keep as safety net
+            eligibleAmount = await loanCalculations.calculateMaxLoanFromEMI(maxAffordableEMI, interestRate, requestedTenure);
             monthlyReturnAmount = maxAffordableEMI;
-            logger.info(`EMI capped to maxAffordableEMI: EligibleAmount=${eligibleAmount}, MonthlyReturnAmount=${monthlyReturnAmount}`);
+            logger.warn(`Safety EMI cap triggered: EligibleAmount=${eligibleAmount}, MonthlyReturnAmount=${monthlyReturnAmount}`);
         }
 
         // Ensure minimum loan amount
@@ -130,7 +140,7 @@ const handleLoanChargesRequest = async (parsedData, res) => {
         const otherCharges = charges.otherCharges;
 
         // Interest and net loan using eligibleAmount
-        const totalInterestRateAmount = loanCalculations.calculateTotalInterest(eligibleAmount, interestRate, requestedTenure);
+        const totalInterestRateAmount = await loanCalculations.calculateTotalInterest(eligibleAmount, interestRate, requestedTenure);
         const totalDeductions = totalProcessingFees + totalInsurance + otherCharges;
         const netLoanAmount = eligibleAmount - totalDeductions;
         const totalAmountToPay = eligibleAmount + totalInterestRateAmount;

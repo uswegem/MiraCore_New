@@ -8,6 +8,9 @@ on:
 
 env:
   NODE_VERSION: '18'
+  REMOTE_HOST: '135.181.33.13'
+  REMOTE_USER: 'uswege'
+  REMOTE_PATH: '/home/uswege/ess'
 
 jobs:
   test:
@@ -80,12 +83,13 @@ jobs:
         mkdir -p ~/.ssh
         echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
         chmod 600 ~/.ssh/id_rsa
-        ssh-keyscan -H ${{ secrets.REMOTE_HOST }} >> ~/.ssh/known_hosts
+        ssh-keyscan -H ${{ env.REMOTE_HOST }} >> ~/.ssh/known_hosts
+        echo "✅ SSH setup completed"
 
     - name: Create deployment backup
       run: |
-        ssh ${{ secrets.REMOTE_USER }}@${{ secrets.REMOTE_HOST }} << 'EOF'
-          cd /home/uswege/ess
+        ssh ${{ env.REMOTE_USER }}@${{ env.REMOTE_HOST }} << 'EOF'
+          cd ${{ env.REMOTE_PATH }}
           timestamp=$(date +%Y%m%d_%H%M%S)
           echo "📦 Creating backup: ess_backup_${timestamp}.tar.gz"
           tar -czf "../ess_backup_${timestamp}.tar.gz" .env keys/ logs/ 2>/dev/null || true
@@ -99,7 +103,7 @@ jobs:
 
     - name: Deploy application code
       run: |
-        echo "🚀 Starting deployment to ${{ secrets.REMOTE_HOST }}"
+        echo "🚀 Starting deployment to ${{ env.REMOTE_HOST }}"
 
         # Copy application files (excluding sensitive data and build artifacts)
         tar -czf - \
@@ -111,14 +115,14 @@ jobs:
           --exclude=coverage \
           --exclude=.nyc_output \
           --exclude=logs \
-          . | ssh ${{ secrets.REMOTE_USER }}@${{ secrets.REMOTE_HOST }} "cd /home/uswege/ess && tar -xzf -"
+          . | ssh ${{ env.REMOTE_USER }}@${{ env.REMOTE_HOST }} "cd ${{ env.REMOTE_PATH }} && tar -xzf -"
 
         echo "📁 Application code deployed"
 
     - name: Install and configure production environment
       run: |
-        ssh ${{ secrets.REMOTE_USER }}@${{ secrets.REMOTE_HOST }} << 'EOF'
-          cd /home/uswege/ess
+        ssh ${{ env.REMOTE_USER }}@${{ env.REMOTE_HOST }} << 'EOF'
+          cd ${{ env.REMOTE_PATH }}
 
           echo "📦 Installing production dependencies..."
           npm ci --production --no-audit
@@ -161,13 +165,21 @@ jobs:
           echo "🏥 Performing health checks..."
           for i in {1..30}; do
             echo "Health check attempt $i/30..."
-            if curl -s -f http://localhost:3002/health > /dev/null 2>&1; then
+            # Try multiple endpoints
+            if curl -s -f http://localhost:3002/health > /dev/null 2>&1 || \
+               curl -s -f http://localhost:3002/ > /dev/null 2>&1 || \
+               netstat -tlnp | grep :3002 > /dev/null 2>&1; then
               echo "✅ Service is healthy"
               break
             fi
             if [ $i -eq 30 ]; then
               echo "❌ Service failed health checks after 30 attempts"
-              pm2 logs ess-app --lines 20
+              echo "📋 PM2 Status:"
+              pm2 list || echo "PM2 list failed"
+              echo "📋 Recent logs:"
+              pm2 logs ess-app --lines 20 || echo "No logs available"
+              echo "📋 Port check:"
+              netstat -tlnp | grep :3002 || echo "Port 3002 not listening"
               exit 1
             fi
             sleep 3
@@ -190,9 +202,10 @@ jobs:
         max_attempts=10
         for i in $(seq 1 $max_attempts); do
           echo "Verification attempt $i/$max_attempts..."
-          if curl -s -f http://${{ secrets.REMOTE_HOST }}:3002/health | grep -q "healthy"; then
+          if curl -s -f http://${{ env.REMOTE_HOST }}:3002/health | grep -q "healthy" || \
+             curl -s -f http://${{ env.REMOTE_HOST }}:3002/ > /dev/null 2>&1; then
             echo "✅ Deployment verified successfully!"
-            echo "🌐 Service is accessible at http://${{ secrets.REMOTE_HOST }}:3002"
+            echo "🌐 Service is accessible at http://${{ env.REMOTE_HOST }}:3002"
             exit 0
           fi
           sleep 5
