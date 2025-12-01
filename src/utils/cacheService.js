@@ -9,33 +9,55 @@ class CacheService {
   }
 
   async init() {
+    // Skip Redis in test environment
     if (process.env.NODE_ENV === 'test') {
       this.isConnected = false;
+      logger.info('Redis disabled in test environment');
+      return;
+    }
+
+    // Skip Redis if no configuration provided (make it optional)
+    if (!process.env.REDIS_HOST && !process.env.REDIS_URL) {
+      this.isConnected = false;
+      logger.info('Redis not configured, caching disabled');
       return;
     }
 
     try {
-      this.client = redis.createClient({
-        host: process.env.REDIS_HOST || 'localhost',
-        port: process.env.REDIS_PORT || 6379,
-        password: process.env.REDIS_PASSWORD || undefined,
-        retry_strategy: (options) => {
-          if (options.error && options.error.code === 'ECONNREFUSED') {
-            logger.error('Redis connection refused');
-            return new Error('Redis connection refused');
-          }
-          if (options.total_retry_time > 1000 * 60 * 60) {
-            logger.error('Redis retry time exhausted');
-            return new Error('Retry time exhausted');
-          }
-          if (options.attempt > 10) {
-            logger.error('Redis max retry attempts reached');
+      const redisConfig = {};
+      
+      if (process.env.REDIS_URL) {
+        redisConfig.url = process.env.REDIS_URL;
+      } else {
+        redisConfig.host = process.env.REDIS_HOST || 'localhost';
+        redisConfig.port = parseInt(process.env.REDIS_PORT) || 6379;
+        if (process.env.REDIS_PASSWORD) {
+          redisConfig.password = process.env.REDIS_PASSWORD;
+        }
+      }
+
+      redisConfig.retry_strategy = (options) => {
+        if (options.error && options.error.code === 'ECONNREFUSED') {
+          logger.warn('Redis connection refused, will retry...');
+          // Return undefined to stop retrying after max attempts
+          if (options.attempt > 3) {
+            logger.error('Redis connection failed after max retries, disabling Redis');
             return undefined;
           }
-          // Reconnect after
-          return Math.min(options.attempt * 100, 3000);
+          return Math.min(options.attempt * 1000, 5000);
         }
-      });
+        if (options.total_retry_time > 1000 * 60 * 5) { // 5 minutes
+          logger.error('Redis retry time exhausted, disabling Redis');
+          return undefined;
+        }
+        if (options.attempt > 10) {
+          logger.error('Redis max retry attempts reached, disabling Redis');
+          return undefined;
+        }
+        return Math.min(options.attempt * 100, 3000);
+      };
+
+      this.client = redis.createClient(redisConfig);
 
       this.client.on('connect', () => {
         logger.info('✅ Redis connected');
@@ -43,7 +65,11 @@ class CacheService {
       });
 
       this.client.on('error', (err) => {
-        logger.error('❌ Redis error:', err.message);
+        logger.error('❌ Redis connection error:', {
+          message: err.message,
+          code: err.code,
+          errno: err.errno
+        });
         this.isConnected = false;
       });
 
@@ -51,11 +77,18 @@ class CacheService {
         logger.info('✅ Redis ready');
       });
 
+      this.client.on('end', () => {
+        logger.warn('Redis connection ended');
+        this.isConnected = false;
+      });
+
       await this.client.connect();
     } catch (error) {
-      logger.warn('Redis not available, caching disabled:', error.message);
+      logger.warn('Redis initialization failed, caching disabled:', error.message);
       this.isConnected = false;
+      this.client = null;
     }
+  }
   }
 
   async get(key) {
