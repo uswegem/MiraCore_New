@@ -15,7 +15,7 @@ const { AuditLog } = require('../models/AuditLog');
 const { getMessageId } = require('../utils/messageIdGenerator');
 const LOAN_CONSTANTS = require('../utils/loanConstants');
 const LoanCalculations = require('../utils/loanCalculations');
-const { generateLoanNumber } = require('../utils/loanUtils');
+const { generateLoanNumber, generateFSPReferenceNumber } = require('../utils/loanUtils');
 
 const parser = new xml2js.Parser({
     explicitArray: false,

@@ -115,6 +115,15 @@ function generateLoanNumber() {
     return `LOAN${timestamp}${random}`;
 }
 
+/**
+ * Generate a unique FSP reference number
+ * @returns {string} Generated FSP reference number
+ */
+function generateFSPReferenceNumber() {
+    const timestamp = Date.now().toString();
+    return `FSP${timestamp}`;
+}
+
 module.exports = {
   formattedToUtumishiDate,
   constructName,
@@ -123,5 +132,6 @@ module.exports = {
   safeParseFloat,
   ApplicationException,
   generateLoanNumber,
+  generateFSPReferenceNumber,
   LOAN_CONSTANTS
 };
