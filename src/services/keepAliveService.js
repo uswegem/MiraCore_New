@@ -6,7 +6,7 @@ class KeepAliveService {
     this.isRunning = false;
     this.intervalId = null;
     this.keepAliveInterval = 5 * 60 * 1000; // 5 minutes
-    this.utumishiEndpoint = process.env.UTUMISHI_ENDPOINT || 'https://154.118.230.140';
+    this.utumishiEndpoint = process.env.UTUMISHI_ENDPOINT || 'http://154.118.230.140:9802';
     this.lastSuccessfulPing = null;
     this.consecutiveFailures = 0;
     this.maxFailures = 3;
@@ -83,9 +83,9 @@ class KeepAliveService {
       
       // Try multiple endpoints to maintain connection
       const endpoints = [
-        `${this.utumishiEndpoint}/`,
-        `${this.utumishiEndpoint}/health`,
-        `${this.utumishiEndpoint}/ping`
+        `${this.utumishiEndpoint}/ess-loans/mvtyztwq/consume`,
+        `${this.utumishiEndpoint}/ess-loans/health`,
+        `${this.utumishiEndpoint}/ess-loans/ping`
       ];
 
       let success = false;
