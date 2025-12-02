@@ -194,6 +194,57 @@ jobs:
           echo "✅ Deployment completed successfully"
         EOF
 
+    - name: Setup Enhanced Monitoring System
+      run: |
+        ssh ${{ env.REMOTE_USER }}@${{ env.REMOTE_HOST }} << 'EOF'
+          cd ${{ env.REMOTE_PATH }}
+
+          echo "🔧 Setting up Enhanced Monitoring System..."
+
+          # Create monitoring directories
+          mkdir -p scripts config logs
+
+          # Set executable permissions for scripts
+          chmod +x scripts/*.sh scripts/*.js 2>/dev/null || true
+
+          # Setup sudo permissions for IPSec management (if not already set)
+          if ! sudo -l | grep -q "ipsec status"; then
+            echo "🔐 Setting up sudo permissions for monitoring..."
+            echo "uswege ALL=(ALL) NOPASSWD: /usr/sbin/ipsec status, /usr/sbin/ipsec restart, /usr/sbin/ipsec start, /usr/sbin/ipsec stop" | sudo tee /etc/sudoers.d/ess-ipsec
+            echo "uswege ALL=(ALL) NOPASSWD: /bin/ping" | sudo tee -a /etc/sudoers.d/ess-ipsec
+            sudo chmod 440 /etc/sudoers.d/ess-ipsec
+          fi
+
+          # Setup cron jobs for monitoring
+          echo "⏰ Setting up monitoring cron jobs..."
+          (crontab -l 2>/dev/null || true; cat << CRON
+# ESS Enhanced Monitoring System
+*/5 * * * * ${{ env.REMOTE_PATH }}/scripts/ipsec-monitor.sh
+*/2 * * * * /usr/bin/node ${{ env.REMOTE_PATH }}/scripts/connectivity-monitor.js check
+0 6 * * * /usr/bin/node ${{ env.REMOTE_PATH }}/scripts/connectivity-monitor.js status >> ${{ env.REMOTE_PATH }}/logs/daily-connectivity-report.log
+0 2 * * 0 find ${{ env.REMOTE_PATH }}/logs -name "*.log" -mtime +30 -delete
+CRON
+          ) | crontab -
+
+          # Start enhanced keep-alive service if not already running
+          echo "🚀 Starting enhanced keep-alive service..."
+          pm2 delete ess-keep-alive || echo "No existing keep-alive service"
+          pm2 start keep-alive-daemon.js --name ess-keep-alive --log-file logs/keep-alive.log --error-file logs/keep-alive-error.log
+
+          # Test connectivity monitoring
+          echo "🧪 Testing monitoring systems..."
+          if [ -f scripts/connectivity-monitor.js ]; then
+            timeout 30 node scripts/connectivity-monitor.js check || echo "Initial connectivity check completed"
+          fi
+
+          # Display monitoring status
+          echo "📊 Monitoring System Status:"
+          crontab -l | grep -E "(ipsec|connectivity)" || echo "No monitoring cron jobs found"
+          pm2 list | grep "ess-keep-alive" || echo "Keep-alive service not found"
+
+          echo "✅ Enhanced Monitoring System setup completed"
+        EOF
+
     - name: Final deployment verification
       run: |
         echo "🔍 Performing final verification..."

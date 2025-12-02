@@ -1,14 +1,24 @@
-const keepAliveService = require('./src/services/keepAliveService');
+// Enhanced Keep-Alive Daemon for ESS-Utumishi Connectivity
 require('dotenv').config();
 
-console.log('🚀 Starting ESS Keep-Alive Service...');
+// Try to use enhanced service first, fallback to original
+let keepAliveService;
+try {
+  keepAliveService = require('./src/services/enhancedKeepAliveService');
+  console.log('🚀 Starting Enhanced ESS Keep-Alive Service...');
+} catch (error) {
+  keepAliveService = require('./src/services/keepAliveService');
+  console.log('🚀 Starting ESS Keep-Alive Service (fallback)...');
+}
+
 console.log('════════════════════════════════════════════════════════════════');
 
 // Display configuration
 const config = {
-  utumishiEndpoint: process.env.UTUMISHI_ENDPOINT || 'https://154.118.230.140',
-  keepAliveInterval: '5 minutes',
-  environment: process.env.NODE_ENV || 'production'
+  utumishiEndpoint: process.env.UTUMISHI_ENDPOINT || 'http://154.118.230.140:9802',
+  keepAliveInterval: '2 minutes (enhanced)',
+  environment: process.env.NODE_ENV || 'production',
+  autoRecovery: 'enabled'
 };
 
 console.log('📋 Configuration:');
