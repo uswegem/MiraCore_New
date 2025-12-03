@@ -54,8 +54,8 @@ const testTopUpBalanceRequest = async () => {
             // Check if it's a success response or error
             if (response.data.includes('LOAN_TOP_UP_BALANCE_RESPONSE')) {
                 console.log('✅ Success: Received LOAN_TOP_UP_BALANCE_RESPONSE');
-            } else if (response.data.includes('ERROR_RESPONSE')) {
-                console.log('⚠️ Received ERROR_RESPONSE');
+            } else if (response.data.includes('"MessageType":"RESPONSE"') && response.data.includes('ResponseCode')) {
+                console.log('⚠️ Received error RESPONSE');
             } else {
                 console.log('❓ Unknown response type');
             }

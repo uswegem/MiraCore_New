@@ -244,7 +244,7 @@ const handleTopUpPayOffBalanceRequest = async (parsedData, res) => {
                         "Sender": process.env.FSP_NAME || "ZE DONE",
                         "Receiver": "ESS_UTUMISHI",
                         "FSPCode": header.FSPCode,
-                        "MsgId": getMessageId('ERROR_RESPONSE'),
+                        "MsgId": getMessageId("RESPONSE"),
                         "MessageType": "RESPONSE"
                     },
                     MessageDetails: {
@@ -272,7 +272,7 @@ const handleTopUpPayOffBalanceRequest = async (parsedData, res) => {
                         "Sender": process.env.FSP_NAME || "ZE DONE",
                         "Receiver": "ESS_UTUMISHI",
                         "FSPCode": header.FSPCode,
-                        "MsgId": getMessageId('ERROR_RESPONSE'),
+                        "MsgId": getMessageId("RESPONSE"),
                         "MessageType": "RESPONSE"
                     },
                     MessageDetails: {
