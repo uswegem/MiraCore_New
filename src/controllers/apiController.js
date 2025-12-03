@@ -245,7 +245,7 @@ const handleTopUpPayOffBalanceRequest = async (parsedData, res) => {
                         "Receiver": "ESS_UTUMISHI",
                         "FSPCode": header.FSPCode,
                         "MsgId": getMessageId('ERROR_RESPONSE'),
-                        "MessageType": "ERROR_RESPONSE"
+                        "MessageType": "RESPONSE"
                     },
                     MessageDetails: {
                         "ResponseCode": "8005",
@@ -273,7 +273,7 @@ const handleTopUpPayOffBalanceRequest = async (parsedData, res) => {
                         "Receiver": "ESS_UTUMISHI",
                         "FSPCode": header.FSPCode,
                         "MsgId": getMessageId('ERROR_RESPONSE'),
-                        "MessageType": "ERROR_RESPONSE"
+                        "MessageType": "RESPONSE"
                     },
                     MessageDetails: {
                         "ResponseCode": "8005",
