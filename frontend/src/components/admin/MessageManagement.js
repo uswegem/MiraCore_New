@@ -11,6 +11,7 @@ import { toast } from '@/components/ui/use-toast';
 import { Search, RefreshCw, Send, Eye, Calendar, Filter } from 'lucide-react';
 import MessageDetailsModal from './MessageDetailsModal';
 import MessageStats from './MessageStats';
+import ApiService from '../../services/apiService';
 
 const MessageManagement = () => {
   const [messages, setMessages] = useState([]);
@@ -38,27 +39,19 @@ const MessageManagement = () => {
   const fetchMessages = async () => {
     try {
       setLoading(true);
-      const queryParams = new URLSearchParams();
-
-      Object.entries(filters).forEach(([key, value]) => {
-        if (value) queryParams.append(key, value);
-      });
-
-      const response = await fetch(`/api/v1/messages/logs?${queryParams}`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (!response.ok) throw new Error('Failed to fetch messages');
-
-      const data = await response.json();
-      setMessages(data.data.messages);
+      
+      const response = await ApiService.getMessageLogs(filters);
+      
+      if (response.success) {
+        setMessages(response.data.messages);
+      } else {
+        throw new Error(response.message || 'Failed to fetch messages');
+      }
     } catch (error) {
+      console.error('Fetch messages error:', error);
       toast({
         title: 'Error',
-        description: 'Failed to fetch messages',
+        description: error.message || 'Failed to fetch messages',
         variant: 'destructive'
       });
     } finally {
@@ -68,17 +61,10 @@ const MessageManagement = () => {
 
   const fetchMessageTypes = async () => {
     try {
-      const response = await fetch('/api/v1/messages/types', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (!response.ok) throw new Error('Failed to fetch message types');
-
-      const data = await response.json();
-      setMessageTypes(data.data);
+      const response = await ApiService.getMessageTypes();
+      
+      if (response.success) {
+        setMessageTypes(response.data);
     } catch (error) {
       console.error('Failed to fetch message types:', error);
     }
@@ -86,17 +72,10 @@ const MessageManagement = () => {
 
   const fetchStats = async () => {
     try {
-      const response = await fetch('/api/v1/messages/stats', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (!response.ok) throw new Error('Failed to fetch stats');
-
-      const data = await response.json();
-      setStats(data.data);
+      const response = await ApiService.getMessageStats();
+      
+      if (response.success) {
+        setStats(response.data);
     } catch (error) {
       console.error('Failed to fetch stats:', error);
     }

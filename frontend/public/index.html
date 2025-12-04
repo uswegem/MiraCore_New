@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MiraCore Admin Portal</title>
+    <meta name="description" content="MiraCore ESS Admin Portal - Loan Management System" />
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Custom styles -->
+    <style>
+      /* Loading spinner */
+      .spinner {
+        border: 2px solid #f3f3f3;
+        border-top: 2px solid #3498db;
+        border-radius: 50%;
+        width: 40px;
+        height: 40px;
+        animation: spin 2s linear infinite;
+        margin: 20px auto;
+      }
+      
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+      
+      /* Custom scrollbar */
+      ::-webkit-scrollbar {
+        width: 8px;
+      }
+      
+      ::-webkit-scrollbar-track {
+        background: #f1f1f1;
+      }
+      
+      ::-webkit-scrollbar-thumb {
+        background: #c1c1c1;
+        border-radius: 4px;
+      }
+      
+      ::-webkit-scrollbar-thumb:hover {
+        background: #a8a8a8;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <!-- Fallback loading indicator -->
+      <div style="display: flex; justify-content: center; align-items: center; height: 100vh; background-color: #f9fafb;">
+        <div style="text-align: center;">
+          <div class="spinner"></div>
+          <p style="color: #6b7280; margin-top: 16px;">Loading MiraCore Admin Portal...</p>
+          <p style="color: #9ca3af; font-size: 14px; margin-top: 8px;">Connecting to ESS Backend (135.181.33.13:3002)</p>
+        </div>
+      </div>
+    </div>
+    
+    <!-- React App Script -->
+    <script type="module" src="/src/index.js"></script>
+  </body>
+</html>
