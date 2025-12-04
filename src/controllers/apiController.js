@@ -376,6 +376,50 @@ const handleTopUpOfferRequest = async (parsedData, res) => {
         const header = parsedData.Document.Data.Header;
         const messageDetails = parsedData.Document.Data.MessageDetails;
 
+        // Store client and loan data similar to LOAN_OFFER_REQUEST
+        try {
+            const clientData = {
+                firstName: messageDetails.FirstName,
+                middleName: messageDetails.MiddleName,
+                lastName: messageDetails.LastName,
+                sex: messageDetails.Sex,
+                nin: messageDetails.NIN,
+                mobileNo: messageDetails.MobileNo,
+                dateOfBirth: messageDetails.DateOfBirth,
+                maritalStatus: messageDetails.MaritalStatus,
+                bankAccountNumber: messageDetails.BankAccountNumber,
+                swiftCode: messageDetails.SwiftCode
+            };
+
+            const loanData = {
+                productCode: messageDetails.ProductCode || 'TOPUP',
+                requestedAmount: messageDetails.RequestedAmount,
+                tenure: messageDetails.Tenure,
+                existingLoanNumber: messageDetails.ExistingLoanNumber
+            };
+
+            const employmentData = {
+                employmentDate: messageDetails.EmploymentDate,
+                retirementDate: messageDetails.RetirementDate,
+                termsOfEmployment: messageDetails.TermsOfEmployment,
+                voteCode: messageDetails.VoteCode,
+                basicSalary: messageDetails.BasicSalary,
+                netSalary: messageDetails.NetSalary
+            };
+
+            await LoanMappingService.createOrUpdateWithClientData(
+                messageDetails.ApplicationNumber,
+                messageDetails.CheckNumber,
+                clientData,
+                loanData,
+                employmentData
+            );
+            logger.info('✅ Top-up client data stored successfully');
+        } catch (storageError) {
+            logger.error('❌ Error storing top-up client data:', storageError);
+            // Continue with response even if storage fails
+        }
+
         // Send immediate ACK response
         const ackResponseData = {
             Data: {
@@ -413,6 +457,28 @@ const handleTopUpOfferRequest = async (parsedData, res) => {
                 const totalAmountToPay = loanAmount + totalInterestRateAmount;
                 const otherCharges = LOAN_CONSTANTS?.OTHER_CHARGES || 50000;
                 const loanNumber = generateLoanNumber();
+                const fspReferenceNumber = generateFSPReferenceNumber();
+                
+                // Create/update loan mapping with approval details
+                try {
+                    await LoanMappingService.createInitialMapping(
+                        messageDetails.ApplicationNumber,
+                        messageDetails.CheckNumber,
+                        fspReferenceNumber,
+                        {
+                            essLoanNumberAlias: loanNumber,
+                            requestedAmount: loanAmount,
+                            totalAmountToPay: totalAmountToPay,
+                            interestRate: interestRate,
+                            tenure: tenure,
+                            otherCharges: otherCharges,
+                            status: 'INITIAL_APPROVAL_SENT'
+                        }
+                    );
+                    logger.info('✅ Created loan mapping for top-up offer');
+                } catch (mappingError) {
+                    logger.error('❌ Error creating loan mapping for top-up:', mappingError);
+                }
                 
                 const approvalResponseData = {
                     Header: {
@@ -425,7 +491,7 @@ const handleTopUpOfferRequest = async (parsedData, res) => {
                     MessageDetails: {
                         "ApplicationNumber": messageDetails.ApplicationNumber,
                         "Reason": "Top-Up Loan Request Approved",
-                        "FSPReferenceNumber": generateFSPReferenceNumber(),
+                        "FSPReferenceNumber": fspReferenceNumber,
                         "LoanNumber": loanNumber,
                         "TotalAmountToPay": totalAmountToPay.toFixed(2),
                         "OtherCharges": otherCharges.toFixed(2),
@@ -456,49 +522,283 @@ const handleTopUpOfferRequest = async (parsedData, res) => {
 };
 
 const handleTakeoverPayOffBalanceRequest = async (parsedData, res) => {
-    // Implement takeover pay off balance request
-    logger.info('Processing takeover pay off balance request...');
-    const header = parsedData.Document.Data.Header;
-    const responseData = {
-        Data: {
-            Header: {
-                "Sender": process.env.FSP_NAME || "ZE DONE",
-                "Receiver": "ESS_UTUMISHI",
-                "FSPCode": header.FSPCode,
-                "MessageType": "RESPONSE"
-            },
-            MessageDetails: {
-                "Status": "SUCCESS",
-                "StatusCode": "8000",
-                "StatusDesc": "Request received and being processed"
+    try {
+        logger.info('Processing TAKEOVER_PAY_OFF_BALANCE_REQUEST...');
+        const header = parsedData.Document.Data.Header;
+        const messageDetails = parsedData.Document.Data.MessageDetails;
+        
+        // Step 1: Send immediate ACK response
+        const ackResponseData = {
+            Data: {
+                Header: {
+                    "Sender": process.env.FSP_NAME || "ZE DONE",
+                    "Receiver": "ESS_UTUMISHI",
+                    "FSPCode": header.FSPCode,
+                    "MsgId": getMessageId("RESPONSE"),
+                    "MessageType": "RESPONSE"
+                },
+                MessageDetails: {
+                    "Status": "SUCCESS",
+                    "StatusCode": "8000",
+                    "StatusDesc": "Request received and being processed"
+                }
             }
-        }
-    };
-    const signedResponse = digitalSignature.createSignedXML(responseData.Data);
-    res.status(200).send(signedResponse);
+        };
+        
+        const signedResponse = digitalSignature.createSignedXML(ackResponseData.Data);
+        res.status(200).send(signedResponse);
+        logger.info('✅ Sent immediate ACK response for TAKEOVER_PAY_OFF_BALANCE_REQUEST');
+
+        // Step 2-5: Process in background after response sent
+        setTimeout(async () => {
+            try {
+                logger.info('⏰ Starting delayed TAKEOVER balance processing...');
+
+                // Step 2: Get loan details from MIFOS
+                const loanNumber = messageDetails.LoanNumber;
+                let mifosLoanData = null;
+                let totalPayOffAmount = 0;
+                let outstandingBalance = 0;
+
+                try {
+                    // Search for loan by external ID or account number
+                    const searchResponse = await api.searchLoans(loanNumber);
+                    
+                    if (searchResponse.data && searchResponse.data.length > 0) {
+                        const loanId = searchResponse.data[0].id;
+                        
+                        // Get detailed loan information
+                        const loanResponse = await api.getLoanDetails(loanId);
+                        mifosLoanData = loanResponse.data;
+                        
+                        // Calculate outstanding balance
+                        outstandingBalance = parseFloat(mifosLoanData.summary?.totalOutstanding || 0);
+                        
+                        // Calculate remaining tenor and add 15% interest
+                        const currentDate = new Date();
+                        const maturityDate = new Date(mifosLoanData.timeline?.expectedMaturityDate);
+                        const remainingMonths = Math.max(0, (maturityDate - currentDate) / (1000 * 60 * 60 * 24 * 30));
+                        
+                        // Add 15% of remaining period interest
+                        const monthlyInterestRate = parseFloat(mifosLoanData.interestRatePerPeriod || 0) / 100;
+                        const remainingInterest = outstandingBalance * monthlyInterestRate * remainingMonths;
+                        const additionalInterest = remainingInterest * 0.15;
+                        
+                        totalPayOffAmount = outstandingBalance + additionalInterest;
+                        
+                        logger.info(`💰 Calculated takeover amounts - Outstanding: ${outstandingBalance}, Total Payoff: ${totalPayOffAmount}`);
+                    } else {
+                        logger.warn('⚠️ Loan not found in MIFOS, using default values');
+                        outstandingBalance = parseFloat(messageDetails.DeductionBalance || 0);
+                        totalPayOffAmount = outstandingBalance * 1.15; // Add 15% as fallback
+                    }
+                } catch (mifosError) {
+                    logger.error('❌ Error fetching loan from MIFOS:', mifosError);
+                    // Use fallback values from request
+                    outstandingBalance = parseFloat(messageDetails.DeductionBalance || 0);
+                    totalPayOffAmount = outstandingBalance * 1.15;
+                }
+
+                // Step 3: Wait 10 seconds (already in setTimeout)
+                await new Promise(resolve => setTimeout(resolve, 10000));
+
+                // Step 4 & 5: Send LOAN_TAKEOVER_BALANCE_RESPONSE callback
+                const currentDate = new Date();
+                const finalPaymentDate = new Date(currentDate.getTime() + (7 * 24 * 60 * 60 * 1000)); // 7 days from now
+                const lastDeductionDate = new Date(currentDate.getTime() - (30 * 24 * 60 * 60 * 1000)); // 30 days ago
+                const deductionEndDate = new Date(currentDate.getTime() + (7 * 24 * 60 * 60 * 1000)); // 7 days from now
+
+                const takeoverResponseData = {
+                    Header: {
+                        "Sender": process.env.FSP_NAME || "ZE DONE",
+                        "Receiver": "ESS_UTUMISHI",
+                        "FSPCode": header.FSPCode,
+                        "MsgId": getMessageId("LOAN_TAKEOVER_BALANCE_RESPONSE"),
+                        "MessageType": "LOAN_TAKEOVER_BALANCE_RESPONSE"
+                    },
+                    MessageDetails: {
+                        "LoanNumber": loanNumber,
+                        "FSPCode": process.env.FSP_CODE || "FL8090",
+                        "FSPReferenceNumber": header.FSPReferenceNumber || `FSP_${Date.now()}`,
+                        "PaymentReferenceNumber": `PAY_${Date.now()}`,
+                        "TotalPayOffAmount": totalPayOffAmount.toFixed(2),
+                        "OutstandingBalance": outstandingBalance.toFixed(2),
+                        "FSPBankAccount": "0152562001300",
+                        "FSPBankAccountName": "ZE DONE LIMITED",
+                        "SWIFTCode": "NMIBTZTZ",
+                        "MNOChannels": "MPESA,TIGOPESA,AIRTELMONEY",
+                        "FinalPaymentDate": formatDateForMifos(finalPaymentDate),
+                        "LastDeductionDate": formatDateForMifos(lastDeductionDate),
+                        "DeductionEndDate": formatDateForMifos(deductionEndDate)
+                    }
+                };
+
+                // Send callback using the callback utility
+                await sendCallback(takeoverResponseData);
+                logger.info('✅ Successfully sent LOAN_TAKEOVER_BALANCE_RESPONSE callback');
+
+            } catch (callbackError) {
+                logger.error('❌ Error sending LOAN_TAKEOVER_BALANCE_RESPONSE callback:', callbackError);
+            }
+        }, 10000); // 10 seconds delay
+
+        logger.info('🕐 Scheduled LOAN_TAKEOVER_BALANCE_RESPONSE to be sent in 10 seconds');
+
+    } catch (error) {
+        logger.error('Error processing takeover pay off balance request:', error);
+        return sendErrorResponse(res, '8012', error.message, 'xml', parsedData);
+    }
 };
 
 const handleLoanTakeoverOfferRequest = async (parsedData, res) => {
-    // Implement loan takeover offer request
-    logger.info('Processing loan takeover offer request...');
-    const header = parsedData.Document.Data.Header;
-    const responseData = {
-        Data: {
-            Header: {
-                "Sender": process.env.FSP_NAME || "ZE DONE",
-                "Receiver": "ESS_UTUMISHI",
-                "FSPCode": header.FSPCode,
-                "MessageType": "RESPONSE"
-            },
-            MessageDetails: {
-                "Status": "SUCCESS",
-                "StatusCode": "8000",
-                "StatusDesc": "Request received and being processed"
-            }
+    try {
+        logger.info('Processing LOAN_TAKEOVER_OFFER_REQUEST...');
+        const header = parsedData.Document.Data.Header;
+        const messageDetails = parsedData.Document.Data.MessageDetails;
+
+        // Store client and loan data similar to LOAN_OFFER_REQUEST
+        try {
+            const clientData = {
+                firstName: messageDetails.FirstName,
+                middleName: messageDetails.MiddleName,
+                lastName: messageDetails.LastName,
+                sex: messageDetails.Sex,
+                nin: messageDetails.NIN,
+                mobileNo: messageDetails.MobileNumber,
+                dateOfBirth: messageDetails.DateOfBirth,
+                maritalStatus: messageDetails.MaritalStatus,
+                bankAccountNumber: messageDetails.BankAccountNumber,
+                swiftCode: messageDetails.SwiftCode,
+                emailAddress: messageDetails.EmailAddress
+            };
+
+            const loanData = {
+                productCode: messageDetails.ProductCode || 'TAKEOVER',
+                requestedAmount: messageDetails.RequestedTakeoverAmount,
+                tenure: messageDetails.Tenure,
+                existingLoanNumber: messageDetails.ExistingLoanNumber,
+                loanPurpose: messageDetails.LoanPurpose
+            };
+
+            const employmentData = {
+                employmentDate: messageDetails.EmploymentDate,
+                retirementDate: messageDetails.RetirementDate,
+                termsOfEmployment: messageDetails.TermsOfEmployment,
+                voteCode: messageDetails.VoteCode,
+                voteName: messageDetails.VoteName,
+                designationCode: messageDetails.DesignationCode,
+                designationName: messageDetails.DesignationName,
+                basicSalary: messageDetails.BasicSalary,
+                netSalary: messageDetails.NetSalary,
+                oneThirdAmount: messageDetails.OneThirdAmount,
+                totalEmployeeDeduction: messageDetails.TotalEmployeeDeduction
+            };
+
+            await LoanMappingService.createOrUpdateWithClientData(
+                messageDetails.ApplicationNumber,
+                messageDetails.CheckNumber,
+                clientData,
+                loanData,
+                employmentData
+            );
+            logger.info('✅ Takeover client data stored successfully');
+        } catch (storageError) {
+            logger.error('❌ Error storing takeover client data:', storageError);
+            // Continue with response even if storage fails
         }
-    };
-    const signedResponse = digitalSignature.createSignedXML(responseData.Data);
-    res.status(200).send(signedResponse);
+        
+        // Step 1: Send immediate ACK response with fixed MsgId
+        const ackResponseData = {
+            Data: {
+                Header: {
+                    "Sender": process.env.FSP_NAME || "ZE DONE",
+                    "Receiver": "ESS_UTUMISHI",
+                    "FSPCode": header.FSPCode,
+                    "MsgId": getMessageId("RESPONSE"),
+                    "MessageType": "RESPONSE"
+                },
+                MessageDetails: {
+                    "Status": "SUCCESS",
+                    "StatusCode": "8000",
+                    "StatusDesc": "Request received and being processed"
+                }
+            }
+        };
+        
+        const signedResponse = digitalSignature.createSignedXML(ackResponseData.Data);
+        res.status(200).send(signedResponse);
+        logger.info('✅ Sent immediate ACK response for LOAN_TAKEOVER_OFFER_REQUEST');
+
+        // Step 2 & 3: Wait 10 seconds then send LOAN_INITIAL_APPROVAL_NOTIFICATION callback
+        setTimeout(async () => {
+            try {
+                logger.info('⏰ Sending delayed LOAN_INITIAL_APPROVAL_NOTIFICATION for takeover...');
+
+                // Generate loan details for takeover
+                const requestedAmount = parseFloat(messageDetails.RequestedTakeoverAmount) || 0;
+                const loanNumber = generateLoanNumber();
+                const fspReferenceNumber = generateFSPReferenceNumber();
+                
+                // Calculate basic charges (similar to regular loan processing)
+                const charges = LoanCalculations.calculateCharges(requestedAmount);
+                const totalAmountToPay = requestedAmount + (requestedAmount * 0.28 * (parseFloat(messageDetails.Tenure) || 12) / 12);
+                const otherCharges = charges.processingFee + charges.insurance + charges.otherCharges;
+
+                // Create/update loan mapping with approval details
+                try {
+                    await LoanMappingService.createInitialMapping(
+                        messageDetails.ApplicationNumber,
+                        messageDetails.CheckNumber,
+                        fspReferenceNumber,
+                        {
+                            essLoanNumberAlias: loanNumber,
+                            requestedAmount: requestedAmount,
+                            totalAmountToPay: totalAmountToPay,
+                            interestRate: 28.0, // 28% per annum as used in calculation
+                            tenure: parseFloat(messageDetails.Tenure) || 12,
+                            otherCharges: otherCharges,
+                            status: 'INITIAL_APPROVAL_SENT'
+                        }
+                    );
+                    logger.info('✅ Created loan mapping for takeover offer');
+                } catch (mappingError) {
+                    logger.error('❌ Error creating loan mapping for takeover:', mappingError);
+                }
+
+                const approvalResponseData = {
+                    Header: {
+                        "Sender": process.env.FSP_NAME || "ZE DONE",
+                        "Receiver": "ESS_UTUMISHI",
+                        "FSPCode": header.FSPCode,
+                        "MsgId": getMessageId("LOAN_INITIAL_APPROVAL_NOTIFICATION"),
+                        "MessageType": "LOAN_INITIAL_APPROVAL_NOTIFICATION"
+                    },
+                    MessageDetails: {
+                        "ApplicationNumber": messageDetails.ApplicationNumber,
+                        "Reason": "Loan Takeover Request Approved",
+                        "FSPReferenceNumber": fspReferenceNumber,
+                        "LoanNumber": loanNumber,
+                        "TotalAmountToPay": totalAmountToPay.toFixed(2),
+                        "OtherCharges": otherCharges.toFixed(2),
+                        "Approval": "APPROVED"
+                    }
+                };
+
+                // Send callback using the callback utility
+                await sendCallback(approvalResponseData);
+                logger.info('✅ Successfully sent LOAN_INITIAL_APPROVAL_NOTIFICATION callback for takeover');
+
+            } catch (callbackError) {
+                logger.error('❌ Error sending LOAN_INITIAL_APPROVAL_NOTIFICATION callback for takeover:', callbackError);
+            }
+        }, 10000); // 10 seconds delay
+
+        logger.info('🕐 Scheduled LOAN_INITIAL_APPROVAL_NOTIFICATION to be sent in 10 seconds for takeover');
+
+    } catch (error) {
+        logger.error('Error processing loan takeover offer request:', error);
+        return sendErrorResponse(res, '8012', error.message, 'xml', parsedData);
+    }
 };
 
 const handleTakeoverPaymentNotification = async (parsedData, res) => {
@@ -551,11 +851,29 @@ const handleLoanCancellation = async (parsedData, res) => {
         }
 
         // Find loan mapping by ApplicationNumber
-        const loanMapping = await LoanMappingService.getByEssApplicationNumber(applicationNumber);
-        
-        if (!loanMapping) {
-            logger.error('Loan application not found:', { applicationNumber });
-            return sendErrorResponse(res, '8004', `Loan application not found: ${applicationNumber}`, 'xml', parsedData);
+        let loanMapping;
+        try {
+            loanMapping = await LoanMappingService.getByEssApplicationNumber(applicationNumber);
+        } catch (error) {
+            logger.info('Loan mapping not found, treating as already cancelled or never created:', { applicationNumber });
+            // If no mapping exists, treat as successful cancellation (already cancelled or never created)
+            const responseData = {
+                Header: {
+                    "Sender": process.env.FSP_NAME || "ZE DONE",
+                    "Receiver": header.Sender,
+                    "FSPCode": process.env.FSP_CODE || "FL8090", 
+                    "MsgId": getMessageId("LOAN_CANCELLATION_RESPONSE"),
+                    "MessageType": "RESPONSE"
+                },
+                MessageDetails: {
+                    "ResponseCode": "0000",
+                    "Description": `Loan cancellation acknowledged for application: ${applicationNumber}. No active loan found.`
+                }
+            };
+
+            const responseXML = digitalSignature.createSignedXML(responseData);
+            res.set('Content-Type', 'application/xml');
+            return res.send(responseXML);
         }
 
         logger.info('Found loan mapping:', {

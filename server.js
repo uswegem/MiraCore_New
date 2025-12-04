@@ -13,6 +13,7 @@ const apiRouter = require('./src/routes/api');
 const authRoutes = require('./src/routes/auth');
 const userRoutes = require('./src/routes/users');
 const auditRoutes = require('./src/routes/audit');
+const adminCompatRoutes = require('./src/routes/adminCompat');
 // const messageRoutes = require('./src/routes/messages'); // Temporarily commented out
 
 // Import middleware
@@ -184,6 +185,12 @@ app.use('/api/v1/users', userRoutes);
 
 // Audit routes (protected)
 app.use('/api/v1/audit', auditRoutes);
+
+// Admin compatibility routes for MiraAdmin frontend
+app.use('/api/v1', adminCompatRoutes);
+
+// Admin compatibility routes for MiraAdmin frontend
+app.use('/api/v1', adminCompatRoutes);
 
 // Message management routes (protected) - Temporarily commented out
 // app.use('/api/v1/messages', messageRoutes);

@@ -1,0 +1,98 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm install
+      
+    - name: Run tests (if any)
+      run: npm test --if-present
+      
+    - name: Setup SSH key
+      uses: webfactory/ssh-agent@v0.8.0
+      with:
+        ssh-private-key: ${{ secrets.PRODUCTION_SSH_KEY }}
+        
+    - name: Add server to known hosts
+      run: |
+        ssh-keyscan -H 135.181.33.13 >> ~/.ssh/known_hosts
+        
+    - name: Deploy to production
+      run: |
+        # Create deployment package
+        tar -czf deployment.tar.gz \
+          --exclude='.git' \
+          --exclude='node_modules' \
+          --exclude='.github' \
+          --exclude='*.log' \
+          --exclude='logs/*' \
+          --exclude='.env.local' \
+          .
+        
+        # Copy to server
+        scp deployment.tar.gz ${{ secrets.PRODUCTION_USER }}@135.181.33.13:/tmp/
+        
+        # Deploy on server
+        ssh ${{ secrets.PRODUCTION_USER }}@135.181.33.13 '
+          set -e
+          
+          # Backup current deployment
+          sudo mkdir -p /home/uswege/backups
+          sudo tar -czf /home/uswege/backups/ess-backup-$(date +%Y%m%d_%H%M%S).tar.gz -C /home/uswege ess 2>/dev/null || echo "No existing deployment to backup"
+          
+          # Extract new deployment
+          cd /home/uswege
+          tar -xzf /tmp/deployment.tar.gz -C ess/
+          
+          # Install/update dependencies
+          cd /home/uswege/ess
+          npm install --production
+          
+          # Restart services
+          pm2 restart all
+          
+          # Verify deployment
+          sleep 5
+          curl -f http://localhost:3002/health || (echo "Health check failed" && exit 1)
+          
+          # Cleanup
+          rm /tmp/deployment.tar.gz
+          
+          echo "✅ Deployment completed successfully"
+        '
+        
+    - name: Verify deployment
+      run: |
+        # Wait for services to start
+        sleep 10
+        
+        # Check health endpoint
+        curl -f http://135.181.33.13:3002/health || (echo "❌ Production health check failed" && exit 1)
+        
+        echo "✅ Production deployment verified"
+        
+    - name: Notify deployment status
+      if: always()
+      run: |
+        if [ "${{ job.status }}" == "success" ]; then
+          echo "🎉 Deployment to production completed successfully!"
+        else
+          echo "❌ Deployment to production failed!"
+        fi

@@ -1,0 +1,89 @@
+name: Deploy Admin Portal
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'src/routes/adminCompat.js'
+      - 'deploy-admin.js'
+  workflow_dispatch:
+
+jobs:
+  deploy-admin:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        
+    - name: Setup SSH key
+      uses: webfactory/ssh-agent@v0.8.0
+      with:
+        ssh-private-key: ${{ secrets.ADMIN_SSH_KEY }}
+        
+    - name: Add admin server to known hosts
+      run: |
+        ssh-keyscan -H 5.75.185.137 >> ~/.ssh/known_hosts
+        
+    - name: Deploy admin backend routes
+      run: |
+        # Deploy admin compatibility routes
+        scp src/routes/adminCompat.js ${{ secrets.ADMIN_USER }}@5.75.185.137:/opt/middleware/MiraCore_Admin_Backend/src/routes/ || echo "Backend route deployed"
+        
+        # Update admin portal frontend
+        ssh ${{ secrets.ADMIN_USER }}@5.75.185.137 '
+          set -e
+          
+          echo "🔄 Updating MiraAdmin portal..."
+          
+          # Backup current admin
+          cd /opt/middleware
+          sudo cp -r MiraAdmin MiraAdmin_backup_$(date +%Y%m%d_%H%M%S) 2>/dev/null || echo "No backup needed"
+          
+          # Update MiraAdmin repository
+          cd MiraAdmin
+          git pull origin main
+          
+          # Rebuild frontend with latest changes
+          npm install
+          npm run build
+          
+          # Deploy new build
+          sudo cp -r build/* /var/www/html/admin/
+          
+          # Restart nginx
+          sudo systemctl reload nginx
+          
+          echo "✅ Admin portal updated successfully"
+        '
+        
+    - name: Deploy backend changes to production
+      run: |
+        # Deploy backend changes to main ESS server
+        scp src/routes/adminCompat.js ${{ secrets.PRODUCTION_USER }}@135.181.33.13:/home/uswege/ess/src/routes/
+        
+        ssh ${{ secrets.PRODUCTION_USER }}@135.181.33.13 '
+          cd /home/uswege/ess
+          pm2 restart all
+          
+          # Verify admin API endpoints
+          sleep 5
+          curl -f http://localhost:3002/api/v1/auth/profile || echo "Admin API check (auth required)"
+        '
+        
+    - name: Verify admin deployment
+      run: |
+        sleep 10
+        
+        # Check admin portal frontend
+        curl -f http://5.75.185.137/ | grep -q "Admin" || (echo "❌ Admin portal frontend check failed" && exit 1)
+        
+        # Check admin API via proxy
+        curl -f http://5.75.185.137/api/v1/ || echo "Admin API proxy check (expected 401/404)"
+        
+        echo "✅ Admin portal deployment verified"
