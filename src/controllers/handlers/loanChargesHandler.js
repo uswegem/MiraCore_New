@@ -13,8 +13,9 @@ const loanUtils = require(loanUtilsPath);
 
 const handleLoanChargesRequest = async (parsedData, res) => {
     try {
-        logger.info('Processing LOAN_CHARGES_REQUEST...');
         const header = parsedData.Document.Data.Header;
+        const messageType = header.MessageType;
+        logger.info(`Processing ${messageType}...`);
         const messageDetails = parsedData.Document.Data.MessageDetails;
 
         // Input validation - handle optional fields
@@ -161,15 +162,22 @@ const handleLoanChargesRequest = async (parsedData, res) => {
         const netLoanAmount = eligibleAmount - totalDeductions;
         const totalAmountToPay = eligibleAmount + totalInterestRateAmount;
 
-        // Prepare response
+        // Prepare response - dynamic response type based on request type
+        const responseType = messageType === 'LOAN_RESTRUCTURE_AFFORDABILITY_REQUEST' 
+            ? 'LOAN_RESTRUCTURE_AFFORDABILITY_RESPONSE' 
+            : 'LOAN_CHARGES_RESPONSE';
+        const msgIdPrefix = messageType === 'LOAN_RESTRUCTURE_AFFORDABILITY_REQUEST'
+            ? 'LOAN_RESTRUCTURE_AFFORDABILITY_RESPONSE'
+            : 'LOAN_CHARGES_RESPONSE';
+            
         const responseData = {
             Data: {
                 Header: {
                     "Sender": process.env.FSP_NAME || "ZE DONE",
                     "Receiver": "ESS_UTUMISHI",
                     "FSPCode": header.FSPCode,
-                    "MsgId": getMessageId("LOAN_CHARGES_RESPONSE"),
-                    "MessageType": "LOAN_CHARGES_RESPONSE"
+                    "MsgId": getMessageId(msgIdPrefix),
+                    "MessageType": responseType
                 },
                 MessageDetails: {
                     "DesiredDeductibleAmount": monthlyReturnAmount.toFixed(2),

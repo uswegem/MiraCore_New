@@ -211,6 +211,9 @@ const LoanCalculate = async (data) => {
         logger.info(`Desirable EMI: ${desirableEMI}`);
         logger.info(`Calculated Tenure: ${calculatedTenure}`);
 
+        // Initialize loan amount with requested amount
+        let loanAmount = requestedAmount || 0;
+
         // Save initial request to database
         // Validate final loan amount before saving
         if (loanAmount < LOAN_CONSTANTS.MIN_LOAN_AMOUNT) {
