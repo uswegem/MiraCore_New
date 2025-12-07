@@ -19,7 +19,7 @@ class MifosErrorHandler {
             
             // Loan errors
             'LOAN_NOT_FOUND': { code: 404, type: 'loan', retry: false },
-            'LOAN_ALREADY_EXISTS': { code: 409, type: loan', retry: false },
+            'LOAN_ALREADY_EXISTS': { code: 409, type: 'loan', retry: false },
             'INSUFFICIENT_BALANCE': { code: 400, type: 'business', retry: false },
             'LOAN_NOT_ACTIVE': { code: 400, type: 'business', retry: false },
             

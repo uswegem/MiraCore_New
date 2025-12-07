@@ -6,20 +6,14 @@ const fs = require('fs')
 const https = require('https');
 
 // Import enhanced MIFOS services
-const MifosAuthManager = require('./mifosAuthManager');
-const MifosHealthMonitor = require('./mifosHealthMonitor');
-const MifosErrorHandler = require('./mifosErrorHandler');
-const MifosRequestManager = require('./mifosRequestManager');
+const authManager = require('./mifosAuthManager');
+const healthMonitor = require('./mifosHealthMonitor');
+const errorHandler = require('./mifosErrorHandler');
+const requestManager = require('./mifosRequestManager');
 
 const CBS_MAKER_USERNAME = process.env.CBS_MAKER_USERNAME;
 const CBS_MAKER_PASSWORD = process.env.CBS_MAKER_PASSWORD;
 const CBS_Tenant = process.env.CBS_Tenant;
-
-// Initialize enhanced MIFOS services
-const authManager = new MifosAuthManager();
-const healthMonitor = new MifosHealthMonitor();
-const errorHandler = new MifosErrorHandler();
-const requestManager = new MifosRequestManager();
 
 
 // Connection pool configuration for better performance
