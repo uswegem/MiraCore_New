@@ -1,6 +1,8 @@
 const logger = require('../utils/logger');
 const LoanMapping = require('../models/LoanMapping');
 const ClientService = require('./clientService');
+const DBTransaction = require('../utils/dbTransaction');
+const healthMonitor = require('../utils/loanMappingHealthMonitor');
 
 class LoanMappingService {
   /**
@@ -24,7 +26,7 @@ class LoanMappingService {
    * Create or update loan mapping with client data from LOAN_OFFER_REQUEST
    */
   static async createOrUpdateWithClientData(applicationNumber, checkNumber, clientData, loanData, employmentData) {
-    try {
+    return await DBTransaction.executeWithRetry(async (session) => {
       const filter = {
         essApplicationNumber: applicationNumber
       };
@@ -32,15 +34,16 @@ class LoanMappingService {
       const update = {
         essApplicationNumber: applicationNumber,
         essCheckNumber: checkNumber,
-        productCode: loanData.productCode,
+        productCode: loanData.productCode || "17",
         requestedAmount: loanData.requestedAmount,
-        tenure: loanData.tenure,
+        tenure: loanData.tenure || 24,
         status: 'OFFER_SUBMITTED',
         metadata: {
           clientData: clientData,
           loanData: loanData,
           employmentData: employmentData,
-          offerReceivedAt: new Date().toISOString()
+          offerReceivedAt: new Date().toISOString(),
+          updatedVia: 'createOrUpdateWithClientData'
         },
         updatedAt: new Date()
       };
@@ -48,45 +51,108 @@ class LoanMappingService {
       const options = {
         new: true,
         upsert: true,
-        setDefaultsOnInsert: true
+        setDefaultsOnInsert: true,
+        session: session
       };
 
       const mapping = await LoanMapping.findOneAndUpdate(filter, update, options);
-      logger.info(`✅ Stored client data for application: ${applicationNumber}`);
+      logger.info(`✅ Stored client data for application: ${applicationNumber}`, {
+        mappingId: mapping._id,
+        isNew: !mapping.createdAt || mapping.createdAt === mapping.updatedAt
+      });
       return mapping;
-    } catch (error) {
-      logger.error('❌ Error storing client data:', error);
+    }, {
+      maxRetries: 3,
+      baseDelay: 1000
+    }).catch(error => {
+      logger.error('❌ Error storing client data:', {
+        applicationNumber,
+        checkNumber,
+        error: error.message,
+        stack: error.stack,
+        errorType: error.name
+      });
       throw error;
-    }
+    });
   }
 
   /**
    * Create initial loan mapping when LOAN_INITIAL_APPROVAL_NOTIFICATION is sent
    */
   static async createInitialMapping(essApplicationNumber, essCheckNumber, fspReferenceNumber, loanDetails) {
-    try {
+    const startTime = Date.now();
+    
+    return await DBTransaction.executeWithRetry(async (session) => {
+      // Validate required parameters
+      if (!essApplicationNumber) {
+        throw new Error('ESS Application Number is required');
+      }
+      if (!fspReferenceNumber) {
+        throw new Error('FSP Reference Number is required');
+      }
+      if (!loanDetails || !loanDetails.requestedAmount) {
+        throw new Error('Loan details with requested amount are required');
+      }
+
+      // Check if mapping already exists to prevent duplicates
+      const existingMapping = await LoanMapping.findOne({
+        essApplicationNumber
+      }).session(session);
+
+      if (existingMapping) {
+        logger.warn(`⚠️ Loan mapping already exists for application: ${essApplicationNumber}`, {
+          existingId: existingMapping._id,
+          existingStatus: existingMapping.status
+        });
+        return existingMapping;
+      }
+
       const mapping = new LoanMapping({
         essApplicationNumber,
         essCheckNumber,
         fspReferenceNumber,
-        productCode: loanDetails.productCode,
+        essLoanNumberAlias: loanDetails.essLoanNumberAlias, // Properly set from loanDetails
+        productCode: loanDetails.productCode || "17", // Default product code if not provided
         requestedAmount: loanDetails.requestedAmount,
-        tenure: loanDetails.tenure,
+        tenure: loanDetails.tenure || 24, // Default tenure if not provided
         mifosClientId: loanDetails.clientId,
         mifosLoanId: loanDetails.loanId,
-        status: 'INITIAL_OFFER',
+        status: loanDetails.status || 'INITIAL_OFFER', // Use provided status or default
         metadata: {
-          initialOfferDetails: loanDetails
+          initialOfferDetails: loanDetails,
+          createdVia: 'createInitialMapping',
+          createdAt: new Date().toISOString()
         }
       });
 
-      await mapping.save();
-      logger.info(`✅ Created initial loan mapping for application: ${essApplicationNumber}, check: ${essCheckNumber}`);
+      await mapping.save({ session });
+      const duration = Date.now() - startTime;
+      healthMonitor.recordOperation(true, duration);
+      
+      logger.info(`✅ Created initial loan mapping for application: ${essApplicationNumber}, check: ${essCheckNumber}, status: ${mapping.status}`, {
+        mappingId: mapping._id,
+        duration: `${duration}ms`
+      });
       return mapping;
-    } catch (error) {
-      logger.error('❌ Error creating initial loan mapping:', error);
+    }, {
+      maxRetries: 3,
+      baseDelay: 1000,
+      onRetry: () => healthMonitor.recordRetry()
+    }).catch(error => {
+      const duration = Date.now() - startTime;
+      healthMonitor.recordOperation(false, duration, error);
+      
+      logger.error('❌ Error creating initial loan mapping:', {
+        essApplicationNumber,
+        essCheckNumber,
+        fspReferenceNumber,
+        error: error.message,
+        stack: error.stack,
+        errorType: error.name,
+        duration: `${duration}ms`
+      });
       throw error;
-    }
+    });
   }
 
   /**

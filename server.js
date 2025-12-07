@@ -189,8 +189,9 @@ app.use('/api/v1/audit', auditRoutes);
 // Admin compatibility routes for MiraAdmin frontend
 app.use('/api/v1', adminCompatRoutes);
 
-// Admin compatibility routes for MiraAdmin frontend
-app.use('/api/v1', adminCompatRoutes);
+// MIFOS administration and monitoring routes
+const mifosAdminRoutes = require('./src/routes/mifosAdmin');
+app.use('/api/v1/mifos', mifosAdminRoutes);
 
 // Message management routes (protected) - Temporarily commented out
 // app.use('/api/v1/messages', messageRoutes);

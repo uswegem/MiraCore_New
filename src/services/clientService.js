@@ -1,6 +1,6 @@
 const logger = require('../utils/logger');
 const { API_ENDPOINTS } = require('./cbs.endpoints');
-const { maker: cbsApi } = require('./cbs.api');
+const { maker: cbsApi, authManager, healthMonitor, errorHandler, requestManager } = require('./cbs.api');
 
 /**
  * Service for handling client operations with CBS

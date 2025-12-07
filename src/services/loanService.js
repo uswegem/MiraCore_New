@@ -14,6 +14,9 @@ const {
   LOAN_CONSTANTS
 } = require("../utils/loanUtils");
 
+// Enhanced CBS services
+const { authManager, healthMonitor, errorHandler, requestManager } = api;
+
 // Helper functions for comprehensive affordability calculation
 async function searchClientByExternalId(externalId) {
     try {

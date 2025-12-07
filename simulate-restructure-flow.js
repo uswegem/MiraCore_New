@@ -63,7 +63,56 @@ async function simulateLoanRestructureFlow() {
         console.log('\n📤 RESTRUCTURE REQUEST XML:');
         console.log(signedRestructureRequest);
 
-        console.log('\n✅ Loan restructure simulation completed successfully!');
+        // Step 2: LOAN_RESTRUCTURE_AFFORDABILITY_REQUEST
+        console.log('\n📋 STEP 2: LOAN_RESTRUCTURE_AFFORDABILITY_REQUEST');
+        console.log('--------------------------------------------------');
+        const affordabilityRequest = {
+            Document: {
+                Data: {
+                    Header: {
+                        Sender: 'ESS_UTUMISHI',
+                        Receiver: 'ZE DONE',
+                        FSPCode: 'FL8090',
+                        MsgId: `RESTRUCTURE_AFF_${Date.now()}`,
+                        MessageType: 'LOAN_RESTRUCTURE_AFFORDABILITY_REQUEST'
+                    },
+                    MessageDetails: {
+                        CheckNumber: restructureRequest.Document.Data.MessageDetails.CheckNumber,
+                        DesignationCode: 'DG001',
+                        DesignationName: 'Senior Officer',
+                        BasicSalary: '2500000',
+                        NetSalary: '1800000',
+                        OneThirdAmount: '833333',
+                        RequestedAmount: restructureRequest.Document.Data.MessageDetails.NewLoanAmount,
+                        DeductibleAmount: '600000',
+                        DesiredDeductibleAmount: '500000',
+                        RetirementDate: '2040-12-31',
+                        TermsOfEmployment: 'Permanent',
+                        Tenure: restructureRequest.Document.Data.MessageDetails.Tenure,
+                        ProductCode: restructureRequest.Document.Data.MessageDetails.ProductCode,
+                        VoteCode: 'V001',
+                        TotalEmployeeDeduction: '200000',
+                        JobClassCode: 'JC001',
+                        LoanNumber: restructureRequest.Document.Data.MessageDetails.LoanNumber
+                    }
+                }
+            }
+        };
+
+        // Sign the affordability request
+        const signedAffordabilityRequest = digitalSignature.createSignedXML(affordabilityRequest.Document.Data);
+        console.log('\n📤 AFFORDABILITY REQUEST XML:');
+        console.log(signedAffordabilityRequest);
+
+        console.log('\n📊 Affordability Request Details:');
+        console.log('  Check Number:', affordabilityRequest.Document.Data.MessageDetails.CheckNumber);
+        console.log('  Basic Salary:', affordabilityRequest.Document.Data.MessageDetails.BasicSalary);
+        console.log('  Net Salary:', affordabilityRequest.Document.Data.MessageDetails.NetSalary);
+        console.log('  Requested Amount:', affordabilityRequest.Document.Data.MessageDetails.RequestedAmount);
+        console.log('  Desired Deductible:', affordabilityRequest.Document.Data.MessageDetails.DesiredDeductibleAmount);
+        console.log('  Tenure:', affordabilityRequest.Document.Data.MessageDetails.Tenure, 'months');
+
+        console.log('\n✅ Loan restructure simulation with affordability check completed successfully!');
         
     } catch (error) {
         console.error('❌ Error during loan restructure flow:', error);

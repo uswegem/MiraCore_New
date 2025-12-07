@@ -10,7 +10,12 @@
     "test": "jest --runInBand",
     "deploy": "./scripts/deploy-production.sh",
     "deploy:admin": "node deploy-admin.js",
-    "deploy:verify": "curl -f http://135.181.33.13:3002/health && curl -f http://5.75.185.137/"
+    "deploy:verify": "curl -f http://135.181.33.13:3002/health && curl -f http://5.75.185.137/",
+    "mifos:test": "node test-enhanced-mifos-integration.js",
+    "mifos:migrate": "node migrate-mifos-enhancements.js",
+    "mifos:health": "curl -s http://localhost:3002/api/v1/mifos/health | json_pp",
+    "mifos:diagnostics": "curl -s http://localhost:3002/api/v1/mifos/diagnostics | json_pp",
+    "test:restructure:affordability": "node test-loan-restructure-affordability.js"
   },
   "dependencies": {
     "async": "^3.2.6",

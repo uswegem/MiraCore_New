@@ -15,6 +15,9 @@ const { AuditLog } = require('../models/AuditLog');
 const { getMessageId } = require('../utils/messageIdGenerator');
 const LOAN_CONSTANTS = require('../utils/loanConstants');
 const LoanCalculations = require('../utils/loanCalculations');
+
+// Enhanced CBS services
+const { authManager, healthMonitor, errorHandler, requestManager } = cbsApi;
 const { generateLoanNumber, generateFSPReferenceNumber } = require('../utils/loanUtils');
 
 const parser = new xml2js.Parser({
@@ -93,8 +96,10 @@ exports.processRequest = async (req, res) => {
                         return await handleLoanTakeoverOfferRequest(parsedData, res);
                     case 'TAKEOVER_PAYMENT_NOTIFICATION':
                         return await handleTakeoverPaymentNotification(parsedData, res);
+                    case 'LOAN_RESTRUCTURE_AFFORDABILITY_REQUEST':
+                        return await handleLoanRestructureAffordabilityRequest(parsedData, res);
                     default:
-                        return await forwardToESS(parsedData, res, contentType);
+                        return await forwardToThirdParty(parsedData.Document.Data, res, contentType);
                 }
             } catch (parseError) {
                 return sendErrorResponse(res, '8001', 'Invalid XML format: ' + parseError.message, 'xml', parsedData);
@@ -461,12 +466,21 @@ const handleTopUpOfferRequest = async (parsedData, res) => {
                 
                 // Create/update loan mapping with approval details
                 try {
-                    await LoanMappingService.createInitialMapping(
+                    logger.info('🔄 Creating initial loan mapping...', {
+                        applicationNumber: messageDetails.ApplicationNumber,
+                        checkNumber: messageDetails.CheckNumber,
+                        fspReferenceNumber: fspReferenceNumber,
+                        loanNumber: loanNumber,
+                        requestedAmount: loanAmount
+                    });
+
+                    const mapping = await LoanMappingService.createInitialMapping(
                         messageDetails.ApplicationNumber,
                         messageDetails.CheckNumber,
                         fspReferenceNumber,
                         {
                             essLoanNumberAlias: loanNumber,
+                            productCode: messageDetails.ProductCode || "17",
                             requestedAmount: loanAmount,
                             totalAmountToPay: totalAmountToPay,
                             interestRate: interestRate,
@@ -475,9 +489,18 @@ const handleTopUpOfferRequest = async (parsedData, res) => {
                             status: 'INITIAL_APPROVAL_SENT'
                         }
                     );
-                    logger.info('✅ Created loan mapping for top-up offer');
+                    logger.info('✅ Created loan mapping for top-up offer', { mappingId: mapping._id });
                 } catch (mappingError) {
-                    logger.error('❌ Error creating loan mapping for top-up:', mappingError);
+                    logger.error('❌ Critical Error: Failed to create loan mapping for top-up offer', {
+                        applicationNumber: messageDetails.ApplicationNumber,
+                        error: mappingError.message,
+                        stack: mappingError.stack,
+                        errorType: mappingError.name
+                    });
+                    
+                    // Log the error but don't fail the callback - UTUMISHI already received approval
+                    // This ensures system resilience even if database operations fail
+                    logger.warn('⚠️ Continuing with callback despite mapping error - manual intervention may be required');
                 }
                 
                 const approvalResponseData = {
@@ -1347,10 +1370,140 @@ const handleLoanFinalApproval = async (parsedData, res) => {
     }
 };
 
+// Handle LOAN_RESTRUCTURE_AFFORDABILITY_REQUEST
+const handleLoanRestructureAffordabilityRequest = async (parsedData, res) => {
+    let responseSent = false;
+    
+    try {
+        const data = parsedData.Document.Data;
+        const header = data.Header;
+        const messageDetails = data.MessageDetails;
+
+        logger.info('🔄 Processing LOAN_RESTRUCTURE_AFFORDABILITY_REQUEST:', {
+            checkNumber: messageDetails.CheckNumber,
+            loanNumber: messageDetails.LoanNumber,
+            requestedAmount: messageDetails.RequestedAmount,
+            desiredDeductibleAmount: messageDetails.DesiredDeductibleAmount
+        });
+
+        // Extract request parameters
+        const requestParams = {
+            checkNumber: messageDetails.CheckNumber,
+            loanNumber: messageDetails.LoanNumber,
+            designationCode: messageDetails.DesignationCode,
+            designationName: messageDetails.DesignationName,
+            basicSalary: parseFloat(messageDetails.BasicSalary || 0),
+            netSalary: parseFloat(messageDetails.NetSalary || 0),
+            oneThirdAmount: parseFloat(messageDetails.OneThirdAmount || 0),
+            requestedAmount: parseFloat(messageDetails.RequestedAmount || 0),
+            deductibleAmount: parseFloat(messageDetails.DeductibleAmount || 0),
+            desiredDeductibleAmount: parseFloat(messageDetails.DesiredDeductibleAmount || 0),
+            retirementDate: messageDetails.RetirementDate,
+            termsOfEmployment: messageDetails.TermsOfEmployment,
+            tenure: parseInt(messageDetails.Tenure || 0),
+            productCode: messageDetails.ProductCode,
+            voteCode: messageDetails.VoteCode,
+            totalEmployeeDeduction: parseFloat(messageDetails.TotalEmployeeDeduction || 0),
+            jobClassCode: messageDetails.JobClassCode
+        };
+
+        // Use existing loan calculator for restructure affordability
+        const affordabilityResult = await LoanCalculate(requestParams);
+
+        if (!affordabilityResult.success) {
+            throw new Error(`Affordability calculation failed: ${affordabilityResult.message}`);
+        }
+
+        const calculationData = affordabilityResult.data;
+
+        // Prepare the response data structure
+        const responseData = {
+            Data: {
+                Header: {
+                    "Sender": process.env.FSP_NAME || "ZE DONE",
+                    "Receiver": "ESS_UTUMISHI",
+                    "FSPCode": header.FSPCode,
+                    "MsgId": getMessageId("LOAN_RESTRUCTURE_AFFORDABILITY_RESPONSE"),
+                    "MessageType": "LOAN_RESTRUCTURE_AFFORDABILITY_RESPONSE"
+                },
+                MessageDetails: {
+                    "DesiredDeductibleAmount": requestParams.desiredDeductibleAmount.toFixed(2),
+                    "TotalInsurance": calculationData.insurance || "0.00",
+                    "TotalProcessingFees": calculationData.processingFee || "0.00", 
+                    "TotalInterestRateAmount": calculationData.totalInterest || "0.00",
+                    "OtherCharges": calculationData.otherCharges || "0.00",
+                    "NetLoanAmount": calculationData.netLoanAmount || requestParams.requestedAmount.toFixed(2),
+                    "TotalAmountToPay": calculationData.totalAmountToPay || "0.00",
+                    "Tenure": requestParams.tenure.toString(),
+                    "EligibleAmount": calculationData.eligibleAmount || calculationData.maxLoanAmount || "0.00",
+                    "MonthlyReturnAmount": calculationData.monthlyInstallment || calculationData.emi || "0.00"
+                }
+            }
+        };
+
+        logger.info('✅ Loan restructure affordability calculated:', {
+            checkNumber: requestParams.checkNumber,
+            eligibleAmount: responseData.Data.MessageDetails.EligibleAmount,
+            monthlyReturn: responseData.Data.MessageDetails.MonthlyReturnAmount,
+            totalToPay: responseData.Data.MessageDetails.TotalAmountToPay
+        });
+
+        // Create signed XML response
+        const signedResponse = digitalSignature.createSignedXML(responseData.Data);
+        
+        // Send response
+        res.set('Content-Type', 'application/xml');
+        res.status(200).send(signedResponse);
+        responseSent = true;
+
+        // Log the response for audit
+        await AuditLog.create({
+            messageType: 'LOAN_RESTRUCTURE_AFFORDABILITY_RESPONSE',
+            direction: 'outgoing',
+            requestData: data,
+            responseData: responseData.Data,
+            status: 'success',
+            checkNumber: requestParams.checkNumber,
+            loanNumber: requestParams.loanNumber,
+            requestedAmount: requestParams.requestedAmount,
+            calculatedAmount: parseFloat(responseData.Data.MessageDetails.EligibleAmount)
+        });
+
+    } catch (error) {
+        logger.error('❌ Error processing LOAN_RESTRUCTURE_AFFORDABILITY_REQUEST:', error);
+        
+        if (!responseSent) {
+            // Send error response
+            const errorResponseData = {
+                Data: {
+                    Header: {
+                        "Sender": process.env.FSP_NAME || "ZE DONE",
+                        "Receiver": "ESS_UTUMISHI", 
+                        "FSPCode": parsedData.Document.Data.Header.FSPCode,
+                        "MsgId": getMessageId("LOAN_RESTRUCTURE_AFFORDABILITY_RESPONSE"),
+                        "MessageType": "LOAN_RESTRUCTURE_AFFORDABILITY_RESPONSE"
+                    },
+                    MessageDetails: {
+                        "ResponseCode": "8005",
+                        "Description": "Affordability calculation failed: " + error.message,
+                        "OriginalMsgId": parsedData.Document.Data.Header.MsgId,
+                        "OriginalMessageType": parsedData.Document.Data.Header.MessageType
+                    }
+                }
+            };
+            
+            const signedErrorResponse = digitalSignature.createSignedXML(errorResponseData.Data);
+            res.set('Content-Type', 'application/xml');
+            res.status(200).send(signedErrorResponse);
+        }
+    }
+};
+
 // Export each handler
 exports.handleMifosWebhook = handleMifosWebhook;
 exports.handleLoanChargesRequest = handleLoanChargesRequest;
 exports.handleLoanOfferRequest = handleLoanOfferRequest;
+exports.handleLoanRestructureAffordabilityRequest = handleLoanRestructureAffordabilityRequest;
 // Add exports for other handlers as they are extracted
 // exports.handleTopUpPayOffBalanceRequest = handleTopUpPayOffBalanceRequest;
 // etc.
