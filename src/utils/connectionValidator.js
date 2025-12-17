@@ -1,6 +1,5 @@
 const axios = require('axios');
 const https = require('https');
-const keepAliveService = require('./keepAliveService');
 
 /**
  * Utility for ensuring Utumishi connectivity before making requests
@@ -15,11 +14,9 @@ class ConnectionValidator {
     this.axiosInstance = axios.create({
       timeout: this.timeout,
       httpsAgent: new https.Agent({
-        keepAlive: true,
         rejectUnauthorized: false
       }),
       headers: {
-        'Connection': 'keep-alive',
         'User-Agent': 'ESS-ConnectionValidator/1.0'
       }
     });
@@ -63,23 +60,7 @@ class ConnectionValidator {
     
     console.log('🔄 Connection appears down, attempting to re-establish...');
     
-    // Try to trigger keep-alive ping to re-establish connection
-    try {
-      await keepAliveService.ping();
-      
-      // Wait a moment and test again
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      const isValidAfterPing = await this.validateConnection();
-      if (isValidAfterPing) {
-        console.log('✅ Connection re-established via keep-alive');
-        return true;
-      }
-    } catch (error) {
-      console.log(`⚠️ Keep-alive ping failed: ${error.message}`);
-    }
-    
-    // If still failing, try manual IPSec reconnection
+    // Try manual IPSec reconnection
     console.log('🔧 Attempting IPSec tunnel reconnection...');
     
     try {
@@ -190,13 +171,11 @@ class ConnectionValidator {
    */
   async getConnectionStatus() {
     const isValid = await this.validateConnection();
-    const keepAliveStatus = keepAliveService.getStatus();
     
     return {
       isConnected: isValid,
       endpoint: this.utumishiEndpoint,
-      lastValidated: new Date().toISOString(),
-      keepAliveService: keepAliveStatus
+      lastValidated: new Date().toISOString()
     };
   }
 }

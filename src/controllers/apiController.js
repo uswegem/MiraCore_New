@@ -20,6 +20,9 @@ const LoanCalculations = require('../utils/loanCalculations');
 const { authManager, healthMonitor, errorHandler, requestManager } = cbsApi;
 const { generateLoanNumber, generateFSPReferenceNumber } = require('../utils/loanUtils');
 
+// Import metrics tracking
+const { trackLoanMessage, trackLoanError } = require('../middleware/metricsMiddleware');
+
 const parser = new xml2js.Parser({
     explicitArray: false,
     mergeAttrs: true,
@@ -36,6 +39,7 @@ const builder = new xml2js.Builder({
 const handleMifosWebhook = require('./handlers/mifosWebhookHandler');
 const handleLoanChargesRequest = require('./handlers/loanChargesHandler');
 const handleLoanOfferRequest = require('./handlers/loanOfferHandler');
+const handleLoanRestructureRequest = require('./handlers/loanRestructureHandler');
 // Add other handlers as they are extracted
 // const handleTopUpPayOffBalanceRequest = require('./handlers/topUpPayOffBalanceHandler');
 // etc.
@@ -77,26 +81,44 @@ exports.processRequest = async (req, res) => {
                 logger.info('DEBUG: Parsed <Sender> from request:', debugSender);
                 const TypeMessage = parsedData?.Document?.Data.Header?.MessageType;
                 
+                // Track incoming message
+                if (TypeMessage) {
+                    trackLoanMessage(TypeMessage, 'received');
+                }
+                
                 switch (TypeMessage) {
                     case 'LOAN_CHARGES_REQUEST':
+                        trackLoanMessage('LOAN_CHARGES_REQUEST', 'processing');
                         return await handleLoanChargesRequest(parsedData, res);
                     case 'LOAN_RESTRUCTURE_AFFORDABILITY_REQUEST':
+                        trackLoanMessage('LOAN_RESTRUCTURE_AFFORDABILITY_REQUEST', 'processing');
                         return await handleLoanChargesRequest(parsedData, res);
+                    case 'LOAN_RESTRUCTURE_REQUEST':
+                        trackLoanMessage('LOAN_RESTRUCTURE_REQUEST', 'processing');
+                        return await handleLoanRestructureRequest(parsedData, res);
                     case 'LOAN_OFFER_REQUEST':
+                        trackLoanMessage('LOAN_OFFER_REQUEST', 'processing');
                         return await handleLoanOfferRequest(parsedData, res);
                     case 'LOAN_FINAL_APPROVAL_NOTIFICATION':
+                        trackLoanMessage('LOAN_FINAL_APPROVAL_NOTIFICATION', 'processing');
                         return await handleLoanFinalApproval(parsedData, res);
                     case 'LOAN_CANCELLATION_NOTIFICATION':
+                        trackLoanMessage('LOAN_CANCELLATION_NOTIFICATION', 'processing');
                         return await handleLoanCancellation(parsedData, res);
                     case 'TOP_UP_PAY_0FF_BALANCE_REQUEST':
+                        trackLoanMessage('TOP_UP_PAY_0FF_BALANCE_REQUEST', 'processing');
                         return await handleTopUpPayOffBalanceRequest(parsedData, res);
                     case 'TOP_UP_OFFER_REQUEST':
+                        trackLoanMessage('TOP_UP_OFFER_REQUEST', 'processing');
                         return await handleTopUpOfferRequest(parsedData, res);
                     case 'TAKEOVER_PAY_OFF_BALANCE_REQUEST':
+                        trackLoanMessage('TAKEOVER_PAY_OFF_BALANCE_REQUEST', 'processing');
                         return await handleTakeoverPayOffBalanceRequest(parsedData, res);
                     case 'LOAN_TAKEOVER_OFFER_REQUEST':
+                        trackLoanMessage('LOAN_TAKEOVER_OFFER_REQUEST', 'processing');
                         return await handleLoanTakeoverOfferRequest(parsedData, res);
                     case 'TAKEOVER_PAYMENT_NOTIFICATION':
+                        trackLoanMessage('TAKEOVER_PAYMENT_NOTIFICATION', 'processing');
                         return await handleTakeoverPaymentNotification(parsedData, res);
 
                     default:
@@ -110,6 +132,7 @@ exports.processRequest = async (req, res) => {
         }
     } catch (error) {
         logger.error('Controller error:', error);
+        trackLoanError(error.message, 'controller');
         const contentType = req.get('Content-Type');
         return sendErrorResponse(res, '8011', 'Error processing request: ' + error.message, contentType.includes('json') ? 'json' : 'xml', null);
     }
@@ -1377,6 +1400,7 @@ const handleLoanFinalApproval = async (parsedData, res) => {
 exports.handleMifosWebhook = handleMifosWebhook;
 exports.handleLoanChargesRequest = handleLoanChargesRequest;
 exports.handleLoanOfferRequest = handleLoanOfferRequest;
+exports.handleLoanRestructureRequest = handleLoanRestructureRequest;
 // Add exports for other handlers as they are extracted
 // exports.handleTopUpPayOffBalanceRequest = handleTopUpPayOffBalanceRequest;
 // etc.

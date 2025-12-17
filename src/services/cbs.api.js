@@ -5,16 +5,9 @@ dotenv.config();
 const fs = require('fs')
 const https = require('https');
 
-// Import enhanced MIFOS services - temporarily disabled for deployment
-// const authManager = require('./mifosAuthManager');
-// const healthMonitor = require('./mifosHealthMonitor');
-// const errorHandler = require('./mifosErrorHandler');
-// const requestManager = require('./mifosRequestManager');
-
 const CBS_MAKER_USERNAME = process.env.CBS_MAKER_USERNAME;
 const CBS_MAKER_PASSWORD = process.env.CBS_MAKER_PASSWORD;
 const CBS_Tenant = process.env.CBS_Tenant;
-
 
 // Connection pool configuration for better performance
 const httpsAgent = new https.Agent({
@@ -24,31 +17,27 @@ const httpsAgent = new https.Agent({
   freeSocketTimeout: 30000
 });
 
-const api = axios.create({
+// Circuit breaker state
+const circuitBreakerState = {
+  isOpen: false,
+  failures: 0,
+  lastFailure: null
+};
+
+const maker = axios.create({
   baseURL: process.env.CBS_BASE_URL,
-  timeout: parseInt(process.env.CBS_TIMEOUT || '30000'), // 30s default, configurable
-  httpsAgent: httpsAgent,
+  timeout: 60000,
+  httpsAgent,
   headers: {
-    "Content-Type": "application/json",
-    "fineract-platform-tenantid": CBS_Tenant
-  },
-  auth: {
-    username: CBS_MAKER_USERNAME,
-    password: CBS_MAKER_PASSWORD
-  },
-  // Retry configuration
-  retry: 3,
-  retryDelay: (retryCount) => {
-    return Math.pow(2, retryCount) * 1000; // Exponential backoff
+    'Content-Type': 'application/json',
+    'Mifos-Platform-TenantId': CBS_Tenant
   }
 });
 
-// Request interceptor with enhanced auth and rate limiting
-api.interceptors.request.use(
+maker.interceptors.request.use(
   async (config) => {
     try {
-      // Apply rate limiting
-      // Get enhanced auth headers
+      // Get basic auth headers
       const authHeaders = { 'Authorization': `Basic ${Buffer.from(`${CBS_MAKER_USERNAME}:${CBS_MAKER_PASSWORD}`).toString('base64')}` };
       if (authHeaders.Authorization) {
         config.headers.Authorization = authHeaders.Authorization;
@@ -57,185 +46,87 @@ api.interceptors.request.use(
       // Log request with correlation ID
       const correlationId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       config.headers['X-Correlation-ID'] = correlationId;
-        
-        logger.info('ðŸ“¤ CBS API Request:', {
-          correlationId,
-          url: config.url,
-          method: config.method,
-          headers: {
-            ...config.headers,
-            Authorization: '[REDACTED]' // Don't log auth header
-          },
-          data: config.data
-        });
+      
+      logger.info('í³¤ CBS API Request:', {
+        correlationId,
+        url: config.url,
+        method: config.method,
+        headers: {
+          ...config.headers,
+          Authorization: '[REDACTED]'
+        }
       });
       
       return config;
     } catch (error) {
-      logger.error('âŒ Request interceptor error:', error.message);
-      return Promise.reject(error);
+      logger.error('Request interceptor error:', error);
+      throw error;
     }
   },
-  (error) => Promise.reject(error)
-);
-
-
-// Circuit breaker state management
-let circuitBreakerState = {
-  isOpen: false,
-  failureCount: 0,
-  lastFailureTime: null,
-  threshold: 5,
-  timeout: 60000 // 1 minute
-};
-
-// Response interceptor with enhanced error handling and monitoring
-api.interceptors.response.use(
-  (response) => {
-    // Reset circuit breaker on success
-    circuitBreakerState.failureCount = 0;
-    circuitBreakerState.isOpen = false;
-    
-    // Record successful request metrics
-    const responseTime = Date.now() - (response.config.metadata?.startTime || Date.now());
-    // healthMonitor.recordRequest('success', responseTime, response.config.url);
-    
-    const correlationId = response.config.headers['X-Correlation-ID'];
-    logger.info('ðŸ“¥ CBS API Response:', {
-      correlationId,
-      url: response.config.url,
-      status: response.status,
-      responseTime: `${responseTime}ms`,
-      responseSize: JSON.stringify(response.data).length
-    });
-    return { status: true, message: 'Success', response: response.data }
-  },
-  async (error) => {
-    const config = error.config;
-    const correlationId = config?.headers?.['X-Correlation-ID'] || 'unknown';
-    
-    // Record failed request metrics
-    const responseTime = Date.now() - (config?.metadata?.startTime || Date.now());
-    // healthMonitor.recordRequest('error', responseTime, config?.url);
-    
-    // Circuit breaker logic
-    circuitBreakerState.failureCount++;
-    if (circuitBreakerState.failureCount >= circuitBreakerState.threshold) {
-      circuitBreakerState.isOpen = true;
-      circuitBreakerState.lastFailureTime = Date.now();
-      logger.error('ðŸš¨ CBS Circuit breaker OPEN - too many failures');
-    }
-    
-    // Enhanced error classification and retry logic
-    const errorInfo = { shouldRetry: error.code === 'ECONNRESET' || error.code === 'TIMEOUT', category: 'network' };
-    const shouldRetry = errorInfo.retryable &&
-                       config && !config.__isRetryRequest && (config.__retryCount || 0) < 3;
-    
-    if (shouldRetry) {
-      config.__retryCount = (config.__retryCount || 0) + 1;
-      config.__isRetryRequest = true;
-      
-      const delay = Math.min(1000 * Math.pow(2, config.__retryCount), 10000);
-      logger.warn(`ðŸ”„ Retrying CBS request (${config.__retryCount}/3) after ${delay}ms`, {
-        correlationId,
-        errorType: errorInfo.type,
-        url: config.url
-      });
-      
-      await new Promise(resolve => setTimeout(resolve, delay));
-      return api(config);
-    }
-    
-    // Enhanced error logging
-    logger.error('CBS API Error:', {
-      correlationId,
-      url: error.config?.url,
-      method: error.config?.method,
-      retryCount: config?.__retryCount || 0,
-      errorType: errorInfo.type
-    });
-    
-    if (error.response) {
-      return { status: false, message: errorInfo.message, response: error.response.data, correlationId }
-    }
-    return Promise.reject({ message: error.message, correlationId, errorType: errorInfo.type });
+  (error) => {
+    logger.error('Request interceptor rejection:', error);
+    return Promise.reject(error);
   }
 );
 
-
-// Create a separate instance for checker operations
-const checkerApi = axios.create({
-  baseURL: process.env.CBS_BASE_URL,
-  timeout: 10000,
-  headers: {
-    "Content-Type": "application/json",
-    "fineract-platform-tenantid": CBS_Tenant
+maker.interceptors.response.use(
+  (response) => {
+    const responseTime = response.config.metadata?.endTime - response.config.metadata?.startTime || 0;
+    logger.info('í³¥ CBS API Response:', {
+      correlationId: response.config.headers['X-Correlation-ID'],
+      status: response.status,
+      responseTime: `${responseTime}ms`,
+      url: response.config.url
+    });
+    return response;
   },
-  auth: {
-    username: process.env.CBS_CHECKER_USERNAME,
-    password: process.env.CBS_CHECKER_PASSWORD
+  (error) => {
+    const responseTime = error.config?.metadata?.endTime - error.config?.metadata?.startTime || 0;
+    
+    const errorInfo = { shouldRetry: error.code === 'ECONNRESET' || error.code === 'TIMEOUT', category: 'network' };
+    
+    if (errorInfo.shouldRetry && error.config && !error.config.__isRetryRequest) {
+      error.config.__retryCount = error.config.__retryCount || 0;
+      if (error.config.__retryCount < 3) {
+        error.config.__retryCount++;
+        error.config.__isRetryRequest = true;
+        
+        const delay = Math.min(1000 * Math.pow(2, error.config.__retryCount), 10000);
+        logger.warn(`Retrying CBS request (${error.config.__retryCount}/3) after ${delay}ms...`);
+        
+        return new Promise((resolve) => {
+          setTimeout(() => resolve(maker(error.config)), delay);
+        });
+      }
+    }
+    
+    logger.error('CBS API Error:', {
+      correlationId: error.config?.headers?.['X-Correlation-ID'],
+      url: error.config?.url,
+      status: error.response?.status,
+      message: error.message,
+      responseTime: `${responseTime}ms`
+    });
+    
+    return Promise.reject(error);
+  }
+);
+
+const checker = axios.create({
+  baseURL: process.env.CBS_BASE_URL,
+  timeout: 60000,
+  httpsAgent,
+  headers: {
+    'Content-Type': 'application/json',
+    'Mifos-Platform-TenantId': CBS_Tenant,
+    'Authorization': `Basic ${Buffer.from(`${process.env.CBS_CHECKER_USERNAME}:${process.env.CBS_CHECKER_PASSWORD}`).toString('base64')}`
   }
 });
 
-// Apply the same interceptors to checkerApi
-checkerApi.interceptors.request.use(
-  (config) => {
-    logger.info('ðŸ“¤ CBS Checker API Request:', {
-      url: config.url,
-      method: config.method,
-      headers: {
-        ...config.headers,
-        Authorization: '[REDACTED]' // Don't log auth header
-      },
-      data: config.data
-    });
-    return config;
-  },
-  (error) => Promise.reject(error)
-);
-
-checkerApi.interceptors.response.use(
-  (response) => {
-    logger.info('ðŸ“¥ CBS Checker API Response:', {
-      url: response.config.url,
-      status: response.status,
-      data: response.data
-    });
-    return { status: true, message: 'Success', response: response.data }
-  },
-  (error) => {
-    logger.error('âŒ CBS Checker API Error:', {
-      url: error.config?.url,
-      method: error.config?.method,
-      headers: error.config?.headers,
-      data: error.config?.data,
-      status: error.response?.status,
-      error: error.response?.data || error.message
-    });
-    if (error.response) {
-      return { status: false, message: 'Error', response: error.response.data }
-    }
-    return Promise.reject(error.message);
-  }
-);
-
-// Start health monitoring
-// healthMonitor.startPeriodicHealthCheck();
-
 module.exports = {
-  maker: api,
-  checker: checkerApi,
-  // Enhanced service managers
-  // authManager,
-  // healthMonitor,
-  // errorHandler,
-  // requestManager,
-  // Utility functions
+  maker,
+  checker,
+  circuitBreakerState,
   getHealthStatus: () => ({ status: 'healthy', services: [] }),
-  clearTokenCache: () => { /* Token cache cleared */ },
-  resetCircuitBreaker: () => {
-    circuitBreakerState.isOpen = false;
-    circuitBreakerState.failureCount = 0;
-    circuitBreakerState.lastFailureTime = null;
-  }
+  clearTokenCache: () => { /* Token cache cleared */ }
 };

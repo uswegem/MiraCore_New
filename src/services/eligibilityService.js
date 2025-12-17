@@ -59,7 +59,7 @@ class EligibilityService {
         const targetEMI = loanOfferDTO.centralRegAffordability;
         logger.info(`Reverse calculation: Using ${targetEMI} as target EMI`);
         // Calculate minimum EMI required for MIN_LOAN_AMOUNT
-        const minEMI = LoanCalculations.calculateEMI(LOAN_CONSTANTS.MIN_LOAN_AMOUNT, interestRate, tenure);
+        const minEMI = await LoanCalculations.calculateEMI(LOAN_CONSTANTS.MIN_LOAN_AMOUNT, interestRate, tenure);
         const effectiveEMI = Math.max(targetEMI, minEMI);
         logger.info(`Min required EMI: ${minEMI}, Using effective EMI: ${effectiveEMI}`);
         adjustedLoanAmount = this.calculateMaxLoanAmount(effectiveEMI, interestRate, tenure);
@@ -67,10 +67,10 @@ class EligibilityService {
         logger.info(`Calculated max loan amount: ${adjustedLoanAmount} for EMI: ${calculatedEMI}`);
       } else {
         // For forward calculation: check if requested amount fits within affordability
-        const maxAffordableEMI = loanOfferDTO.centralRegAffordability || LoanCalculations.calculateEMI(requestedAmount, interestRate, tenure);
+        const maxAffordableEMI = loanOfferDTO.centralRegAffordability || await LoanCalculations.calculateEMI(requestedAmount, interestRate, tenure);
 
         // Calculate EMI for requested amount
-        calculatedEMI = LoanCalculations.calculateEMI(requestedAmount, interestRate, tenure);
+        calculatedEMI = await LoanCalculations.calculateEMI(requestedAmount, interestRate, tenure);
 
         // If calculated EMI exceeds maximum affordable EMI, adjust the loan amount
         adjustedLoanAmount = requestedAmount;
@@ -89,25 +89,34 @@ class EligibilityService {
       // Ensure loan amount is not less than minimum principal
       adjustedLoanAmount = Math.max(adjustedLoanAmount, minPrincipal);
 
+      // Ensure all values are valid numbers (not NaN or undefined)
+      const safeCalculatedEMI = isNaN(calculatedEMI) || !calculatedEMI ? 0 : Number(calculatedEMI);
+      const safeAdjustedLoanAmount = isNaN(adjustedLoanAmount) || !adjustedLoanAmount ? 0 : Number(adjustedLoanAmount);
+      const safeTenure = isNaN(tenure) || !tenure ? LOAN_CONSTANTS.DEFAULT_TENURE : Number(tenure);
+      
+      // Calculate total interest amount safely
+      const totalInterest = (safeCalculatedEMI * safeTenure) - safeAdjustedLoanAmount;
+      const safeTotalInterest = isNaN(totalInterest) || totalInterest < 0 ? 0 : totalInterest;
+
       const mockOffer = {
         loanOffer: {
           product: {
-            loanTerm: tenure,
-            totalMonthlyInst: calculatedEMI,
-            loanAmount: adjustedLoanAmount,
-            totalLoanAmount: adjustedLoanAmount * (productDetails.totalLoanMultiplier || LOAN_CONSTANTS.TOTAL_LOAN_MULTIPLIER), // with interest
+            loanTerm: safeTenure,
+            totalMonthlyInst: safeCalculatedEMI,
+            loanAmount: safeAdjustedLoanAmount,
+            totalLoanAmount: safeAdjustedLoanAmount * (productDetails.totalLoanMultiplier || LOAN_CONSTANTS.TOTAL_LOAN_MULTIPLIER), // with interest
             maximumAmount: maxPrincipal,
             maximumTerm: maxTenure
           },
-          totalInterestAmount: (calculatedEMI * tenure) - adjustedLoanAmount,
-          adminFee: adjustedLoanAmount * (productDetails.adminFeeRate || LOAN_CONSTANTS.ADMIN_FEE_RATE),
+          totalInterestAmount: safeTotalInterest,
+          adminFee: safeAdjustedLoanAmount * (productDetails.adminFeeRate || LOAN_CONSTANTS.ADMIN_FEE_RATE),
           insurance: {
-            oneTimeAmount: adjustedLoanAmount * (productDetails.insuranceRate || LOAN_CONSTANTS.INSURANCE_RATE)
+            oneTimeAmount: safeAdjustedLoanAmount * (productDetails.insuranceRate || LOAN_CONSTANTS.INSURANCE_RATE)
           },
           bpi: 0, // Bank Processing Fee
           maxEligibleAmount: maxPrincipal,
           maxEligibleTerm: maxTenure,
-          baseTotalLoanAmount: adjustedLoanAmount * (productDetails.totalLoanMultiplier || LOAN_CONSTANTS.TOTAL_LOAN_MULTIPLIER)
+          baseTotalLoanAmount: safeAdjustedLoanAmount * (productDetails.totalLoanMultiplier || LOAN_CONSTANTS.TOTAL_LOAN_MULTIPLIER)
         }
       };
 

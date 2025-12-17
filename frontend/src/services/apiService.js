@@ -3,9 +3,11 @@
  * Handles all HTTP requests to ESS backend
  */
 
+import { API_CONFIG as CONFIG } from '../config/index.js';
+
 const API_CONFIG = {
-  BASE_URL: 'http://135.181.33.13:3002/api/v1',
-  TIMEOUT: 30000,
+  BASE_URL: CONFIG.BASE_URL,
+  TIMEOUT: CONFIG.TIMEOUT,
   DEFAULT_HEADERS: {
     'Content-Type': 'application/json',
     'Accept': 'application/json'

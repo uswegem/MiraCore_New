@@ -5,15 +5,17 @@ import LoginComponent from './components/auth/LoginComponent';
 import DashboardComponent from './components/dashboard/DashboardComponent';
 import LoanManagementComponent from './components/loans/LoanManagementComponent';
 import MessageManagement from './components/admin/MessageManagement';
+import UsersManagement from './components/users/UsersManagement';
 import ApiService from './services/apiService';
 import { toast } from '@/components/ui/use-toast';
 
 // Navigation Component
-const Navigation = ({ currentPage, onNavigate, onLogout }) => {
+const Navigation = ({ onLogout }) => {
   const navItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: '🏠' },
-    { id: 'loans', label: 'Loan Management', icon: '💰' },
-    { id: 'messages', label: 'Message Logs', icon: '📨' },
+    { id: 'dashboard', label: 'Dashboard', icon: '🏠', path: '/' },
+    { id: 'loans', label: 'Loan Management', icon: '💰', path: '/loans' },
+    { id: 'messages', label: 'Message Logs', icon: '📨', path: '/messages' },
+    { id: 'users', label: 'User Management', icon: '👥', path: '/users' },
   ];
 
   return (
@@ -23,18 +25,18 @@ const Navigation = ({ currentPage, onNavigate, onLogout }) => {
           <div className="flex">
             <div className="flex space-x-8">
               {navItems.map((item) => (
-                <button
+                <a
                   key={item.id}
-                  onClick={() => onNavigate(item.id)}
+                  href={item.path}
                   className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium ${
-                    currentPage === item.id
+                    window.location.pathname === item.path
                       ? 'border-blue-500 text-gray-900'
                       : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                   }`}
                 >
                   <span className="mr-2">{item.icon}</span>
                   {item.label}
-                </button>
+                </a>
               ))}
             </div>
           </div>
@@ -127,6 +129,8 @@ const App = () => {
         return <LoanManagementComponent />;
       case 'messages':
         return <MessageManagement />;
+      case 'users':
+        return <UsersManagement />;
       default:
         return <DashboardComponent user={user} onLogout={handleLogout} />;
     }
@@ -153,19 +157,26 @@ const App = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Navigation 
-        currentPage={currentPage} 
-        onNavigate={setCurrentPage} 
-        onLogout={handleLogout} 
-      />
-      <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        <div className="px-4 py-6 sm:px-0">
-          {renderCurrentPage()}
-        </div>
-      </main>
-      <Toaster />
-    </div>
+    <Router>
+      <div className="min-h-screen bg-gray-50">
+        <Navigation 
+          onLogout={handleLogout} 
+        />
+        <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+          <div className="px-4 py-6 sm:px-0">
+            <Routes>
+              <Route path="/" element={<DashboardComponent user={user} onLogout={handleLogout} />} />
+              <Route path="/dashboard" element={<DashboardComponent user={user} onLogout={handleLogout} />} />
+              <Route path="/loans" element={<LoanManagementComponent />} />
+              <Route path="/messages" element={<MessageManagement />} />
+              <Route path="/users" element={<UsersManagement />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </div>
+        </main>
+        <Toaster />
+      </div>
+    </Router>
   );
 };
 

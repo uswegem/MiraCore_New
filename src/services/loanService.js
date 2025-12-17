@@ -220,7 +220,7 @@ const LoanCalculate = async (data) => {
             logger.warn(`Final loan amount ${loanAmount} is below minimum ${LOAN_CONSTANTS.MIN_LOAN_AMOUNT}`);
             loanAmount = LOAN_CONSTANTS.MIN_LOAN_AMOUNT;
             // Recalculate monthly installment based on minimum loan amount
-            monthlyInstallment = calculateInstallment(loanAmount, tenure, interest);
+            monthlyInstallment = await LoanCalculations.calculateEMI(loanAmount, LOAN_CONSTANTS.DEFAULT_INTEREST_RATE, calculatedTenure);
         }
 
         let possibleLoanChargesEntity = null;
@@ -380,7 +380,9 @@ const LoanCalculate = async (data) => {
         }
 
         // Calculate response values
-        const totalInterestRateAmount = (loanOffer.loanOffer.bpi || 0) + loanOffer.loanOffer.totalInterestAmount;
+        const totalInterestAmount = loanOffer.loanOffer.totalInterestAmount;
+        const safeTotalInterest = isNaN(totalInterestAmount) || totalInterestAmount === undefined ? 0 : Number(totalInterestAmount);
+        const totalInterestRateAmount = (loanOffer.loanOffer.bpi || 0) + safeTotalInterest;
 
         // Ensure MonthlyReturnAmount never exceeds DesiredDeductibleAmount (final validation)
         const calculatedMonthlyEMI = loanOffer.loanOffer.product.totalMonthlyInst || 0;
@@ -481,7 +483,9 @@ async function doForwardOffer(possibleLoanChargesEntity, loanOfferDTO, requested
     forwardLoanOffer.loanOffer.maxEligibleTerm = forwardLoanOffer.loanOffer.maximumTerm || 0;
     forwardLoanOffer.loanOffer.baseTotalLoanAmount = forwardLoanOffer.loanOffer.totalLoanAmount || 0;
 
-    const totalInterestRateAmount = (forwardLoanOffer.loanOffer.bpi || 0) + (forwardLoanOffer.loanOffer.totalInterestAmount || 0);
+    const forwardTotalInterest = forwardLoanOffer.loanOffer.totalInterestAmount;
+    const safeForwardTotalInterest = isNaN(forwardTotalInterest) || forwardTotalInterest === undefined ? 0 : Number(forwardTotalInterest);
+    const totalInterestRateAmount = (forwardLoanOffer.loanOffer.bpi || 0) + safeForwardTotalInterest;
 
     // Ensure MonthlyReturnAmount never exceeds DesiredDeductibleAmount (final validation for forward loans)
     const calculatedMonthlyEMI = forwardLoanOffer.loanOffer.product.totalMonthlyInst || 0;

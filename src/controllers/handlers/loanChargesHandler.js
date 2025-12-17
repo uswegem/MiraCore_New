@@ -16,6 +16,16 @@ const handleLoanChargesRequest = async (parsedData, res) => {
         const header = parsedData.Document.Data.Header;
         const messageType = header.MessageType;
         logger.info(`Processing ${messageType}...`);
+        
+        // Import metrics tracking (dynamic import to avoid circular dependency)
+        let trackLoanMessage, trackLoanError;
+        try {
+            const metrics = require('../../../src/middleware/metricsMiddleware');
+            trackLoanMessage = metrics.trackLoanMessage;
+            trackLoanError = metrics.trackLoanError;
+        } catch (err) {
+            // Metrics middleware not available, continue without tracking
+        }
         const messageDetails = parsedData.Document.Data.MessageDetails;
 
         // Input validation - handle optional fields
@@ -217,9 +227,23 @@ const handleLoanChargesRequest = async (parsedData, res) => {
         }
 
         const signedResponse = digitalSignature.createSignedXML(responseData.Data);
+        
+        // Track successful loan message processing
+        if (trackLoanMessage) {
+            trackLoanMessage(messageType, 'success');
+            // Track outgoing response message
+            trackLoanMessage('LOAN_CHARGES_RESPONSE', 'sent');
+        }
+        
         res.status(200).send(signedResponse);
     } catch (error) {
         logger.error('Error processing loan charges request:', error);
+        
+        // Track loan processing error
+        if (trackLoanError) {
+            trackLoanError('processing_error', header?.MessageType || 'unknown');
+        }
+        
         return sendErrorResponse(res, '8012', error.message, 'xml', parsedData);
     }
 };

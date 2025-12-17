@@ -8,8 +8,8 @@ const isProduction = process.env.NODE_ENV === 'production';
 
 // API Configuration
 export const API_CONFIG = {
-  // ESS Backend API URL
-  BASE_URL: process.env.REACT_APP_API_BASE_URL || 'http://135.181.33.13:3002/api/v1',
+  // ESS Backend API URL via Admin Portal Proxy
+  BASE_URL: process.env.REACT_APP_API_BASE_URL || 'http://5.75.185.137/api/v1',
   
   // Request timeout
   TIMEOUT: parseInt(process.env.REACT_APP_API_TIMEOUT) || 30000,

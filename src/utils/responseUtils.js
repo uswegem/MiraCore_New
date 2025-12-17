@@ -1,4 +1,5 @@
 const logger = require('./logger');
+const { trackLoanMessage } = require('../middleware/metricsMiddleware');
 
 const xml2js = require('xml2js');
 const digitalSignature = require('./signatureUtils');
@@ -58,6 +59,9 @@ function sendErrorResponse(res, responseCode, description, format = 'xml', parse
       Description: description
     }
   };
+
+  // Track outgoing error response
+  trackLoanMessage('ERROR_RESPONSE', 'sent');
 
   if (format === 'json') {
     return res.status(400).json(errorResponse);

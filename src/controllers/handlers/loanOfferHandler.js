@@ -1,6 +1,7 @@
 const logger = require('../../utils/logger');
 const digitalSignature = require('../../utils/signatureUtils');
 const { sendErrorResponse } = require('../../utils/responseUtils');
+const { trackLoanMessage, trackLoanError } = require('../../middleware/metricsMiddleware');
 const { sendCallback } = require('../../utils/callbackUtils');
 const { getMessageId } = require('../../utils/messageIdGenerator');
 const LOAN_CONSTANTS = require('../../utils/loanConstants');
@@ -196,6 +197,7 @@ const handleLoanOfferRequest = async (parsedData, res) => {
 
         // Sign and send the immediate ACK response
         const ackSignedResponse = digitalSignature.createSignedXML(ackResponseData.Data);
+        trackLoanMessage('LOAN_OFFER_ACK_RESPONSE', 'sent');
         res.status(200).send(ackSignedResponse);
         logger.info('✅ Sent immediate ACK response for LOAN_OFFER_REQUEST');
 
@@ -225,6 +227,7 @@ const handleLoanOfferRequest = async (parsedData, res) => {
 
                 // Send callback using the callback utility
                 await sendCallback(approvalResponseData);
+                trackLoanMessage('LOAN_INITIAL_APPROVAL_NOTIFICATION', 'sent');
                 logger.info('✅ Successfully sent LOAN_INITIAL_APPROVAL_NOTIFICATION callback');
 
             } catch (callbackError) {

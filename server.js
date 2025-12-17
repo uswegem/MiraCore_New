@@ -6,7 +6,6 @@ const compression = require('compression');
 const dotenv = require('dotenv');
 dotenv.config();
 const logger = require('./src/utils/logger');
-const keepAliveService = require('./src/services/keepAliveService');
 
 // Import routes
 const apiRouter = require('./src/routes/api');
@@ -14,11 +13,13 @@ const authRoutes = require('./src/routes/auth');
 const userRoutes = require('./src/routes/users');
 const auditRoutes = require('./src/routes/audit');
 const adminCompatRoutes = require('./src/routes/adminCompat');
+const loanActionsRoutes = require('./src/routes/loanActions');
 // const messageRoutes = require('./src/routes/messages'); // Temporarily commented out
 
 // Import middleware
 const { verifySignatureMiddleware } = require('./src/middleware/signatureMiddleware');
 const { auditMiddleware } = require('./src/middleware/authMiddleware');
+const { httpMetricsMiddleware, metricsHandler, trackLoanMessage, trackLoanError } = require('./src/middleware/metricsMiddleware');
 
 // Import database
 const connectDB = require('./src/config/database');
@@ -48,6 +49,9 @@ connectDB();
 // 1. Security middleware
 app.use(helmet());
 app.use(cors());
+
+// Add metrics middleware
+app.use(httpMetricsMiddleware);
 
 // 2. Compression
 app.use(compression({
@@ -126,6 +130,20 @@ app.use((req, res, next) => {
     logger.info(`Content-Type: ${req.get('Content-Type')}`);
     logger.info(`Body exists: ${!!req.body}`);
     
+    // Structured logging for dashboard
+    if (req.body && typeof req.body === 'string' && (req.body.includes('<?xml') || req.body.includes('<Document>'))) {
+        // Log structured XML request for dashboard
+        logger.info('📥 DASHBOARD_XML_REQUEST', {
+            timestamp: new Date().toISOString(),
+            method: req.method,
+            path: req.path,
+            messageType: req.body.match(/<MessageType>(.*?)<\/MessageType>/)?.[1] || 'UNKNOWN',
+            sender: req.body.match(/<Sender>(.*?)<\/Sender>/)?.[1] || 'UNKNOWN',
+            xmlContent: req.body,
+            contentLength: req.body.length
+        });
+    }
+    
     if (req.body) {
         if (typeof req.body === 'string') {
             logger.info('Body type: XML/String');
@@ -147,6 +165,19 @@ app.use((req, res, next) => {
         logger.info('📤 OUTGOING RESPONSE:');
         logger.info(`Status Code: ${res.statusCode}`);
         logger.info(`Content-Type: ${res.get('Content-Type') || 'not set'}`);
+        
+        // Structured logging for dashboard
+        if (data && typeof data === 'string' && (data.includes('<?xml') || data.includes('<Document>'))) {
+            logger.info('📤 DASHBOARD_XML_RESPONSE', {
+                timestamp: new Date().toISOString(),
+                statusCode: res.statusCode,
+                contentType: res.get('Content-Type') || 'application/xml',
+                messageType: data.match(/<MessageType>(.*?)<\/MessageType>/)?.[1] || 'RESPONSE',
+                responseCode: data.match(/<ResponseCode>(.*?)<\/ResponseCode>/)?.[1] || 'UNKNOWN',
+                xmlContent: data,
+                contentLength: data.length
+            });
+        }
         
         if (data && typeof data === 'string') {
             logger.info(`Response Length: ${data.length}`);
@@ -172,15 +203,18 @@ app.use((req, res, next) => {
 // 6. Audit middleware for all routes
 app.use(auditMiddleware);
 
-// 7. Signature verification for XML endpoints
-app.use(verifySignatureMiddleware);
-
 // ========== ROUTES ==========
 
-// Authentication routes
+// Authentication routes (before signature middleware and main API routes)
 app.use('/api/v1/auth', authRoutes);
+app.use('/api/auth', authRoutes); // Compatibility route for existing admin portal
 
-// User management routes (protected)
+// Test endpoint to verify route registration
+app.get('/api/auth/test', (req, res) => {
+    res.json({ success: true, message: 'Auth route is working' });
+});
+
+// User management routes (protected)  
 app.use('/api/v1/users', userRoutes);
 
 // Audit routes (protected)
@@ -189,6 +223,9 @@ app.use('/api/v1/audit', auditRoutes);
 // Admin compatibility routes for MiraAdmin frontend
 app.use('/api/v1', adminCompatRoutes);
 
+// Loan action routes for manual notifications (protected)
+app.use('/api/v1/loan-actions', loanActionsRoutes);
+
 // MIFOS administration and monitoring routes
 const mifosAdminRoutes = require('./src/routes/mifosAdmin');
 app.use('/api/v1/mifos', mifosAdminRoutes);
@@ -196,8 +233,14 @@ app.use('/api/v1/mifos', mifosAdminRoutes);
 // Message management routes (protected) - Temporarily commented out
 // app.use('/api/v1/messages', messageRoutes);
 
-// Miracore API routes
+// Miracore API routes (after specific routes to avoid conflicts)
 app.use('/api', apiRouter);
+
+// 7. Signature verification for XML endpoints (after auth routes)
+app.use(verifySignatureMiddleware);
+
+// Metrics endpoint for Prometheus
+app.get('/metrics', metricsHandler);
 
 // Health check endpoint (supports both JSON and XML)
 app.get('/health', (req, res) => {
@@ -342,10 +385,6 @@ const server = app.listen(PORT, async () => {
 
         logger.info('✅ Server ready and database connected');
         
-        // Start Utumishi keep-alive service
-        logger.info('🔗 Starting Utumishi keep-alive service...');
-        keepAliveService.start();
-        
         // Signal PM2 that app is ready (for cluster mode)
         if (process.send) {
             process.send('ready');
@@ -380,9 +419,6 @@ const server = app.listen(PORT, async () => {
 process.on('SIGTERM', async () => {
     logger.info('SIGTERM received, shutting down gracefully');
     
-    // Stop keep-alive service
-    keepAliveService.stop();
-    
     server.close(async () => {
         logger.info('HTTP server closed');
         
@@ -408,9 +444,6 @@ process.on('SIGTERM', async () => {
 
 process.on('SIGINT', async () => {
     logger.info('SIGINT received, shutting down gracefully');
-    
-    // Stop keep-alive service
-    keepAliveService.stop();
     
     server.close(async () => {
         logger.info('HTTP server closed');

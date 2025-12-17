@@ -70,6 +70,7 @@ function validateMessageType(messageType, dataElement) {
   const validators = {
     'PRODUCT_DETAIL': validateProductDetail,
     'LOAN_CHARGES_REQUEST': validateLoanChargesRequest,
+    'LOAN_RESTRUCTURE_AFFORDABILITY_REQUEST': validateLoanChargesRequest, // Uses same validation as LOAN_CHARGES_REQUEST
     'LOAN_OFFER_REQUEST': validateLoanOfferRequest,
     'LOAN_RESTRUCTURE_REQUEST': validateLoanRestructureRequest,
     'TAKEOVER_PAY_OFF_BALANCE_REQUEST': validateTakeoverBalanceRequest,
