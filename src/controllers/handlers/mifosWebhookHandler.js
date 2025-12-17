@@ -1,7 +1,7 @@
 const logger = require('../../utils/logger');
 const digitalSignature = require('../../utils/signatureUtils');
 const axios = require('axios');
-const LoanMappings = require('../../models/LoanMappings');
+const LoanMapping = require('../../models/LoanMapping');
 const { AuditLog } = require('../../models/AuditLog');
 const { getMessageId } = require('../../utils/messageIdGenerator');
 
@@ -89,7 +89,7 @@ async function handleRescheduleApproval(webhookData) {
         });
 
         // Find loan mapping with this reschedule ID
-        const loanMapping = await LoanMappings.findOne({
+        const loanMapping = await LoanMapping.findOne({
             rescheduleId: rescheduleId,
             'pendingCallback.type': 'LOAN_INITIAL_APPROVAL_NOTIFICATION'
         });
@@ -109,7 +109,7 @@ async function handleRescheduleApproval(webhookData) {
         await sendLoanInitialApprovalNotification(loanMapping);
 
         // Update loan mapping
-        await LoanMappings.updateOne(
+        await LoanMapping.updateOne(
             { _id: loanMapping._id },
             {
                 $set: {

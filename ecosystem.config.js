@@ -7,6 +7,7 @@ module.exports = {
     autorestart: true,
     watch: false,
     time: true,
+    env_file: '.env', // Load environment variables from .env file
     env_production: {
       NODE_ENV: 'production',
       PORT: 3002

@@ -2,7 +2,7 @@ const logger = require('../../utils/logger');
 const { maker } = require('../../services/cbs.api');
 const digitalSignature = require('../../utils/signatureUtils');
 const { getMessageId } = require('../../utils/messageIdGenerator');
-const LoanMappings = require('../../models/LoanMappings');
+const LoanMapping = require('../../models/LoanMapping');
 const { AuditLog } = require('../../models/AuditLog');
 
 /**
@@ -44,7 +44,7 @@ const handleLoanRestructureRequest = async (parsedData, res) => {
         }
 
         // Find the loan mapping using check number
-        const loanMapping = await LoanMappings.findOne({ checkNumber });
+        const loanMapping = await LoanMapping.findOne({ checkNumber });
 
         if (!loanMapping) {
             logger.warn('Loan mapping not found for checkNumber:', checkNumber);
@@ -111,7 +111,7 @@ const handleLoanRestructureRequest = async (parsedData, res) => {
         });
 
         // Update loan mapping with restructure info
-        await LoanMappings.updateOne(
+        await LoanMapping.updateOne(
             { _id: loanMapping._id },
             {
                 $set: {
@@ -145,7 +145,7 @@ const handleLoanRestructureRequest = async (parsedData, res) => {
         logger.info('⏰ Waiting for MIFOS webhook to trigger LOAN_INITIAL_APPROVAL_NOTIFICATION...');
         
         // Store callback details in loan mapping for webhook handler
-        await LoanMappings.updateOne(
+        await LoanMapping.updateOne(
             { _id: loanMapping._id },
             {
                 $set: {
