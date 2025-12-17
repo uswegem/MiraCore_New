@@ -84,13 +84,13 @@ async function handleRescheduleApproval(webhookData) {
         const loanId = webhookData.entity?.loanId;
 
         logger.info('🎯 Reschedule approved:', {
-            rescheduleId,
-            loanId
+            rescheduleId: rescheduleId,
+            loanId: loanId
         });
 
         // Find loan mapping with this reschedule ID
         const loanMapping = await LoanMappings.findOne({
-            rescheduleId,
+            rescheduleId: rescheduleId,
             'pendingCallback.type': 'LOAN_INITIAL_APPROVAL_NOTIFICATION'
         });
 
@@ -120,7 +120,7 @@ async function handleRescheduleApproval(webhookData) {
                     pendingCallback: ""
                 }
             }
-        });
+        );
 
         // Create audit log
         await AuditLog.create({
@@ -132,7 +132,7 @@ async function handleRescheduleApproval(webhookData) {
             checkNumber: loanMapping.checkNumber,
             loanNumber: loanMapping.loanNumber,
             mifosLoanId: loanId,
-            rescheduleId
+            rescheduleId: rescheduleId
         });
 
     } catch (error) {
