@@ -55,6 +55,7 @@ const handleMifosWebhook = require('./handlers/mifosWebhookHandler');
 const handleLoanChargesRequest = require('./handlers/loanChargesHandler');
 const handleLoanOfferRequest = require('./handlers/loanOfferHandler');
 const handleLoanRestructureRequest = require('./handlers/loanRestructureHandler');
+const handleLoanRestructureBalanceRequest = require('./handlers/loanRestructureBalanceHandler');
 // Add other handlers as they are extracted
 // const handleTopUpPayOffBalanceRequest = require('./handlers/topUpPayOffBalanceHandler');
 // etc.
@@ -108,6 +109,9 @@ exports.processRequest = async (req, res) => {
                     case 'LOAN_RESTRUCTURE_AFFORDABILITY_REQUEST':
                         trackLoanMessage('LOAN_RESTRUCTURE_AFFORDABILITY_REQUEST', 'processing');
                         return await handleLoanChargesRequest(parsedData, res);
+                    case 'LOAN_RESTRUCTURE_BALANCE_REQUEST':
+                        trackLoanMessage('LOAN_RESTRUCTURE_BALANCE_REQUEST', 'processing');
+                        return await handleLoanRestructureBalanceRequest(parsedData, res);
                     case 'LOAN_RESTRUCTURE_REQUEST':
                         trackLoanMessage('LOAN_RESTRUCTURE_REQUEST', 'processing');
                         return await handleLoanRestructureRequest(parsedData, res);
