@@ -10,7 +10,7 @@ const logger = require('./src/utils/logger');
 // Import routes
 const apiRouter = require('./src/routes/api');
 const authRoutes = require('./src/routes/auth');
-const userRoutes = require('./src/routes/users');
+const userRoutes = require('./src/routes/auth');
 const auditRoutes = require('./src/routes/audit');
 const adminCompatRoutes = require('./src/routes/adminCompat');
 const loanActionsRoutes = require('./src/routes/loanActions');

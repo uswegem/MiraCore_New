@@ -16,7 +16,10 @@ router.post('/send-disbursement-notification', authMiddleware, roleMiddleware(['
         const { loanId, applicationNumber } = req.body;
 
         if (!loanId && !applicationNumber) {
-            return res.status(400).json({ success: false, message: 'Either loanId or applicationNumber is required' });
+            return res.status(400).json({
+                success: false,
+                message: 'Either loanId or applicationNumber is required'
+            });
         }
 
         // Get loan mapping
@@ -28,11 +31,18 @@ router.post('/send-disbursement-notification', authMiddleware, roleMiddleware(['
         }
 
         if (!loanMapping) {
-            return res.status(404).json({ success: false, message: 'Loan mapping not found' });
+            return res.status(404).json({
+                success: false,
+                message: 'Loan mapping not found'
+            });
         }
 
+        // Check if loan is in LOAN_CREATED status
         if (loanMapping.status !== 'LOAN_CREATED') {
-            return res.status(400).json({ success: false, message: `Loan must be in LOAN_CREATED status. Current status: ${loanMapping.status}` });
+            return res.status(400).json({
+                success: false,
+                message: `Loan must be in LOAN_CREATED status. Current status: ${loanMapping.status}`
+            });
         }
 
         // Send disbursement notification
@@ -49,19 +59,22 @@ router.post('/send-disbursement-notification', authMiddleware, roleMiddleware(['
 
         const result = await disbursementUtils.sendDisbursementNotification(notificationData);
 
-        // Update loan status
-        const existingMetadata = loanMapping.metadata || {};
-        const manualDisbursementInfo = {
-            triggeredBy: req.user.username,
-            triggeredAt: new Date().toISOString(),
-            result: result
-        };
-        const updatedMetadata = Object.assign({}, existingMetadata, { manualDisbursement: manualDisbursementInfo });
-
-        await LoanMappingService.updateStatus(loanMapping.essApplicationNumber, 'DISBURSED', {
-            disbursedAt: new Date(),
-            metadata: updatedMetadata
-        });
+        // Update loan status to DISBURSED
+        await LoanMappingService.updateStatus(
+            loanMapping.essApplicationNumber,
+            'DISBURSED',
+            {
+                disbursedAt: new Date(),
+                metadata: {
+                    ...loanMapping.metadata,
+                    manualDisbursement: {
+                        triggeredBy: req.user.username,
+                        triggeredAt: new Date().toISOString(),
+                        result: result
+                    }
+                }
+            }
+        );
 
         logger.info(`Manual disbursement notification sent for loan: ${loanMapping.essApplicationNumber} by ${req.user.username}`);
 
@@ -78,12 +91,15 @@ router.post('/send-disbursement-notification', authMiddleware, roleMiddleware(['
 
     } catch (error) {
         logger.error('Error sending disbursement notification:', error);
-        res.status(500).json({ success: false, message: error.message || 'Failed to send disbursement notification' });
+        res.status(500).json({
+            success: false,
+            message: error.message || 'Failed to send disbursement notification'
+        });
     }
 });
 
 /**
- * Send LOAN_DISBURSEMENT_FAILURE_NOTIFICATION manually  
+ * Send LOAN_DISBURSEMENT_FAILURE_NOTIFICATION manually
  * POST /api/v1/loan-actions/send-disbursement-failure
  */
 router.post('/send-disbursement-failure', authMiddleware, roleMiddleware(['super_admin', 'admin']), async (req, res) => {
@@ -91,11 +107,17 @@ router.post('/send-disbursement-failure', authMiddleware, roleMiddleware(['super
         const { loanId, applicationNumber, reason, errorDetails } = req.body;
 
         if (!loanId && !applicationNumber) {
-            return res.status(400).json({ success: false, message: 'Either loanId or applicationNumber is required' });
+            return res.status(400).json({
+                success: false,
+                message: 'Either loanId or applicationNumber is required'
+            });
         }
 
         if (!reason) {
-            return res.status(400).json({ success: false, message: 'Failure reason is required' });
+            return res.status(400).json({
+                success: false,
+                message: 'Failure reason is required'
+            });
         }
 
         // Get loan mapping
@@ -107,11 +129,18 @@ router.post('/send-disbursement-failure', authMiddleware, roleMiddleware(['super
         }
 
         if (!loanMapping) {
-            return res.status(404).json({ success: false, message: 'Loan mapping not found' });
+            return res.status(404).json({
+                success: false,
+                message: 'Loan mapping not found'
+            });
         }
 
+        // Check if loan is in LOAN_CREATED status
         if (loanMapping.status !== 'LOAN_CREATED') {
-            return res.status(400).json({ success: false, message: `Loan must be in LOAN_CREATED status. Current status: ${loanMapping.status}` });
+            return res.status(400).json({
+                success: false,
+                message: `Loan must be in LOAN_CREATED status. Current status: ${loanMapping.status}`
+            });
         }
 
         // Create failure notification
@@ -134,24 +163,30 @@ router.post('/send-disbursement-failure', authMiddleware, roleMiddleware(['super
             }
         };
 
+        // Sign and send the notification
         const signedNotification = digitalSignature.createSignedXML(failureNotificationData);
         
+        // Here you would send to ESS callback URL if configured
+        // For now, we just log it
         logger.info(`Sending LOAN_DISBURSEMENT_FAILURE_NOTIFICATION for loan: ${loanMapping.essApplicationNumber}`);
         logger.info(`Notification: ${signedNotification.substring(0, 500)}...`);
 
-        // Update loan status - using explicit object construction to avoid spread operator issues
-        const existingMetadata = loanMapping.metadata || {};
-        const disbursementFailureInfo = {
-            reason: reason,
-            errorDetails: errorDetails,
-            triggeredBy: req.user.username,
-            triggeredAt: new Date().toISOString()
-        };
-        const updatedMetadata = Object.assign({}, existingMetadata, { disbursementFailure: disbursementFailureInfo });
-
-        await LoanMappingService.updateStatus(loanMapping.essApplicationNumber, 'FAILED', {
-            failedAt: new Date(),
-            metadata: updatedMetadata
+        // Update loan status to FAILED
+        await LoanMappingService.updateStatus(
+            loanMapping.essApplicationNumber,
+            'FAILED',
+            {
+                failedAt: new Date(),
+                metadata: {
+                    ...loanMapping.metadata,
+                    disbursementFailure: {
+                        reason: reason,
+                        errorDetails: errorDetails,
+                        triggeredBy: req.user.username,
+                        triggeredAt: new Date().toISOString()
+                    }
+                }
+            }
         });
 
         logger.info(`Manual disbursement failure notification sent for loan: ${loanMapping.essApplicationNumber} by ${req.user.username}`);
@@ -169,7 +204,10 @@ router.post('/send-disbursement-failure', authMiddleware, roleMiddleware(['super
 
     } catch (error) {
         logger.error('Error sending disbursement failure notification:', error);
-        res.status(500).json({ success: false, message: error.message || 'Failed to send disbursement failure notification' });
+        res.status(500).json({
+            success: false,
+            message: error.message || 'Failed to send disbursement failure notification'
+        });
     }
 });
 
