@@ -4,7 +4,7 @@ const router = express.Router();
 const { authMiddleware, roleMiddleware } = require('../middleware/authMiddleware');
 const LoanMappingService = require('../services/loanMappingService');
 const disbursementUtils = require('../utils/disbursementUtils');
-const digitalSignature = require('../utils/digitalSignature');
+const digitalSignature = require('../utils/signatureUtils');
 const logger = require('../utils/logger');
 
 /**
