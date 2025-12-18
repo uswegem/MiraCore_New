@@ -1242,9 +1242,11 @@ const handleLoanFinalApproval = async (parsedData, res) => {
                                     logger.info('📄 Creating client with payload:', JSON.stringify(clientPayload, null, 2));
                                     const newClient = await ClientService.createClient(clientPayload);
 
-                                    if (newClient.status && newClient.response) {
-                                        clientId = newClient.response.clientId;
+                                    if (newClient && newClient.data && newClient.data.clientId) {
+                                        clientId = newClient.data.clientId;
                                         logger.info(`✅ Client created in CBS with ID: ${clientId}`);
+                                    } else {
+                                        logger.error('❌ Client creation failed - no clientId in response');
                                     }
                                 } else {
                                     clientId = existingClientByNin.pageItems[0].id;
