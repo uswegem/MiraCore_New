@@ -502,7 +502,7 @@ const handleTopUpOfferRequest = async (parsedData, res) => {
                 
                 // Generate loan details for top-up (use similar logic to LOAN_OFFER_REQUEST)
                 const loanAmount = parseFloat(messageDetails.RequestedAmount) || LOAN_CONSTANTS.MIN_LOAN_AMOUNT;
-                const interestRate = 15.0; // 15% per annum
+                const interestRate = 24.0; // 24% per annum (same as regular loans)
                 const tenure = parseInt(messageDetails.Tenure) || LOAN_CONSTANTS.MAX_TENURE;
                 
                 // Calculate total amount to pay
