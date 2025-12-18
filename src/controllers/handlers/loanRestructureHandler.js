@@ -83,80 +83,114 @@ const handleLoanRestructureRequest = async (parsedData, res) => {
         responseSent = true;
         logger.info('✅ Sent immediate ACK response for LOAN_RESTRUCTURE_REQUEST');
 
-        // Step 2: Call MIFOS reschedule API
-        logger.info('📞 Calling MIFOS reschedule API for loan:', loanMapping.mifosLoanId);
+        // Step 2: Calculate restructured loan details
+        logger.info('🧮 Calculating restructured loan details...');
+        
+        const interestRate = 24.0; // 24% per annum (same as regular loans)
+        const totalInterestRateAmount = (requestedAmount * interestRate * tenure) / (12 * 100);
+        const totalAmountToPay = requestedAmount + totalInterestRateAmount;
+        const otherCharges = 50000; // Standard charges
 
-        const reschedulePayload = {
-            dateFormat: "dd MMMM yyyy",
-            locale: "en",
-            rescheduleFromDate: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }),
-            rescheduleReasonId: 1, // Reason: Customer request
-            submittedOnDate: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }),
-            adjustedDueDate: calculateAdjustedDueDate(tenure), // Calculate new due date based on tenure
-            graceOnPrincipal: 0,
-            graceOnInterest: 0,
-            extraTerms: 0,
-            newInterestRate: messageDetails.InterestRate || null,
-            rescheduleReasonComment: `Loan restructure requested by customer. New tenure: ${tenure} months, New amount: ${requestedAmount}`
-        };
-
-        const rescheduleResponse = await maker.post(
-            `/v1/loans/${loanMapping.mifosLoanId}/schedule`,
-            reschedulePayload
-        );
-
-        logger.info('✅ MIFOS reschedule API response:', {
-            resourceId: rescheduleResponse.data.resourceId,
-            loanId: rescheduleResponse.data.loanId
+        logger.info('Calculated restructure details:', {
+            requestedAmount,
+            tenure,
+            interestRate,
+            totalInterestRateAmount,
+            totalAmountToPay,
+            otherCharges
         });
+
+        // Generate new loan/reference numbers for restructure
+        const { generateLoanNumber, generateFSPReferenceNumber } = require('../../utils/messageIdGenerator');
+        const newLoanNumber = generateLoanNumber();
+        const newFspReferenceNumber = generateFSPReferenceNumber();
 
         // Update loan mapping with restructure info
         await LoanMapping.updateOne(
             { _id: loanMapping._id },
             {
                 $set: {
+                    isRestructure: true,
                     restructureRequested: true,
                     restructureDate: new Date(),
                     newTenure: tenure,
-                    newAmount: requestedAmount,
-                    rescheduleId: rescheduleResponse.data.resourceId,
-                    status: 'RESTRUCTURE_PENDING'
+                    newRequestedAmount: requestedAmount,
+                    newTotalAmountToPay: totalAmountToPay,
+                    newInterestRate: interestRate,
+                    newOtherCharges: otherCharges,
+                    newLoanNumber: newLoanNumber,
+                    newFspReferenceNumber: newFspReferenceNumber,
+                    status: 'RESTRUCTURE_INITIAL_APPROVAL_SENT',
+                    desiredDeductibleAmount: desiredDeductibleAmount
                 }
             }
         );
+
+        logger.info('✅ Updated loan mapping with restructure details');
 
         // Create audit log
         await AuditLog.create({
+            userId: 'system',
+            action: 'LOAN_RESTRUCTURE_REQUESTED',
+            description: `Loan restructure requested for check ${checkNumber}`,
             eventType: 'LOAN_RESTRUCTURE_REQUESTED',
-            messageType: 'LOAN_RESTRUCTURE_REQUEST',
-            direction: 'incoming',
-            requestData: data,
-            status: 'processing',
-            checkNumber,
-            loanNumber: loanMapping.loanNumber,
-            mifosLoanId: loanMapping.mifosLoanId,
-            rescheduleId: rescheduleResponse.data.resourceId,
-            requestedAmount,
-            tenure
+            data: {
+                checkNumber,
+                originalLoanNumber: loanMapping.loanNumber,
+                newLoanNumber,
+                mifosLoanId: loanMapping.mifosLoanId,
+                requestedAmount,
+                tenure,
+                totalAmountToPay
+            }
         });
 
-        // Step 3: Schedule LOAN_INITIAL_APPROVAL_NOTIFICATION callback
-        // This will be triggered by MIFOS webhook when reschedule is approved
-        logger.info('⏰ Waiting for MIFOS webhook to trigger LOAN_INITIAL_APPROVAL_NOTIFICATION...');
+        // Step 3: Send LOAN_INITIAL_APPROVAL_NOTIFICATION callback
+        logger.info('📤 Sending LOAN_INITIAL_APPROVAL_NOTIFICATION for restructure...');
         
-        // Store callback details in loan mapping for webhook handler
-        await LoanMapping.updateOne(
-            { _id: loanMapping._id },
-            {
-                $set: {
-                    pendingCallback: {
-                        type: 'LOAN_INITIAL_APPROVAL_NOTIFICATION',
-                        originalMessage: data,
-                        scheduledAt: new Date()
+        setTimeout(async () => {
+            try {
+                const { sendCallback } = require('../../utils/callbackUtils');
+                
+                const approvalResponseData = {
+                    Data: {
+                        Header: {
+                            "Sender": process.env.FSP_NAME || "ZE DONE",
+                            "Receiver": "ESS_UTUMISHI",
+                            "FSPCode": header.FSPCode,
+                            "MsgId": getMessageId("LOAN_INITIAL_APPROVAL_NOTIFICATION"),
+                            "MessageType": "LOAN_INITIAL_APPROVAL_NOTIFICATION"
+                        },
+                        MessageDetails: {
+                            "ApplicationNumber": loanMapping.applicationNumber || loanMapping.essApplicationNumber,
+                            "Reason": "Loan Restructure Request Approved",
+                            "FSPReferenceNumber": newFspReferenceNumber,
+                            "LoanNumber": newLoanNumber,
+                            "TotalAmountToPay": totalAmountToPay.toFixed(2),
+                            "OtherCharges": otherCharges.toFixed(2),
+                            "Approval": "APPROVED"
+                        }
                     }
-                }
+                };
+
+                await sendCallback(approvalResponseData);
+                logger.info('✅ LOAN_INITIAL_APPROVAL_NOTIFICATION sent successfully for restructure');
+
+                // Update mapping status
+                await LoanMapping.updateOne(
+                    { _id: loanMapping._id },
+                    {
+                        $set: {
+                            status: 'RESTRUCTURE_INITIAL_APPROVAL_SENT',
+                            initialApprovalSentAt: new Date()
+                        }
+                    }
+                );
+
+            } catch (callbackError) {
+                logger.error('❌ Error sending LOAN_INITIAL_APPROVAL_NOTIFICATION for restructure:', callbackError);
             }
-        );
+        }, 20000); // 20 seconds delay
 
     } catch (error) {
         logger.error('❌ Error processing LOAN_RESTRUCTURE_REQUEST:', error);
