@@ -364,8 +364,10 @@ const handleTopUpPayOffBalanceRequest = async (parsedData, res) => {
         const feeChargesOutstanding = loanData.summary?.feeChargesOutstanding || 0;
         const penaltyChargesOutstanding = loanData.summary?.penaltyChargesOutstanding || 0;
         
-        // Total payoff amount includes all outstanding amounts
-        const totalPayoffAmount = totalOutstanding + feeChargesOutstanding + penaltyChargesOutstanding;
+        // For top-up/payoff: ONLY use principal outstanding
+        // Do NOT include future unearned interest - customer should only pay what they borrowed
+        // Add any actual fees or penalties that have been charged
+        const totalPayoffAmount = principalOutstanding + feeChargesOutstanding + penaltyChargesOutstanding;
         
         // Get last transaction dates
         const lastDeductionDate = loanData.timeline?.expectedDisbursementDate 
@@ -378,9 +380,9 @@ const handleTopUpPayOffBalanceRequest = async (parsedData, res) => {
 
         logger.info('Calculated payoff details:', {
             totalPayoffAmount: totalPayoffAmount.toFixed(2),
-            totalOutstanding: totalOutstanding.toFixed(2),
             principalOutstanding: principalOutstanding.toFixed(2),
-            interestOutstanding: interestOutstanding.toFixed(2)
+            interestOutstanding: interestOutstanding.toFixed(2),
+            note: 'Payoff amount = Principal Outstanding only (no future interest)'
         });
 
         // Generate unique payment reference
@@ -401,7 +403,7 @@ const handleTopUpPayOffBalanceRequest = async (parsedData, res) => {
                     "FSPReferenceNumber": fspReferenceNumber,
                     "PaymentReferenceNumber": paymentReferenceNumber,
                     "TotalPayoffAmount": totalPayoffAmount.toFixed(2),
-                    "OutstandingBalance": totalOutstanding.toFixed(2),
+                    "OutstandingBalance": principalOutstanding.toFixed(2),
                     "FinalPaymentDate": formatDate(finalPaymentDate),
                     "LastDeductionDate": lastDeductionDate,
                     "LastPayDate": lastPayDate,
