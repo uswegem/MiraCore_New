@@ -35,6 +35,21 @@ const builder = new xml2js.Builder({
     renderOpts: { pretty: false }
 });
 
+/**
+ * Convert JSON request body to XML format
+ * @param {Object} jsonData - JSON data to convert
+ * @returns {string} XML string
+ */
+function convertProductJSONToXML(jsonData) {
+    try {
+        // Use the builder to convert JSON to XML
+        return builder.buildObject(jsonData);
+    } catch (error) {
+        logger.error('Error converting JSON to XML:', error);
+        throw new Error(`Failed to convert JSON to XML: ${error.message}`);
+    }
+}
+
 // Import handlers
 const handleMifosWebhook = require('./handlers/mifosWebhookHandler');
 const handleLoanChargesRequest = require('./handlers/loanChargesHandler');
@@ -1169,12 +1184,12 @@ const handleLoanFinalApproval = async (parsedData, res) => {
                                 logger.info('🔍 Checking if client exists with NIN:', potentialNIN);
                                 const existingClientByNin = await ClientService.searchClientByExternalId(potentialNIN);
                                 logger.info('Search result:', { 
-                                    status: existingClientByNin?.status, 
-                                    found: existingClientByNin?.response?.pageItems?.length || 0 
+                                    totalRecords: existingClientByNin?.totalFilteredRecords || 0,
+                                    found: existingClientByNin?.pageItems?.length || 0 
                                 });
                                 
                                 let clientId;
-                                if (!existingClientByNin?.status || !existingClientByNin?.response?.pageItems?.length) {
+                                if (!existingClientByNin?.pageItems?.length) {
                                     // Create new client in CBS
                                     logger.info(`Creating new client: ${clientData.fullName || clientData.firstName + ' ' + clientData.lastName}`);
                                     
@@ -1215,19 +1230,33 @@ const handleLoanFinalApproval = async (parsedData, res) => {
                                         logger.info(`✅ Client created in CBS with ID: ${clientId}`);
                                     }
                                 } else {
-                                    clientId = existingClientByNin.response.pageItems[0].id;
+                                    clientId = existingClientByNin.pageItems[0].id;
                                     logger.info(`✅ Existing client found with ID: ${clientId}`);
                                 }
 
                                 if (clientId) {
+                                    // Get loan amount and tenure from existing mapping or message details
+                                    const loanAmount = existingMapping?.requestedAmount || 
+                                                     existingMapping?.metadata?.loanData?.requestedAmount ||
+                                                     messageDetails.LoanAmount || 
+                                                     messageDetails.RequestedAmount || 
+                                                     5000000;
+                                    const loanTenure = existingMapping?.tenure ||
+                                                     existingMapping?.metadata?.loanData?.tenure ||
+                                                     messageDetails.LoanTenure || 
+                                                     messageDetails.Tenure || 
+                                                     60;
+                                    
+                                    logger.info(`Using loan amount: ${loanAmount}, tenure: ${loanTenure}`);
+                                    
                                     // Create loan in CBS
                                     const loanPayload = {
                                         clientId: clientId,
                                         productId: 17, // ESS Loan product
-                                        principal: messageDetails.LoanAmount.toString(),
-                                        loanTermFrequency: parseInt(messageDetails.LoanTenure),
+                                        principal: loanAmount.toString(),
+                                        loanTermFrequency: parseInt(loanTenure),
                                         loanTermFrequencyType: 2, // Months
-                                        numberOfRepayments: parseInt(messageDetails.LoanTenure),
+                                        numberOfRepayments: parseInt(loanTenure),
                                         repaymentEvery: 1,
                                         repaymentFrequencyType: 2, // Monthly
                                         interestRatePerPeriod: 15, // 15% per year
