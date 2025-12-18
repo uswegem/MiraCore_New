@@ -21,7 +21,7 @@ module.exports = {
     listen_timeout: 10000, // Increased for graceful startup
     kill_timeout: 5000,
     // Graceful shutdown configuration
-    wait_ready: true, // Wait for ready signal from app
+    // wait_ready: true, // Wait for ready signal from app - DISABLED: causing startup hang
     shutdown_with_message: true // Enable graceful shutdown
   }]
 };
