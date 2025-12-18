@@ -552,21 +552,23 @@ const handleTopUpOfferRequest = async (parsedData, res) => {
                 }
                 
                 const approvalResponseData = {
-                    Header: {
-                        "Sender": process.env.FSP_NAME || "ZE DONE",
-                        "Receiver": "ESS_UTUMISHI",
-                        "FSPCode": header.FSPCode,
-                        "MsgId": getMessageId("LOAN_INITIAL_APPROVAL_NOTIFICATION"),
-                        "MessageType": "LOAN_INITIAL_APPROVAL_NOTIFICATION"
-                    },
-                    MessageDetails: {
-                        "ApplicationNumber": messageDetails.ApplicationNumber,
-                        "Reason": "Top-Up Loan Request Approved",
-                        "FSPReferenceNumber": fspReferenceNumber,
-                        "LoanNumber": loanNumber,
-                        "TotalAmountToPay": totalAmountToPay.toFixed(2),
-                        "OtherCharges": otherCharges.toFixed(2),
-                        "Approval": "APPROVED"
+                    Data: {
+                        Header: {
+                            "Sender": process.env.FSP_NAME || "ZE DONE",
+                            "Receiver": "ESS_UTUMISHI",
+                            "FSPCode": header.FSPCode,
+                            "MsgId": getMessageId("LOAN_INITIAL_APPROVAL_NOTIFICATION"),
+                            "MessageType": "LOAN_INITIAL_APPROVAL_NOTIFICATION"
+                        },
+                        MessageDetails: {
+                            "ApplicationNumber": messageDetails.ApplicationNumber,
+                            "Reason": "Top-Up Loan Request Approved",
+                            "FSPReferenceNumber": fspReferenceNumber,
+                            "LoanNumber": loanNumber,
+                            "TotalAmountToPay": totalAmountToPay.toFixed(2),
+                            "OtherCharges": otherCharges.toFixed(2),
+                            "Approval": "APPROVED"
+                        }
                     }
                 };
 
@@ -837,21 +839,23 @@ const handleLoanTakeoverOfferRequest = async (parsedData, res) => {
                 }
 
                 const approvalResponseData = {
-                    Header: {
-                        "Sender": process.env.FSP_NAME || "ZE DONE",
-                        "Receiver": "ESS_UTUMISHI",
-                        "FSPCode": header.FSPCode,
-                        "MsgId": getMessageId("LOAN_INITIAL_APPROVAL_NOTIFICATION"),
-                        "MessageType": "LOAN_INITIAL_APPROVAL_NOTIFICATION"
-                    },
-                    MessageDetails: {
-                        "ApplicationNumber": messageDetails.ApplicationNumber,
-                        "Reason": "Loan Takeover Request Approved",
-                        "FSPReferenceNumber": fspReferenceNumber,
-                        "LoanNumber": loanNumber,
-                        "TotalAmountToPay": totalAmountToPay.toFixed(2),
-                        "OtherCharges": otherCharges.toFixed(2),
-                        "Approval": "APPROVED"
+                    Data: {
+                        Header: {
+                            "Sender": process.env.FSP_NAME || "ZE DONE",
+                            "Receiver": "ESS_UTUMISHI",
+                            "FSPCode": header.FSPCode,
+                            "MsgId": getMessageId("LOAN_INITIAL_APPROVAL_NOTIFICATION"),
+                            "MessageType": "LOAN_INITIAL_APPROVAL_NOTIFICATION"
+                        },
+                        MessageDetails: {
+                            "ApplicationNumber": messageDetails.ApplicationNumber,
+                            "Reason": "Loan Takeover Request Approved",
+                            "FSPReferenceNumber": fspReferenceNumber,
+                            "LoanNumber": loanNumber,
+                            "TotalAmountToPay": totalAmountToPay.toFixed(2),
+                            "OtherCharges": otherCharges.toFixed(2),
+                            "Approval": "APPROVED"
+                        }
                     }
                 };
 
