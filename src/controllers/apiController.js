@@ -1279,7 +1279,7 @@ const handleLoanFinalApproval = async (parsedData, res) => {
                                         numberOfRepayments: parseInt(loanTenure),
                                         repaymentEvery: 1,
                                         repaymentFrequencyType: 2, // Monthly
-                                        interestRatePerPeriod: 28, // 28% per year (matching product config)
+                                        interestRatePerPeriod: 24, // 24% per year (matching product config)
                                         interestRateFrequencyType: 3, // Per year
                                         amortizationType: 1, // Equal installments
                                         interestType: 0, // Declining balance
