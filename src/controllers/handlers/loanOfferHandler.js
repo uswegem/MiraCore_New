@@ -6,11 +6,249 @@ const { sendCallback } = require('../../utils/callbackUtils');
 const { getMessageId } = require('../../utils/messageIdGenerator');
 const LOAN_CONSTANTS = require('../../utils/loanConstants');
 const LoanCalculations = require('../../utils/loanCalculations');
-const { generateLoanNumber } = require('../../utils/loanUtils');
+const { generateLoanNumber, generateFSPReferenceNumber } = require('../../utils/loanUtils');
 const LoanMappingService = require('../../services/loanMappingService');
+const cbsApi = require('../../services/cbs.api');
 
 // Helper function to calculate monthly installment
 const calculateMonthlyInstallment = LoanCalculations.calculateMonthlyInstallment.bind(LoanCalculations);
+
+/**
+ * Check if customer has active loans in CBS
+ * @param {string} nin - Customer NIN
+ * @returns {Object|null} - Active loan details or null
+ */
+async function checkForActiveLoans(nin) {
+    try {
+        if (!nin) {
+            logger.info('⚠️ No NIN provided, cannot check for active loans');
+            return null;
+        }
+        
+        logger.info('🔍 Checking for active loans for NIN:', nin);
+        
+        // Search for customer in CBS by NIN (external ID)
+        const searchResponse = await cbsApi.maker.get(`/v1/clients?externalId=${nin}`);
+        
+        if (!searchResponse || !searchResponse.data || searchResponse.data.totalFilteredRecords === 0) {
+            logger.info('✅ No existing customer found in CBS');
+            return null;
+        }
+        
+        const customer = searchResponse.data.pageItems[0];
+        logger.info('📋 Customer found in CBS:', {
+            id: customer.id,
+            accountNo: customer.accountNo,
+            name: customer.displayName
+        });
+        
+        // Get all accounts for customer (includes loans)
+        const accountsResponse = await cbsApi.maker.get(`/v1/clients/${customer.id}/accounts`);
+        
+        if (!accountsResponse || !accountsResponse.data || !accountsResponse.data.loanAccounts) {
+            logger.info('✅ No loan accounts found for customer');
+            return null;
+        }
+        
+        const loanAccounts = accountsResponse.data.loanAccounts;
+        
+        if (!loanAccounts || loanAccounts.length === 0) {
+            logger.info('✅ No loans found for customer');
+            return null;
+        }
+        
+        // Filter active loans (status.id === 300 means Active)
+        const activeLoans = loanAccounts.filter(loan => loan.status && loan.status.id === 300);
+        
+        if (activeLoans.length === 0) {
+            logger.info('✅ No active loans found (may have closed loans)');
+            return null;
+        }
+        
+        logger.info('⚠️ Active loan(s) detected:', {
+            count: activeLoans.length,
+            loans: activeLoans.map(l => ({
+                id: l.id,
+                accountNo: l.accountNo,
+                productName: l.productName,
+                principal: l.originalLoan,
+                status: l.status.value
+            }))
+        });
+        
+        // Return first active loan (system supports 1 loan per customer)
+        return {
+            customer: customer,
+            activeLoan: activeLoans[0],
+            activeLoansCount: activeLoans.length
+        };
+        
+    } catch (error) {
+        logger.error('❌ Error checking for active loans:', {
+            message: error.message,
+            stack: error.stack
+        });
+        return null; // On error, proceed as normal loan
+    }
+}
+
+/**
+ * Handle automatic top-up when active loan is detected
+ */
+async function handleTopUpOfferRequestAuto(parsedData, res, clientData, loanData, employmentData, activeLoanInfo) {
+    try {
+        const header = parsedData.Document.Data.Header;
+        const messageDetails = parsedData.Document.Data.MessageDetails;
+        
+        logger.info('📊 Processing automatic TOP-UP with active loan:', {
+            activeLoanId: activeLoanInfo.activeLoan.id,
+            activeLoanAccount: activeLoanInfo.activeLoan.accountNo,
+            activeLoanPrincipal: activeLoanInfo.activeLoan.originalLoan,
+            customerName: activeLoanInfo.customer.displayName
+        });
+        
+        // Update loan data with top-up info
+        loanData.productCode = 'TOPUP';
+        loanData.existingLoanNumber = activeLoanInfo.activeLoan.accountNo;
+        loanData.existingLoanId = activeLoanInfo.activeLoan.id;
+        
+        // Store data with top-up flag
+        try {
+            await LoanMappingService.createOrUpdateWithClientData(
+                messageDetails.ApplicationNumber,
+                messageDetails.CheckNumber,
+                clientData,
+                loanData,
+                employmentData
+            );
+            logger.info('✅ Auto-detected top-up client data stored successfully');
+        } catch (storageError) {
+            logger.error('❌ Error storing auto top-up client data:', storageError);
+            // Continue with response even if storage fails
+        }
+        
+        // Send immediate ACK
+        const ackResponseData = {
+            Data: {
+                Header: {
+                    "Sender": process.env.FSP_NAME || "ZE DONE",
+                    "Receiver": "ESS_UTUMISHI",
+                    "FSPCode": header.FSPCode,
+                    "MsgId": getMessageId("RESPONSE"),
+                    "MessageType": "RESPONSE"
+                },
+                MessageDetails: {
+                    "ResponseCode": "8000",
+                    "Description": "Success - Top-up detected automatically"
+                }
+            }
+        };
+        
+        const ackSignedResponse = digitalSignature.createSignedXML(ackResponseData.Data);
+        trackLoanMessage('LOAN_OFFER_ACK_RESPONSE', 'sent');
+        res.status(200).send(ackSignedResponse);
+        logger.info('✅ Sent ACK for auto-detected top-up');
+        
+        // Schedule LOAN_INITIAL_APPROVAL_NOTIFICATION callback
+        setTimeout(async () => {
+            try {
+                logger.info('⏰ Sending LOAN_INITIAL_APPROVAL_NOTIFICATION for auto-detected top-up...');
+                
+                // Calculate loan offer with proper tenure defaulting
+                let offerTenure = parseInt(messageDetails.Tenure);
+                if (!offerTenure || offerTenure === 0) {
+                    offerTenure = LOAN_CONSTANTS.MAX_TENURE;
+                    logger.info(`Tenure not provided, defaulting to maximum: ${offerTenure} months`);
+                }
+                
+                // Determine loan amount
+                let requestedAmount = parseFloat(messageDetails.RequestedAmount) || 0;
+                const maxAffordableEMI = parseFloat(messageDetails.DesiredDeductibleAmount || messageDetails.DeductibleAmount || messageDetails.OneThirdAmount || 0);
+                
+                const interestRate = LOAN_CONSTANTS.DEFAULT_INTEREST_RATE;
+                
+                // Calculate or adjust loan amount based on affordability
+                if (requestedAmount > 0 && maxAffordableEMI > 0) {
+                    const calculatedEMI = await LoanCalculations.calculateEMI(requestedAmount, interestRate, offerTenure);
+                    if (calculatedEMI > maxAffordableEMI) {
+                        const adjustedAmount = await LoanCalculations.calculateMaxLoanFromEMI(maxAffordableEMI, interestRate, offerTenure);
+                        requestedAmount = Math.max(LOAN_CONSTANTS.MIN_LOAN_AMOUNT, Math.round(adjustedAmount));
+                        logger.info(`⚠️ Adjusted top-up amount from ${messageDetails.RequestedAmount} to ${requestedAmount} based on affordability`);
+                    }
+                } else if (requestedAmount === 0 && maxAffordableEMI > 0) {
+                    const maxLoanAmount = await LoanCalculations.calculateMaxLoanFromEMI(maxAffordableEMI, interestRate, offerTenure);
+                    requestedAmount = Math.max(LOAN_CONSTANTS.MIN_LOAN_AMOUNT, Math.round(maxLoanAmount));
+                    logger.info(`Calculated top-up amount from affordability: ${requestedAmount}`);
+                } else {
+                    requestedAmount = Math.max(requestedAmount, LOAN_CONSTANTS.MIN_LOAN_AMOUNT);
+                }
+                
+                const loanAmount = requestedAmount;
+                const totalInterestRateAmount = await LoanCalculations.calculateTotalInterest(loanAmount, interestRate, offerTenure);
+                const charges = LoanCalculations.calculateCharges(loanAmount);
+                const totalAmountToPay = loanAmount + totalInterestRateAmount;
+                const otherCharges = charges.otherCharges;
+                const loanNumber = generateLoanNumber();
+                const fspReferenceNumber = generateFSPReferenceNumber();
+                
+                // Update loan mapping with approval details
+                try {
+                    await LoanMappingService.createInitialMapping(
+                        messageDetails.ApplicationNumber,
+                        messageDetails.CheckNumber,
+                        fspReferenceNumber,
+                        {
+                            essLoanNumberAlias: loanNumber,
+                            productCode: "TOPUP",
+                            requestedAmount: loanAmount,
+                            totalAmountToPay: totalAmountToPay,
+                            interestRate: interestRate,
+                            tenure: offerTenure,
+                            otherCharges: otherCharges,
+                            status: 'INITIAL_APPROVAL_SENT',
+                            mifosClientId: activeLoanInfo.customer.id,
+                            existingLoanId: activeLoanInfo.activeLoan.id
+                        }
+                    );
+                    logger.info('✅ Created loan mapping for auto-detected top-up');
+                } catch (mappingError) {
+                    logger.error('❌ Error creating loan mapping for auto top-up:', mappingError);
+                }
+                
+                const approvalResponseData = {
+                    Header: {
+                        "Sender": process.env.FSP_NAME || "ZE DONE",
+                        "Receiver": "ESS_UTUMISHI",
+                        "FSPCode": header.FSPCode,
+                        "MsgId": getMessageId("LOAN_INITIAL_APPROVAL_NOTIFICATION"),
+                        "MessageType": "LOAN_INITIAL_APPROVAL_NOTIFICATION"
+                    },
+                    MessageDetails: {
+                        "ApplicationNumber": messageDetails.ApplicationNumber,
+                        "Reason": "Top-Up Loan Approved (Auto-detected existing loan)",
+                        "FSPReferenceNumber": fspReferenceNumber,
+                        "LoanNumber": loanNumber,
+                        "TotalAmountToPay": totalAmountToPay.toFixed(2),
+                        "OtherCharges": otherCharges.toFixed(2),
+                        "Approval": "APPROVED"
+                    }
+                };
+                
+                await sendCallback(approvalResponseData);
+                trackLoanMessage('LOAN_INITIAL_APPROVAL_NOTIFICATION', 'sent');
+                logger.info('✅ Sent LOAN_INITIAL_APPROVAL_NOTIFICATION for auto-detected top-up');
+                
+            } catch (callbackError) {
+                logger.error('❌ Error sending auto top-up callback:', callbackError);
+                trackLoanError('LOAN_INITIAL_APPROVAL_NOTIFICATION', callbackError.message);
+            }
+        }, 20000);
+        
+    } catch (error) {
+        logger.error('❌ Error in auto top-up processing:', error);
+        throw error;
+    }
+}
 
 const handleLoanOfferRequest = async (parsedData, res) => {
     try {
@@ -71,6 +309,25 @@ const handleLoanOfferRequest = async (parsedData, res) => {
             nearestBranchName: messageDetails.NearestBranchName,
             nearestBranchCode: messageDetails.NearestBranchCode
         };
+
+        // Check for active loans before processing
+        const activeLoanInfo = await checkForActiveLoans(clientData.nin);
+
+        if (activeLoanInfo) {
+            logger.info('🔄 Customer has active loan - automatically treating as TOP-UP request');
+            
+            // Process as top-up offer request
+            return await handleTopUpOfferRequestAuto(
+                parsedData, 
+                res, 
+                clientData, 
+                loanData, 
+                employmentData,
+                activeLoanInfo
+            );
+        }
+
+        logger.info('✅ No active loan found - processing as regular LOAN_OFFER_REQUEST');
 
         // Calculate loan offer immediately with proper tenure defaulting
         let offerTenure = parseInt(messageDetails.Tenure);
