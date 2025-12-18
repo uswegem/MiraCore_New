@@ -1149,6 +1149,27 @@ const handleLoanFinalApproval = async (parsedData, res) => {
 
                         // If approved, create client in CBS and create loan
                         if (messageDetails.Approval === 'APPROVED') {
+                            // Check if this is a top-up loan
+                            const isTopUpLoan = existingMapping?.metadata?.loanData?.productCode === 'TOPUP' ||
+                                              existingMapping?.metadata?.loanData?.existingLoanNumber ||
+                                              existingMapping?.productCode === 'TOPUP';
+                            
+                            if (isTopUpLoan) {
+                                logger.info('🔄 Detected TOP-UP loan - will create new top-up loan in CBS');
+                                logger.info('Top-up details:', {
+                                    existingLoanNumber: existingMapping?.metadata?.loanData?.existingLoanNumber,
+                                    existingLoanId: existingMapping?.metadata?.loanData?.existingLoanId,
+                                    mifosClientId: existingMapping?.mifosClientId,
+                                    productCode: existingMapping?.metadata?.loanData?.productCode
+                                });
+                                
+                                // Mark this so we create the loan with topup=true parameter
+                                loanMappingData.isTopUp = true;
+                                loanMappingData.existingLoanId = existingMapping?.metadata?.loanData?.existingLoanId || 
+                                                                existingMapping?.metadata?.existingLoanId ||
+                                                                existingMapping?.mifosLoanId;
+                            }
+                            
                             // Try to get client data from existing mapping or use message details
                             const storedClientData = existingMapping?.metadata?.clientData;
                             const clientData = storedClientData ? {
@@ -1272,6 +1293,14 @@ const handleLoanFinalApproval = async (parsedData, res) => {
                                     
                                     logger.info(`Using loan amount: ${loanAmount}, tenure: ${loanTenure}`);
                                     
+                                    // Check if this is a top-up loan
+                                    const isTopUp = loanMappingData.isTopUp === true;
+                                    const existingLoanId = loanMappingData.existingLoanId;
+                                    
+                                    if (isTopUp && existingLoanId) {
+                                        logger.info(`🔄 Creating TOP-UP loan linked to existing loan ${existingLoanId}`);
+                                    }
+                                    
                                     // Create loan in CBS
                                     const loanPayload = {
                                         clientId: clientId,
@@ -1293,7 +1322,12 @@ const handleLoanFinalApproval = async (parsedData, res) => {
                                         submittedOnDate: new Date().toISOString().split('T')[0],
                                         dateFormat: "yyyy-MM-dd",
                                         locale: "en",
-                                        charges: [] // Empty charges array to avoid MIFOS NPE bug
+                                        charges: [], // Empty charges array to avoid MIFOS NPE bug
+                                        // Add top-up parameters if this is a top-up loan
+                                        ...(isTopUp && existingLoanId ? {
+                                            isTopup: true,
+                                            loanIdToClose: existingLoanId
+                                        } : {})
                                     };
                                     
                                     logger.info('Creating loan with payload:', JSON.stringify(loanPayload, null, 2));
