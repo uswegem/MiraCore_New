@@ -907,6 +907,123 @@ const handleTakeoverPaymentNotification = async (parsedData, res) => {
     res.status(200).send(signedResponse);
 };
 
+const handleLoanRestructureRejection = async (parsedData, res) => {
+    try {
+        logger.info('Processing LOAN_RESTRUCTURE_REJECTION...');
+        
+        const header = parsedData.Document.Data.Header;
+        const messageDetails = parsedData.Document.Data.MessageDetails;
+        
+        // Extract request data
+        const applicationNumber = messageDetails.ApplicationNumber;
+        const reason = messageDetails.Reason;
+        const fspReferenceNumber = messageDetails.FSPReferenceNumber;
+        const loanNumber = messageDetails.LoanNumber;
+        
+        logger.info('Loan restructure rejection details:', {
+            applicationNumber,
+            fspReferenceNumber,
+            loanNumber,
+            reason
+        });
+
+        // Validate required fields
+        if (!applicationNumber) {
+            logger.error('Missing required field: ApplicationNumber');
+            return sendErrorResponse(res, '8003', 'Missing required field: ApplicationNumber', 'xml', parsedData);
+        }
+
+        // Find loan mapping by ApplicationNumber (only active loans)
+        let loanMapping;
+        try {
+            loanMapping = await LoanMappingService.getByEssApplicationNumber(applicationNumber, false);
+        } catch (error) {
+            logger.info('Active loan mapping not found for restructure rejection:', { applicationNumber });
+            // If no active mapping exists, still acknowledge
+            const responseData = {
+                Data: {
+                    Header: {
+                        "Sender": process.env.FSP_NAME || "ZE DONE",
+                        "Receiver": header.Sender,
+                        "FSPCode": process.env.FSP_CODE || "FL8090", 
+                        "MsgId": getMessageId("RESPONSE"),
+                        "MessageType": "RESPONSE"
+                    },
+                    MessageDetails: {
+                        "ResponseCode": "8000",
+                        "Description": `Loan restructure rejection acknowledged for application: ${applicationNumber}. No active loan found.`
+                    }
+                }
+            };
+
+            const responseXML = digitalSignature.createSignedXML(responseData.Data);
+            res.set('Content-Type', 'application/xml');
+            return res.send(responseXML);
+        }
+
+        logger.info('Found loan mapping for restructure rejection:', {
+            id: loanMapping._id,
+            status: loanMapping.status,
+            mifosLoanId: loanMapping.mifosLoanId,
+            essApplicationNumber: loanMapping.essApplicationNumber
+        });
+
+        // Check if loan is in a restructurable state
+        const allowedStatuses = ['RESTRUCTURE_PENDING', 'RESTRUCTURE_IN_PROGRESS', 'DISBURSED', 'ACTIVE'];
+        
+        if (!allowedStatuses.includes(loanMapping.status)) {
+            logger.warn('Loan restructure rejection for unexpected status (processing anyway):', { 
+                status: loanMapping.status,
+                applicationNumber 
+            });
+        }
+
+        // Update loan mapping status to RESTRUCTURE_REJECTED
+        const updateResult = await LoanMappingService.updateStatus(
+            applicationNumber,
+            'RESTRUCTURE_REJECTED',
+            {
+                rejectionReason: reason || 'Loan restructure rejected by ESS',
+                rejectedAt: new Date(),
+                rejectedBy: 'ESS_UTUMISHI',
+                fspReferenceNumber: fspReferenceNumber || loanMapping.fspReferenceNumber,
+                loanNumber: loanNumber
+            }
+        );
+
+        logger.info('Loan mapping updated to RESTRUCTURE_REJECTED:', {
+            applicationNumber,
+            updateResult
+        });
+
+        // Send success acknowledgment
+        const responseData = {
+            Data: {
+                Header: {
+                    "Sender": process.env.FSP_NAME || "ZE DONE",
+                    "Receiver": header.Sender,
+                    "FSPCode": header.FSPCode,
+                    "MsgId": getMessageId("RESPONSE"),
+                    "MessageType": "RESPONSE"
+                },
+                MessageDetails: {
+                    "ResponseCode": "8000",
+                    "Description": "Loan restructure rejection processed successfully"
+                }
+            }
+        };
+
+        logger.info('Sending restructure rejection acknowledgment:', responseData.Data.MessageDetails);
+        
+        const signedResponse = digitalSignature.createSignedXML(responseData.Data);
+        res.status(200).send(signedResponse);
+
+    } catch (error) {
+        logger.error('Error processing LOAN_RESTRUCTURE_REJECTION:', error);
+        return sendErrorResponse(res, '8002', `Processing error: ${error.message}`, 'xml', parsedData);
+    }
+};
+
 const handleLoanCancellation = async (parsedData, res) => {
     try {
         logger.info('Processing LOAN_CANCELLATION_NOTIFICATION...');
