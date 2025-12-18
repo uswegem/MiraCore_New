@@ -13,7 +13,7 @@ async function sendCallback(callbackData) {
     let retryCount = 0;
     while (retryCount < MAX_RETRIES) {
         try {
-            const signedCallback = digitalSignature.createSignedXML(callbackData);
+            const signedCallback = digitalSignature.createSignedXML(callbackData.Data);
             logger.info(`📤 Attempt ${retryCount + 1}/${MAX_RETRIES} to send callback`);
         
         // Get callback URL from environment variables
