@@ -59,8 +59,24 @@ async function handleLoanRestructureBalanceRequest(parsedData, res) {
             DeductionBalance
         });
         
-        // Find loan mapping in database
-        const loanMapping = await LoanMappingService.findByLoanNumber(LoanNumber);
+        // Find loan mapping in database - try multiple lookup methods
+        let loanMapping = null;
+        
+        // Try finding by FSP reference number first
+        try {
+            loanMapping = await LoanMappingService.findByFspReference(LoanNumber);
+        } catch (err) {
+            logger.debug('Loan not found by FSP reference');
+        }
+        
+        // If not found, try by ESS loan number
+        if (!loanMapping) {
+            try {
+                loanMapping = await LoanMappingService.findByEssLoanNumber(LoanNumber);
+            } catch (err) {
+                logger.debug('Loan not found by ESS loan number');
+            }
+        }
         
         if (!loanMapping) {
             logger.error('Loan mapping not found', { LoanNumber });
