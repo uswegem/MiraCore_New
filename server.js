@@ -13,7 +13,7 @@ const authRoutes = require('./src/routes/auth');
 const userRoutes = require('./src/routes/users');
 const auditRoutes = require('./src/routes/audit');
 const adminCompatRoutes = require('./src/routes/adminCompat');
-const loanActionsRoutes = require('./src/routes/loanActions');
+// const loanActionsRoutes = require('./src/routes/loanActions'); // Temporarily commented out due to syntax error
 // const messageRoutes = require('./src/routes/messages'); // Temporarily commented out
 
 // Import middleware
@@ -224,7 +224,7 @@ app.use('/api/v1/audit', auditRoutes);
 app.use('/api/v1', adminCompatRoutes);
 
 // Loan action routes for manual notifications (protected)
-app.use('/api/v1/loan-actions', loanActionsRoutes);
+// app.use('/api/v1/loan-actions', loanActionsRoutes); // Temporarily commented out due to syntax error
 
 // MIFOS administration and monitoring routes
 const mifosAdminRoutes = require('./src/routes/mifosAdmin');
