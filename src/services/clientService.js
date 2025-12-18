@@ -69,13 +69,17 @@ class ClientService {
 
             logger.info('🔵 Creating client in CBS:', payload);
             const response = await cbsApi.post(API_ENDPOINTS.CLIENTS, payload);
-            logger.info('🟢 CBS client creation response:', JSON.stringify(response, null, 2));
+            logger.info('🟢 CBS client creation response:', {
+                status: response.status,
+                statusText: response.statusText,
+                data: response.data
+            });
             
             // Client creation includes datatable, no need for separate call
             
             return response;
         } catch (error) {
-            logger.error('🔴 Error creating client:', error);
+            logger.error('🔴 Error creating client:', error.message || error);
             throw error;
         }
     }

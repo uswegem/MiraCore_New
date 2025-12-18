@@ -1463,12 +1463,17 @@ const handleLoanFinalApproval = async (parsedData, res) => {
 
         // Create audit log for initial receipt
         await AuditLog.create({
+            userId: 'system',
+            action: 'LOAN_FINAL_APPROVAL_RECEIVED',
+            description: `Final approval received for loan ${messageDetails.LoanNumber}`,
             eventType: 'LOAN_FINAL_APPROVAL_RECEIVED',
             data: {
                 loanNumber: messageDetails.LoanNumber,
                 applicationNumber: messageDetails.ApplicationNumber,
                 approval: messageDetails.Approval
             }
+        }).catch(err => {
+            logger.error('Error saving audit log:', err.message);
         });
 
     } catch (error) {
