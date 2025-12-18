@@ -1259,7 +1259,7 @@ const handleLoanFinalApproval = async (parsedData, res) => {
                                         numberOfRepayments: parseInt(loanTenure),
                                         repaymentEvery: 1,
                                         repaymentFrequencyType: 2, // Monthly
-                                        interestRatePerPeriod: 15, // 15% per year
+                                        interestRatePerPeriod: 28, // 28% per year (matching product config)
                                         interestRateFrequencyType: 3, // Per year
                                         amortizationType: 1, // Equal installments
                                         interestType: 0, // Declining balance
@@ -1268,7 +1268,8 @@ const handleLoanFinalApproval = async (parsedData, res) => {
                                         expectedDisbursementDate: new Date().toISOString().split('T')[0],
                                         submittedOnDate: new Date().toISOString().split('T')[0],
                                         dateFormat: "yyyy-MM-dd",
-                                        locale: "en"
+                                        locale: "en",
+                                        charges: [] // Empty charges array to avoid MIFOS NPE bug
                                     };
                                     
                                     logger.info('Creating loan with payload:', JSON.stringify(loanPayload, null, 2));
