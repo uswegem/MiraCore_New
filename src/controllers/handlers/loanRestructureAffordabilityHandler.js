@@ -5,7 +5,7 @@ const { getMessageId } = require('../../utils/messageIdGenerator');
 const LOAN_CONSTANTS = require('../../utils/loanConstants');
 const loanCalculations = require('../../utils/loanCalculations');
 const LoanMapping = require('../../models/LoanMapping');
-const mifosService = require('../../services/mifosService');
+const cbsApi = require('../../services/cbs.api');
 
 const path = require('path');
 const loanUtilsPath = path.resolve(__dirname, '../../utils/loanUtils.js');
@@ -56,18 +56,19 @@ const handleLoanRestructureAffordabilityRequest = async (parsedData, res) => {
             return sendErrorResponse(res, '8015', 'MIFOS Loan ID not available', 'xml', parsedData);
         }
 
+
         logger.info(`Found loan mapping: mifosLoanId=${loanMapping.mifosLoanId}, status=${loanMapping.status}`);
 
         // Fetch loan details from MIFOS with full associations
-        const mifosLoan = await mifosService.getLoanById(loanMapping.mifosLoanId, {
-            associations: 'repaymentSchedule,transactions'
-        });
+        const api = cbsApi.maker;
+        const loanResponse = await api.get(`/v1/loans/${loanMapping.mifosLoanId}?associations=repaymentSchedule,transactions`);
 
-        if (!mifosLoan) {
+        if (!loanResponse.data) {
             logger.error(`MIFOS loan not found: ${loanMapping.mifosLoanId}`);
             return sendErrorResponse(res, '8016', 'Loan details not available from MIFOS', 'xml', parsedData);
         }
 
+        const mifosLoan = loanResponse.data;
         logger.info(`MIFOS Loan Status: ${mifosLoan.status?.value}, Principal: ${mifosLoan.principal}, Outstanding: ${mifosLoan.summary?.totalOutstanding}`);
 
         // Get current loan details
