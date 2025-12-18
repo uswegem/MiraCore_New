@@ -55,7 +55,7 @@ const loanMappingSchema = new mongoose.Schema({
   // Status tracking
   status: {
     type: String,
-    enum: ['INITIAL_OFFER', 'INITIAL_APPROVAL_SENT', 'APPROVED', 'REJECTED', 'CANCELLED', 'FINAL_APPROVAL_RECEIVED', 'CLIENT_CREATED', 'LOAN_CREATED', 'DISBURSED', 'FAILED', 'OFFER_SUBMITTED'],
+    enum: ['INITIAL_OFFER', 'INITIAL_APPROVAL_SENT', 'APPROVED', 'REJECTED', 'CANCELLED', 'FINAL_APPROVAL_RECEIVED', 'CLIENT_CREATED', 'LOAN_CREATED', 'DISBURSED', 'DISBURSEMENT_FAILURE_NOTIFICATION_SENT', 'FAILED', 'OFFER_SUBMITTED'],
     default: 'INITIAL_OFFER'
   },
 
@@ -74,6 +74,9 @@ const loanMappingSchema = new mongoose.Schema({
     type: Date
   },
   disbursedAt: {
+    type: Date
+  },
+  disbursementFailureNotificationSentAt: {
     type: Date
   },
 
@@ -112,7 +115,8 @@ loanMappingSchema.methods.updateStatus = function(newStatus) {
     'FINAL_APPROVAL_RECEIVED': 'finalApprovalReceivedAt',
     'CLIENT_CREATED': 'clientCreatedAt',
     'LOAN_CREATED': 'loanCreatedAt',
-    'DISBURSED': 'disbursedAt'
+    'DISBURSED': 'disbursedAt',
+    'DISBURSEMENT_FAILURE_NOTIFICATION_SENT': 'disbursementFailureNotificationSentAt'
   };
 
   if (timestampFields[newStatus]) {

@@ -307,8 +307,15 @@ const handleTopUpPayOffBalanceRequest = async (parsedData, res) => {
         // Fetch loan details from MIFOS
         const loanResponse = await api.get(`/v1/loans/${mifosLoanId}?associations=all`);
         
-        if (!loanResponse.status || !loanResponse.response) {
-            logger.error('Loan not found in MIFOS after lookup:', { mifosLoanId, originalLoanNumber: loanNumber });
+        // Check if loan data was retrieved (response should contain loan object with id)
+        if (!loanResponse || !loanResponse.response || !loanResponse.response.id) {
+            logger.error('Loan not found in MIFOS after lookup:', { 
+                mifosLoanId, 
+                originalLoanNumber: loanNumber,
+                hasResponse: !!loanResponse,
+                hasResponseData: !!loanResponse?.response,
+                responseId: loanResponse?.response?.id
+            });
             
             const errorResponseData = {
                 Data: {
@@ -912,13 +919,13 @@ const handleLoanCancellation = async (parsedData, res) => {
             return sendErrorResponse(res, '8003', 'Missing required field: ApplicationNumber', 'xml', parsedData);
         }
 
-        // Find loan mapping by ApplicationNumber
+        // Find loan mapping by ApplicationNumber (only active loans)
         let loanMapping;
         try {
-            loanMapping = await LoanMappingService.getByEssApplicationNumber(applicationNumber);
+            loanMapping = await LoanMappingService.getByEssApplicationNumber(applicationNumber, false);
         } catch (error) {
-            logger.info('Loan mapping not found, treating as already cancelled or never created:', { applicationNumber });
-            // If no mapping exists, treat as successful cancellation (already cancelled or never created)
+            logger.info('Active loan mapping not found, treating as already cancelled or never created:', { applicationNumber });
+            // If no active mapping exists, treat as successful cancellation
             const responseData = {
                 Header: {
                     "Sender": process.env.FSP_NAME || "ZE DONE",
@@ -1104,9 +1111,17 @@ const handleLoanFinalApproval = async (parsedData, res) => {
         setImmediate(async () => {
             try {
                 // Try to retrieve existing loan mapping, or create a new one
+                // IMPORTANT: Only get active mappings (exclude CANCELLED/REJECTED)
                 let existingMapping;
                 try {
-                    existingMapping = await LoanMappingService.getByEssApplicationNumber(messageDetails.ApplicationNumber);
+                    existingMapping = await LoanMappingService.getByEssApplicationNumber(messageDetails.ApplicationNumber, false);
+                    if (!existingMapping) {
+                        // Check if there's a cancelled/rejected mapping (for logging only)
+                        const inactiveMapping = await LoanMappingService.getByEssApplicationNumber(messageDetails.ApplicationNumber, true);
+                        if (inactiveMapping) {
+                            logger.info(`ℹ️ Found ${inactiveMapping.status} loan for ${messageDetails.ApplicationNumber}. Treating as new application.`);
+                        }
+                    }
                 } catch (error) {
                     logger.warn(`⚠️ No existing loan mapping found for ${messageDetails.ApplicationNumber}, will create new one`);
                     existingMapping = null;
@@ -1256,6 +1271,7 @@ const handleLoanFinalApproval = async (parsedData, res) => {
                                         principal: loanAmount.toString(),
                                         loanTermFrequency: parseInt(loanTenure),
                                         loanTermFrequencyType: 2, // Months
+                                        loanType: "individual",
                                         numberOfRepayments: parseInt(loanTenure),
                                         repaymentEvery: 1,
                                         repaymentFrequencyType: 2, // Monthly
@@ -1278,8 +1294,8 @@ const handleLoanFinalApproval = async (parsedData, res) => {
                                     logger.info('Creating loan with payload:', JSON.stringify(loanPayload, null, 2));
                                     const loanResponse = await api.post('/v1/loans', loanPayload);
 
-                                    if (loanResponse.status && loanResponse.response?.loanId) {
-                                        const loanId = loanResponse.response.loanId;
+                                    if (loanResponse.data && loanResponse.data.loanId) {
+                                        const loanId = loanResponse.data.loanId;
                                         logger.info(`Loan created successfully with ID: ${loanId}`);
 
                                         // Approve loan

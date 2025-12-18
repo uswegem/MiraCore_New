@@ -18,12 +18,11 @@ async function sendDisbursementNotification(loanDetails) {
         },
         MessageDetails: {
             ApplicationNumber: loanDetails.applicationNumber,
+            Reason: loanDetails.reason || 'Loan successfully disbursed',
             FSPReferenceNumber: loanDetails.fspReferenceNumber,
             LoanNumber: loanDetails.loanNumber,
-            DisbursementDate: new Date().toISOString(),
-            DisbursementAmount: loanDetails.amount,
-            Status: 'DISBURSED',
-            Description: 'Loan successfully disbursed'
+            TotalAmountToPay: loanDetails.totalAmountToPay || loanDetails.amount,
+            DisbursementDate: new Date().toISOString().replace('Z', '')
         }
     };
 

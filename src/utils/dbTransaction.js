@@ -12,13 +12,37 @@ class DBTransaction {
    * @returns {Promise<any>} - Result of the operation
    */
   static async execute(operation, options = {}) {
+    // Check if MongoDB is running in replica set mode
+    const isReplicaSet = mongoose.connection.db && 
+                         mongoose.connection.db.serverConfig && 
+                         mongoose.connection.db.serverConfig.s && 
+                         mongoose.connection.db.serverConfig.s.description && 
+                         mongoose.connection.db.serverConfig.s.description.type !== 'Standalone';
+    
+    if (!isReplicaSet) {
+      // Run without transaction for standalone MongoDB
+      logger.info('🔄 Executing database operation (standalone mode - no transaction)');
+      try {
+        const result = await operation(null);
+        logger.info('✅ Database operation completed successfully');
+        return result;
+      } catch (error) {
+        logger.error('❌ Database operation failed:', {
+          error: error.message,
+          stack: error.stack
+        });
+        throw error;
+      }
+    }
+    
+    // Use transactions for replica set
     const session = await mongoose.startSession();
     
     try {
       let result;
       
       await session.withTransaction(async () => {
-        logger.info('🔄 Starting database transaction');
+        logger.info('🔄 Starting database transaction (replica set mode)');
         result = await operation(session);
         logger.info('✅ Database transaction completed successfully');
       }, {

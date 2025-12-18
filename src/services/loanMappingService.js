@@ -27,8 +27,10 @@ class LoanMappingService {
    */
   static async createOrUpdateWithClientData(applicationNumber, checkNumber, clientData, loanData, employmentData) {
     try {
+      // Only update active mappings, not CANCELLED or REJECTED ones
       const filter = {
-        essApplicationNumber: applicationNumber
+        essApplicationNumber: applicationNumber,
+        status: { $nin: ['CANCELLED', 'REJECTED'] } // Exclude inactive statuses
       };
 
       const update = {
@@ -91,16 +93,32 @@ class LoanMappingService {
       }
 
       // Check if mapping already exists to prevent duplicates
+      // IMPORTANT: Exclude CANCELLED loans - they should not block new applications
       const existingMapping = await LoanMapping.findOne({
-        essApplicationNumber
+        essApplicationNumber,
+        status: { $nin: ['CANCELLED', 'REJECTED'] } // Exclude inactive statuses
       });
 
       if (existingMapping) {
-        logger.warn(`⚠️ Loan mapping already exists for application: ${essApplicationNumber}`, {
+        logger.warn(`⚠️ Active loan mapping already exists for application: ${essApplicationNumber}`, {
           existingId: existingMapping._id,
-          existingStatus: existingMapping.status
+          existingStatus: existingMapping.status,
+          note: 'CANCELLED and REJECTED loans are not considered active'
         });
         return existingMapping;
+      }
+
+      // Check if a CANCELLED or REJECTED mapping exists (for logging)
+      const cancelledMapping = await LoanMapping.findOne({
+        essApplicationNumber,
+        status: { $in: ['CANCELLED', 'REJECTED'] }
+      });
+
+      if (cancelledMapping) {
+        logger.info(`ℹ️ Found ${cancelledMapping.status} loan mapping for application: ${essApplicationNumber}. Creating new mapping as this is treated as inactive.`, {
+          previousId: cancelledMapping._id,
+          previousStatus: cancelledMapping.status
+        });
       }
 
       const mapping = new LoanMapping({
@@ -364,10 +382,19 @@ class LoanMappingService {
 
   /**
    * Get loan mapping by ESS application number
+   * @param {string} essApplicationNumber - The ESS application number
+   * @param {boolean} includeInactive - Whether to include CANCELLED/REJECTED loans (default: true)
    */
-  static async getByEssApplicationNumber(essApplicationNumber) {
+  static async getByEssApplicationNumber(essApplicationNumber, includeInactive = true) {
     try {
-      const mapping = await LoanMapping.findOne({ essApplicationNumber }).lean();
+      const query = { essApplicationNumber };
+      
+      // Optionally exclude inactive statuses
+      if (!includeInactive) {
+        query.status = { $nin: ['CANCELLED', 'REJECTED'] };
+      }
+      
+      const mapping = await LoanMapping.findOne(query).lean();
       if (!mapping) {
         throw new Error(`No loan mapping found for ESS application: ${essApplicationNumber}`);
       }
