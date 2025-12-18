@@ -1,5 +1,5 @@
 const logger = require('../../utils/logger');
-const { sendCallback } = require('../../utils/callbackUtils');
+const digitalSignature = require('../../utils/signatureUtils');
 const { sendErrorResponse } = require('../../utils/responseUtils');
 const LoanMappingService = require('../../services/loanMappingService');
 const LoanMapping = require('../../models/LoanMapping');
@@ -165,47 +165,38 @@ async function handleLoanRestructureBalanceRequest(parsedData, res) {
             maturityDate
         });
         
-        // Prepare response data with proper structure
+        // Prepare synchronous response data
         const responseData = {
-            Header: {
-                "Sender": process.env.FSP_NAME || "ZE DONE",
-                "Receiver": "ESS_UTUMISHI",
-                "FSPCode": header.FSPCode,
-                "MsgId": header.MsgId,
-                "MessageType": "LOAN_RESTRUCTURE_BALANCE_RESPONSE"
-            },
-            MessageDetails: {
-                "LoanNumber": LoanNumber,
-                "InstallmentAmount": installmentAmount.toFixed(2),
-                "OutstandingBalance": outstandingBalance.toFixed(2),
-                "PrincipalBalance": principalOutstanding.toFixed(2),
-                "ValidityDate": formattedValidityDate,
-                "LastRepaymentDate": lastRepaymentDate || formatDateForMifos(new Date()),
-                "MaturityDate": maturityDate || formatDateForMifos(validityDate)
+            Data: {
+                Header: {
+                    "Sender": process.env.FSP_NAME || "ZE DONE",
+                    "Receiver": "ESS_UTUMISHI",
+                    "FSPCode": header.FSPCode,
+                    "MsgId": header.MsgId,
+                    "MessageType": "LOAN_RESTRUCTURE_BALANCE_RESPONSE"
+                },
+                MessageDetails: {
+                    "LoanNumber": LoanNumber,
+                    "InstallmentAmount": installmentAmount.toFixed(2),
+                    "OutstandingBalance": outstandingBalance.toFixed(2),
+                    "PrincipalBalance": principalOutstanding.toFixed(2),
+                    "ValidityDate": formattedValidityDate,
+                    "LastRepaymentDate": lastRepaymentDate || formatDateForMifos(new Date()),
+                    "MaturityDate": maturityDate || formatDateForMifos(validityDate)
+                }
             }
         };
         
-        logger.info('Sending LOAN_RESTRUCTURE_BALANCE_RESPONSE:', responseData.MessageDetails);
+        logger.info('Returning LOAN_RESTRUCTURE_BALANCE_RESPONSE:', responseData.Data.MessageDetails);
         
-        // Send response via callback with 2 second delay
-        setTimeout(async () => {
-            try {
-                await sendCallback(responseData);
-                logger.info('✅ LOAN_RESTRUCTURE_BALANCE_RESPONSE sent successfully');
-            } catch (callbackError) {
-                logger.error('Failed to send LOAN_RESTRUCTURE_BALANCE_RESPONSE:', callbackError);
-            }
-        }, 2000);
+        // Create signed XML response
+        const signedResponse = digitalSignature.createSignedXML(responseData.Data);
         
-        // Send immediate acknowledgment
         const duration = Date.now() - startTime;
         logger.info(`✅ LOAN_RESTRUCTURE_BALANCE_REQUEST processed in ${duration}ms`);
         
-        return res.status(200).json({
-            responseCode: '8000',
-            responseDescription: 'Request received successfully',
-            timestamp: new Date().toISOString()
-        });
+        // Return synchronous XML response
+        return res.status(200).set('Content-Type', 'application/xml').send(signedResponse);
         
     } catch (error) {
         logger.error('❌ Error processing LOAN_RESTRUCTURE_BALANCE_REQUEST:', error);
