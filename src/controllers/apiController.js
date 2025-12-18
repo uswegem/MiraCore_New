@@ -1149,25 +1149,25 @@ const handleLoanFinalApproval = async (parsedData, res) => {
 
                         // If approved, create client in CBS and create loan
                         if (messageDetails.Approval === 'APPROVED') {
-                            // Check if this is a top-up loan
-                            const isTopUpLoan = existingMapping?.metadata?.loanData?.productCode === 'TOPUP' ||
-                                              existingMapping?.metadata?.loanData?.existingLoanNumber ||
-                                              existingMapping?.productCode === 'TOPUP';
+                            // Check if this is a top-up loan by checking for existing loan number
+                            const existingLoanNumber = existingMapping?.metadata?.loanData?.existingLoanNumber;
+                            const existingLoanId = existingMapping?.metadata?.loanData?.existingLoanId || 
+                                                 existingMapping?.metadata?.existingLoanId ||
+                                                 existingMapping?.mifosLoanId;
+                            
+                            const isTopUpLoan = existingLoanNumber || existingLoanId;
                             
                             if (isTopUpLoan) {
                                 logger.info('🔄 Detected TOP-UP loan - will create new top-up loan in CBS');
                                 logger.info('Top-up details:', {
-                                    existingLoanNumber: existingMapping?.metadata?.loanData?.existingLoanNumber,
-                                    existingLoanId: existingMapping?.metadata?.loanData?.existingLoanId,
-                                    mifosClientId: existingMapping?.mifosClientId,
-                                    productCode: existingMapping?.metadata?.loanData?.productCode
+                                    existingLoanNumber: existingLoanNumber,
+                                    existingLoanId: existingLoanId,
+                                    mifosClientId: existingMapping?.mifosClientId
                                 });
                                 
                                 // Mark this so we create the loan with topup=true parameter
                                 loanMappingData.isTopUp = true;
-                                loanMappingData.existingLoanId = existingMapping?.metadata?.loanData?.existingLoanId || 
-                                                                existingMapping?.metadata?.existingLoanId ||
-                                                                existingMapping?.mifosLoanId;
+                                loanMappingData.existingLoanId = existingLoanId;
                             }
                             
                             // Try to get client data from existing mapping or use message details
