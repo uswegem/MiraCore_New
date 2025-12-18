@@ -48,7 +48,7 @@ async function sendCallback(callbackData) {
         logger.info('📥 Callback response:', {
             status: response.status,
             statusText: response.statusText,
-            messageType: callbackData.Header.MessageType,
+            messageType: callbackData.Data?.Header?.MessageType || callbackData.Header?.MessageType || 'UNKNOWN',
             headers: response.headers,
             data: response.data
         });

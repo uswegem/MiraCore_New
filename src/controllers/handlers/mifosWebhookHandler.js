@@ -55,6 +55,11 @@ const handleMifosWebhook = async (req, res) => {
  * Process MIFOS webhook events
  */
 async function processWebhookEvent(webhookData) {
+    if (!webhookData) {
+        logger.warn('Webhook data is undefined, skipping processing');
+        return;
+    }
+
     const { entityName, actionName, entity } = webhookData;
 
     logger.info('Processing webhook event:', {
