@@ -196,8 +196,8 @@ const handleTopUpPayOffBalanceRequest = async (parsedData, res) => {
                 // Strategy 2: Search Mifos loans by external ID (ESS loan number)
                 try {
                     const searchResponse = await api.get(`/v1/loans?externalId=${loanNumber}&limit=1`);
-                    if (searchResponse.response?.pageItems && searchResponse.response.pageItems.length > 0) {
-                        const foundLoan = searchResponse.response.pageItems[0];
+                    if (searchResponse.data?.pageItems && searchResponse.data.pageItems.length > 0) {
+                        const foundLoan = searchResponse.data.pageItems[0];
                         mifosLoanId = foundLoan.id;
                         fspReferenceNumber = foundLoan.externalId || loanNumber;
                         logger.info('Found loan by external ID:', { mifosLoanId, externalId: foundLoan.externalId });
@@ -217,8 +217,8 @@ const handleTopUpPayOffBalanceRequest = async (parsedData, res) => {
                             const knownEssAppNumber = 'ESS1763982075940';
                             logger.info('Using known ESS application number for this loan:', { loanNumber, knownEssAppNumber });
                             const knownSearchResponse = await api.get(`/v1/loans?externalId=${knownEssAppNumber}&limit=1`);
-                            if (knownSearchResponse.response?.pageItems && knownSearchResponse.response.pageItems.length > 0) {
-                                const foundLoan = knownSearchResponse.response.pageItems[0];
+                            if (knownSearchResponse.data?.pageItems && knownSearchResponse.data.pageItems.length > 0) {
+                                const foundLoan = knownSearchResponse.data.pageItems[0];
                                 mifosLoanId = foundLoan.id;
                                 logger.info('✅ Found loan using known ESS application number:', { mifosLoanId, essAppNumber: knownEssAppNumber });
                             }
@@ -229,8 +229,8 @@ const handleTopUpPayOffBalanceRequest = async (parsedData, res) => {
                             const essAppNumber = 'ESS' + timestamp.substring(0, 13);
                             logger.info('Trying ESS application number pattern:', { loanNumber, essAppNumber });
                             const essSearchResponse = await api.get(`/v1/loans?externalId=${essAppNumber}&limit=1`);
-                            if (essSearchResponse.response?.pageItems && essSearchResponse.response.pageItems.length > 0) {
-                                const foundLoan = essSearchResponse.response.pageItems[0];
+                            if (essSearchResponse.data?.pageItems && essSearchResponse.data.pageItems.length > 0) {
+                                const foundLoan = essSearchResponse.data.pageItems[0];
                                 mifosLoanId = foundLoan.id;
                                 fspReferenceNumber = foundLoan.externalId;
                                 logger.info('Found loan by ESS application pattern:', { 
@@ -249,8 +249,8 @@ const handleTopUpPayOffBalanceRequest = async (parsedData, res) => {
                 if (!mifosLoanId) {
                     try {
                         const accountSearchResponse = await api.get(`/v1/loans?accountNo=${loanNumber}&limit=1`);
-                        if (accountSearchResponse.response?.pageItems && accountSearchResponse.response.pageItems.length > 0) {
-                            const foundLoan = accountSearchResponse.response.pageItems[0];
+                        if (accountSearchResponse.data?.pageItems && accountSearchResponse.data.pageItems.length > 0) {
+                            const foundLoan = accountSearchResponse.data.pageItems[0];
                             mifosLoanId = foundLoan.id;
                             fspReferenceNumber = foundLoan.accountNo || loanNumber;
                             logger.info('Found loan by account number:', { mifosLoanId, accountNo: foundLoan.accountNo });
@@ -307,14 +307,14 @@ const handleTopUpPayOffBalanceRequest = async (parsedData, res) => {
         // Fetch loan details from MIFOS
         const loanResponse = await api.get(`/v1/loans/${mifosLoanId}?associations=all`);
         
-        // Check if loan data was retrieved (response should contain loan object with id)
-        if (!loanResponse || !loanResponse.response || !loanResponse.response.id) {
+        // Check if loan data was retrieved (axios returns data in response.data)
+        if (!loanResponse || !loanResponse.data || !loanResponse.data.id) {
             logger.error('Loan not found in MIFOS after lookup:', { 
                 mifosLoanId, 
                 originalLoanNumber: loanNumber,
                 hasResponse: !!loanResponse,
-                hasResponseData: !!loanResponse?.response,
-                responseId: loanResponse?.response?.id
+                hasData: !!loanResponse?.data,
+                dataId: loanResponse?.data?.id
             });
             
             const errorResponseData = {
@@ -340,7 +340,7 @@ const handleTopUpPayOffBalanceRequest = async (parsedData, res) => {
             return res.status(200).send(signedErrorResponse);
         }
 
-        loanData = loanResponse.response;
+        loanData = loanResponse.data;
         logger.info('Loan data retrieved from MIFOS:', {
             id: loanData.id,
             accountNo: loanData.accountNo,
