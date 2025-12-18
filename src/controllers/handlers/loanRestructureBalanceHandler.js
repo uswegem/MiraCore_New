@@ -165,27 +165,32 @@ async function handleLoanRestructureBalanceRequest(parsedData, res) {
             maturityDate
         });
         
-        // Prepare response data
+        // Prepare response data with proper structure
         const responseData = {
-            LoanNumber: LoanNumber,
-            OutstandingBalance: outstandingBalance.toFixed(2),
-            PrincipalBalance: principalOutstanding.toFixed(2),
-            InstallmentAmount: installmentAmount.toFixed(2),
-            LastRepaymentDate: lastRepaymentDate || formatDateForMifos(new Date()),
-            MaturityDate: maturityDate || formatDateForMifos(validityDate),
-            ValidityDate: formattedValidityDate
+            Header: {
+                "Sender": process.env.FSP_NAME || "ZE DONE",
+                "Receiver": "ESS_UTUMISHI",
+                "FSPCode": header.FSPCode,
+                "MsgId": header.MsgId,
+                "MessageType": "LOAN_RESTRUCTURE_BALANCE_RESPONSE"
+            },
+            MessageDetails: {
+                "LoanNumber": LoanNumber,
+                "InstallmentAmount": installmentAmount.toFixed(2),
+                "OutstandingBalance": outstandingBalance.toFixed(2),
+                "PrincipalBalance": principalOutstanding.toFixed(2),
+                "ValidityDate": formattedValidityDate,
+                "LastRepaymentDate": lastRepaymentDate || formatDateForMifos(new Date()),
+                "MaturityDate": maturityDate || formatDateForMifos(validityDate)
+            }
         };
         
-        logger.info('Sending LOAN_RESTRUCTURE_BALANCE_RESPONSE:', responseData);
+        logger.info('Sending LOAN_RESTRUCTURE_BALANCE_RESPONSE:', responseData.MessageDetails);
         
         // Send response via callback with 2 second delay
         setTimeout(async () => {
             try {
-                await sendCallback(
-                    'LOAN_RESTRUCTURE_BALANCE_RESPONSE',
-                    responseData,
-                    header
-                );
+                await sendCallback(responseData);
                 logger.info('✅ LOAN_RESTRUCTURE_BALANCE_RESPONSE sent successfully');
             } catch (callbackError) {
                 logger.error('Failed to send LOAN_RESTRUCTURE_BALANCE_RESPONSE:', callbackError);
