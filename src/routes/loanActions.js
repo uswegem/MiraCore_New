@@ -76,7 +76,7 @@ router.post('/send-disbursement-notification', authMiddleware, roleMiddleware(['
             }
         );
 
-        logger.info(`✅ Manual disbursement notification sent for loan: ${loanMapping.essApplicationNumber} by ${req.user.username}`);
+        logger.info(`Manual disbursement notification sent for loan: ${loanMapping.essApplicationNumber} by ${req.user.username}`);
 
         res.json({
             success: true,
@@ -90,7 +90,7 @@ router.post('/send-disbursement-notification', authMiddleware, roleMiddleware(['
         });
 
     } catch (error) {
-        logger.error('❌ Error sending disbursement notification:', error);
+        logger.error('Error sending disbursement notification:', error);
         res.status(500).json({
             success: false,
             message: error.message || 'Failed to send disbursement notification'
@@ -168,7 +168,7 @@ router.post('/send-disbursement-failure', authMiddleware, roleMiddleware(['super
         
         // Here you would send to ESS callback URL if configured
         // For now, we just log it
-        logger.info(`📤 Sending LOAN_DISBURSEMENT_FAILURE_NOTIFICATION for loan: ${loanMapping.essApplicationNumber}`);
+        logger.info(`Sending LOAN_DISBURSEMENT_FAILURE_NOTIFICATION for loan: ${loanMapping.essApplicationNumber}`);
         logger.info(`Notification: ${signedNotification.substring(0, 500)}...`);
 
         // Update loan status to FAILED
@@ -189,7 +189,7 @@ router.post('/send-disbursement-failure', authMiddleware, roleMiddleware(['super
             }
         });
 
-        logger.info(`✅ Manual disbursement failure notification sent for loan: ${loanMapping.essApplicationNumber} by ${req.user.username}`);
+        logger.info(`Manual disbursement failure notification sent for loan: ${loanMapping.essApplicationNumber} by ${req.user.username}`);
 
         res.json({
             success: true,
@@ -203,7 +203,7 @@ router.post('/send-disbursement-failure', authMiddleware, roleMiddleware(['super
         });
 
     } catch (error) {
-        logger.error('❌ Error sending disbursement failure notification:', error);
+        logger.error('Error sending disbursement failure notification:', error);
         res.status(500).json({
             success: false,
             message: error.message || 'Failed to send disbursement failure notification'
