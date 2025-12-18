@@ -56,6 +56,7 @@ const handleLoanChargesRequest = require('./handlers/loanChargesHandler');
 const handleLoanOfferRequest = require('./handlers/loanOfferHandler');
 const handleLoanRestructureRequest = require('./handlers/loanRestructureHandler');
 const handleLoanRestructureBalanceRequest = require('./handlers/loanRestructureBalanceHandler');
+const handleLoanRestructureAffordabilityRequest = require('./handlers/loanRestructureAffordabilityHandler');
 // Add other handlers as they are extracted
 // const handleTopUpPayOffBalanceRequest = require('./handlers/topUpPayOffBalanceHandler');
 // etc.
@@ -108,7 +109,7 @@ exports.processRequest = async (req, res) => {
                         return await handleLoanChargesRequest(parsedData, res);
                     case 'LOAN_RESTRUCTURE_AFFORDABILITY_REQUEST':
                         trackLoanMessage('LOAN_RESTRUCTURE_AFFORDABILITY_REQUEST', 'processing');
-                        return await handleLoanChargesRequest(parsedData, res);
+                        return await handleLoanRestructureAffordabilityRequest(parsedData, res);
                     case 'LOAN_RESTRUCTURE_BALANCE_REQUEST':
                         trackLoanMessage('LOAN_RESTRUCTURE_BALANCE_REQUEST', 'processing');
                         return await handleLoanRestructureBalanceRequest(parsedData, res);
