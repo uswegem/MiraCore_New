@@ -26,7 +26,7 @@ class LoanMappingService {
    * Create or update loan mapping with client data from LOAN_OFFER_REQUEST
    */
   static async createOrUpdateWithClientData(applicationNumber, checkNumber, clientData, loanData, employmentData) {
-    return await DBTransaction.executeWithRetry(async (session) => {
+    try {
       const filter = {
         essApplicationNumber: applicationNumber
       };
@@ -51,8 +51,7 @@ class LoanMappingService {
       const options = {
         new: true,
         upsert: true,
-        setDefaultsOnInsert: true,
-        session: session
+        setDefaultsOnInsert: true
       };
 
       const mapping = await LoanMapping.findOneAndUpdate(filter, update, options);
@@ -61,10 +60,7 @@ class LoanMappingService {
         isNew: !mapping.createdAt || mapping.createdAt === mapping.updatedAt
       });
       return mapping;
-    }, {
-      maxRetries: 3,
-      baseDelay: 1000
-    }).catch(error => {
+    } catch (error) {
       logger.error('❌ Error storing client data:', {
         applicationNumber,
         checkNumber,
@@ -73,7 +69,7 @@ class LoanMappingService {
         errorType: error.name
       });
       throw error;
-    });
+    }
   }
 
   /**
@@ -82,7 +78,7 @@ class LoanMappingService {
   static async createInitialMapping(essApplicationNumber, essCheckNumber, fspReferenceNumber, loanDetails) {
     const startTime = Date.now();
     
-    return await DBTransaction.executeWithRetry(async (session) => {
+    try {
       // Validate required parameters
       if (!essApplicationNumber) {
         throw new Error('ESS Application Number is required');
@@ -97,7 +93,7 @@ class LoanMappingService {
       // Check if mapping already exists to prevent duplicates
       const existingMapping = await LoanMapping.findOne({
         essApplicationNumber
-      }).session(session);
+      });
 
       if (existingMapping) {
         logger.warn(`⚠️ Loan mapping already exists for application: ${essApplicationNumber}`, {
@@ -125,7 +121,7 @@ class LoanMappingService {
         }
       });
 
-      await mapping.save({ session });
+      await mapping.save();
       const duration = Date.now() - startTime;
       healthMonitor.recordOperation(true, duration);
       
@@ -134,11 +130,7 @@ class LoanMappingService {
         duration: `${duration}ms`
       });
       return mapping;
-    }, {
-      maxRetries: 3,
-      baseDelay: 1000,
-      onRetry: () => healthMonitor.recordRetry()
-    }).catch(error => {
+    } catch (error) {
       const duration = Date.now() - startTime;
       healthMonitor.recordOperation(false, duration, error);
       
@@ -152,7 +144,7 @@ class LoanMappingService {
         duration: `${duration}ms`
       });
       throw error;
-    });
+    }
   }
 
   /**
@@ -302,6 +294,20 @@ class LoanMappingService {
                 mapping.disbursedAt = new Date();
             }
         } else {
+            // Check if fspReferenceNumber would cause duplicate
+            if (loanData.fspReferenceNumber && loanData.fspReferenceNumber !== mapping.fspReferenceNumber) {
+                const existingWithFsp = await LoanMapping.findOne({ 
+                    fspReferenceNumber: loanData.fspReferenceNumber,
+                    essApplicationNumber: { $ne: loanData.essApplicationNumber }
+                });
+                
+                if (existingWithFsp) {
+                    logger.warn(`⚠️ FSP Reference ${loanData.fspReferenceNumber} already used by ${existingWithFsp.essApplicationNumber}, skipping fspReferenceNumber update`);
+                    // Remove fspReferenceNumber from update to avoid duplicate key error
+                    delete loanData.fspReferenceNumber;
+                }
+            }
+            
             // Update fields that are provided in loanData
             Object.keys(loanData).forEach(key => {
                 if (loanData[key] !== undefined && key !== '_id') {

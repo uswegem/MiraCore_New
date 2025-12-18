@@ -24,7 +24,7 @@ async function sendCallback(callbackData) {
 
         logger.info('📤 Sending callback:', {
             url: callbackUrl,
-            messageType: callbackData.Header.MessageType,
+            messageType: callbackData.Data?.Header?.MessageType || callbackData.Header?.MessageType || 'UNKNOWN',
             data: JSON.stringify(callbackData, null, 2)
         });
 

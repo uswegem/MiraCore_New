@@ -11,7 +11,7 @@ const LoanMappingService = require('../services/loanMappingService');
 const ClientService = require('../services/clientService');
 const cbsApi = require('../services/cbs.api');
 const { formatDateForMifos } = require('../utils/dateUtils');
-const { AuditLog } = require('../models/AuditLog');
+const AuditLog = require('../models/AuditLog');
 const { getMessageId } = require('../utils/messageIdGenerator');
 const LOAN_CONSTANTS = require('../utils/loanConstants');
 const LoanCalculations = require('../utils/loanCalculations');
@@ -1088,8 +1088,14 @@ const handleLoanFinalApproval = async (parsedData, res) => {
         // Process the request asynchronously
         setImmediate(async () => {
             try {
-                // Retrieve the loan mapping with client data
-                const existingMapping = await LoanMappingService.getByEssApplicationNumber(messageDetails.ApplicationNumber);
+                // Try to retrieve existing loan mapping, or create a new one
+                let existingMapping;
+                try {
+                    existingMapping = await LoanMappingService.getByEssApplicationNumber(messageDetails.ApplicationNumber);
+                } catch (error) {
+                    logger.warn(`⚠️ No existing loan mapping found for ${messageDetails.ApplicationNumber}, will create new one`);
+                    existingMapping = null;
+                }
                 
                 // Create loan mapping data
                 const loanMappingData = {
@@ -1097,32 +1103,55 @@ const handleLoanFinalApproval = async (parsedData, res) => {
                     fspReferenceNumber: messageDetails.FSPReferenceNumber || null,
                     status: messageDetails.Approval === 'APPROVED' ? 'FINAL_APPROVAL_RECEIVED' : 'REJECTED',
                     essApplicationNumber: messageDetails.ApplicationNumber,
+                    essCheckNumber: messageDetails.FSPReferenceNumber || messageDetails.CheckNumber,
+                    productCode: '17',
+                    requestedAmount: messageDetails.LoanAmount || messageDetails.RequestedAmount || 5000000,
+                    tenure: messageDetails.LoanTenure || messageDetails.Tenure || 60,
                     reason: messageDetails.Reason || (messageDetails.Approval === 'REJECTED' ? 'Application rejected' : null),
                     finalApprovalReceivedAt: new Date().toISOString()
                 };
 
                         // If approved, create client in CBS and create loan
                         if (messageDetails.Approval === 'APPROVED') {
-                            const clientData = {
-                                externalId: messageDetails.NIN,
-                                nin: messageDetails.NIN,
-                                firstname: messageDetails.FirstName,
-                                middlename: messageDetails.MiddleName,
-                                lastname: messageDetails.LastName,
-                                mobileNo: messageDetails.MobileNo,
-                                sex: messageDetails.Sex,
-                                dateOfBirth: messageDetails.DateOfBirth,
+                            // Try to get client data from existing mapping or use message details
+                            const storedClientData = existingMapping?.metadata?.clientData;
+                            const clientData = storedClientData ? {
+                                externalId: storedClientData.nin || messageDetails.FSPReferenceNumber,
+                                nin: storedClientData.nin,
+                                firstname: storedClientData.firstName,
+                                middlename: storedClientData.middleName,
+                                lastname: storedClientData.lastName,
+                                mobileNo: storedClientData.mobileNumber,
+                                sex: storedClientData.sex,
+                                dateOfBirth: storedClientData.dateOfBirth || '1990-01-01',
+                                employmentDate: storedClientData.employmentDate,
+                                maritalStatus: storedClientData.maritalStatus || 'Single',
+                                physicalAddress: storedClientData.physicalAddress,
+                                emailAddress: storedClientData.emailAddress,
+                                applicationNumber: storedClientData.applicationNumber,
+                                checkNumber: storedClientData.checkNumber,
+                                bankAccountNumber: storedClientData.bankAccountNumber,
+                                swiftCode: storedClientData.swiftCode
+                            } : {
+                                externalId: messageDetails.NIN || messageDetails.FSPReferenceNumber,
+                                nin: messageDetails.NIN || messageDetails.FSPReferenceNumber,
+                                firstname: messageDetails.FirstName || 'ESS',
+                                middlename: messageDetails.MiddleName || 'Application',
+                                lastname: messageDetails.LastName || messageDetails.ApplicationNumber,
+                                mobileNo: messageDetails.MobileNo || messageDetails.MobileNumber,
+                                sex: messageDetails.Sex || 'M',
+                                dateOfBirth: messageDetails.DateOfBirth || '1990-01-01',
                                 employmentDate: messageDetails.EmploymentDate,
-                                maritalStatus: messageDetails.MaritalStatus,
+                                maritalStatus: messageDetails.MaritalStatus || 'Single',
                                 physicalAddress: messageDetails.PhysicalAddress,
                                 emailAddress: messageDetails.EmailAddress,
                                 applicationNumber: messageDetails.ApplicationNumber,
-                                checkNumber: messageDetails.CheckNumber
+                                checkNumber: messageDetails.CheckNumber || messageDetails.FSPReferenceNumber
                             };
-                            logger.info('Retrieved client data from loan mapping:', JSON.stringify(clientData, null, 2));
+                            logger.info('Client data for CBS creation:', JSON.stringify(clientData, null, 2));
                             
                             try {
-                                const potentialNIN = clientData?.NIN || clientData?.nin || clientData?.nationalId;
+                                const potentialNIN = clientData?.nin || clientData?.NIN || clientData?.nationalId;
                                 logger.info('Potential NIN values:', {
                                     fromNIN: clientData?.NIN,
                                     fromNin: clientData?.nin,
@@ -1139,7 +1168,10 @@ const handleLoanFinalApproval = async (parsedData, res) => {
                                 // First check if client exists by NIN
                                 logger.info('🔍 Checking if client exists with NIN:', potentialNIN);
                                 const existingClientByNin = await ClientService.searchClientByExternalId(potentialNIN);
-                                logger.info('Search result:', JSON.stringify(existingClientByNin, null, 2));
+                                logger.info('Search result:', { 
+                                    status: existingClientByNin?.status, 
+                                    found: existingClientByNin?.response?.pageItems?.length || 0 
+                                });
                                 
                                 let clientId;
                                 if (!existingClientByNin?.status || !existingClientByNin?.response?.pageItems?.length) {
@@ -1257,19 +1289,29 @@ const handleLoanFinalApproval = async (parsedData, res) => {
                                 logger.error('Error in loan creation process:', error);
                                 // Continue with loan mapping update even if process fails
                             }
-                        }                // Get existing loan mapping data
-                const existingLoanData = await LoanMappingService.getByEssApplicationNumber(messageDetails.ApplicationNumber);
+                        }
                 
-                if (!existingLoanData) {
-                    logger.warn('⚠️ No existing loan mapping found for application:', messageDetails.ApplicationNumber);
-                } else {
+                // Use the already retrieved existing mapping
+                if (existingMapping) {
                     // Keep the requested amount from existing data
-                    loanMappingData.requestedAmount = existingLoanData.requestedAmount;
+                    loanMappingData.requestedAmount = existingMapping.requestedAmount || loanMappingData.requestedAmount;
 
                     // Also keep any metadata
                     loanMappingData.metadata = {
-                        ...existingLoanData.metadata,
+                        ...existingMapping.metadata,
                         ...loanMappingData.metadata,
+                        finalApprovalDetails: {
+                            applicationNumber: messageDetails.ApplicationNumber,
+                            loanNumber: messageDetails.LoanNumber,
+                            fspReferenceNumber: messageDetails.FSPReferenceNumber,
+                            approval: messageDetails.Approval,
+                            reason: messageDetails.Reason
+                        }
+                    };
+                } else {
+                    logger.warn('⚠️ No existing loan mapping found, creating new one with default values');
+                    loanMappingData.metadata = {
+                        createdVia: 'LOAN_FINAL_APPROVAL_without_prior_offer',
                         finalApprovalDetails: {
                             applicationNumber: messageDetails.ApplicationNumber,
                             loanNumber: messageDetails.LoanNumber,
@@ -1282,10 +1324,10 @@ const handleLoanFinalApproval = async (parsedData, res) => {
 
                 // Default requested amount if not present
                 if (!loanMappingData.requestedAmount) {
-                    loanMappingData.requestedAmount = messageDetails.requestedAmount || messageDetails.RequestedAmount || "5000000";
+                    loanMappingData.requestedAmount = messageDetails.requestedAmount || messageDetails.RequestedAmount || messageDetails.LoanAmount || "5000000";
                 }
                 
-                // Update loan mapping in database
+                // Update or create loan mapping in database
                 const savedMapping = await LoanMappingService.updateLoanMapping(loanMappingData);
                 logger.info('✅ Updated loan mapping:', {
                     applicationNumber: savedMapping.essApplicationNumber,
@@ -1325,25 +1367,23 @@ const handleLoanFinalApproval = async (parsedData, res) => {
                             requestedAmount: updatedMapping.requestedAmount
                         });
 
-                        // Prepare LOAN_DISBURSMENT_NOTIFICATION callback
+                        // Prepare LOAN_DISBURSEMENT_NOTIFICATION callback
                         const callbackData = {
                             Data: {
                                 Header: {
                                     "Sender": process.env.FSP_NAME || "ZE DONE",
                                     "Receiver": "ESS_UTUMISHI",
                                     "FSPCode": header.FSPCode,
-                                    "MsgId": getMessageId("LOAN_DISBURSMENT_NOTIFICATION"),
-                                    "MessageType": "LOAN_DISBURSMENT_NOTIFICATION"
+                                    "MsgId": getMessageId("LOAN_DISBURSEMENT_NOTIFICATION"),
+                                    "MessageType": "LOAN_DISBURSEMENT_NOTIFICATION"
                                 },
                                 MessageDetails: {
                                     "ApplicationNumber": messageDetails.ApplicationNumber,
-                                    "LoanNumber": messageDetails.LoanNumber,
+                                    "Reason": "Loan successfully disbursed",
                                     "FSPReferenceNumber": messageDetails.FSPReferenceNumber,
-                                    "DisbursementDate": new Date().toISOString(),
-                                    "DisbursementAmount": updatedMapping.disbursedAmount || updatedMapping.requestedAmount,
-                                    "Status": "DISBURSED",
-                                    "StatusCode": "8000",
-                                    "StatusDesc": "Loan disbursed successfully"
+                                    "LoanNumber": messageDetails.LoanNumber,
+                                    "TotalAmountToPay": updatedMapping.disbursedAmount || updatedMapping.requestedAmount,
+                                    "DisbursementDate": new Date().toISOString().replace('Z', '')
                                 }
                             }
                         };
@@ -1364,13 +1404,11 @@ const handleLoanFinalApproval = async (parsedData, res) => {
                 }
             } catch (error) {
                 logger.error('Error in async processing:', error);
-                await AuditLog.create({
-                    eventType: 'LOAN_FINAL_APPROVAL_ERROR',
-                    data: {
-                        error: error.message,
-                        loanNumber: messageDetails.LoanNumber,
-                        applicationNumber: messageDetails.ApplicationNumber
-                    }
+                logger.error('Error details:', {
+                    message: error.message,
+                    stack: error.stack,
+                    loanNumber: messageDetails.LoanNumber,
+                    applicationNumber: messageDetails.ApplicationNumber
                 });
             }
         });
