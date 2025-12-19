@@ -1663,14 +1663,25 @@ const handleLoanFinalApproval = async (parsedData, res) => {
                         };
 
                         // Log disbursement notification details
-                        logger.info('📤 Sending disbursement notification:', {
+                        logger.info('📤 Preparing to send disbursement notification (will send in 60 seconds):', {
                             applicationNumber: messageDetails.ApplicationNumber,
                             loanNumber: messageDetails.LoanNumber,
                             amount: updatedMapping.requestedAmount
                         });
 
-                        // Send callback notification
-                        await sendCallback(callbackData);
+                        // Send callback notification after 60 seconds delay
+                        setTimeout(async () => {
+                            try {
+                                logger.info('📤 Sending disbursement notification after 60s delay:', {
+                                    applicationNumber: messageDetails.ApplicationNumber,
+                                    loanNumber: messageDetails.LoanNumber
+                                });
+                                await sendCallback(callbackData);
+                                logger.info('✅ Disbursement notification sent successfully');
+                            } catch (callbackError) {
+                                logger.error('❌ Error sending disbursement notification after delay:', callbackError);
+                            }
+                        }, 60000); // 60 seconds delay
                     } catch (error) {
                         logger.error('Error in disbursement processing:', error);
                         throw error;
