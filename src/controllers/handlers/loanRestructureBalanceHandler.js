@@ -4,7 +4,7 @@ const { sendErrorResponse } = require('../../utils/responseUtils');
 const LoanMappingService = require('../../services/loanMappingService');
 const LoanMapping = require('../../models/LoanMapping');
 const cbsApi = require('../../services/cbs.api');
-const { formatDateForMifos } = require('../../utils/dateUtils');
+const { formatDateForMifos, formatDateForUTUMISHI } = require('../../utils/dateUtils');
 
 /**
  * Handle LOAN_RESTRUCTURE_BALANCE_REQUEST from ESS
@@ -152,7 +152,6 @@ async function handleLoanRestructureBalanceRequest(parsedData, res) {
         // Set validity date (30 days from now)
         const validityDate = new Date();
         validityDate.setDate(validityDate.getDate() + 30);
-        const formattedValidityDate = formatDateForMifos(validityDate);
         
         logger.info('Loan balance details:', {
             LoanNumber,
@@ -164,13 +163,6 @@ async function handleLoanRestructureBalanceRequest(parsedData, res) {
             lastRepaymentDate,
             maturityDate
         });
-        
-        // Format dates to YYYY-MM-DD format for ESS_UTUMISHI
-        const formatDateToISO = (dateStr) => {
-            if (!dateStr) return new Date().toISOString().split('T')[0];
-            const date = new Date(dateStr);
-            return date.toISOString().split('T')[0];
-        };
         
         // Prepare synchronous response data
         const responseData = {
@@ -187,9 +179,9 @@ async function handleLoanRestructureBalanceRequest(parsedData, res) {
                     "InstallmentAmount": installmentAmount.toFixed(2),
                     "OutstandingBalance": outstandingBalance.toFixed(2),
                     "PrincipalBalance": principalOutstanding.toFixed(2),
-                    "ValidityDate": formatDateToISO(validityDate),
-                    "LastRepaymentDate": formatDateToISO(lastRepaymentDate || new Date()),
-                    "MaturityDate": formatDateToISO(maturityDate || validityDate)
+                    "ValidityDate": formatDateForUTUMISHI(validityDate),
+                    "LastRepaymentDate": formatDateForUTUMISHI(lastRepaymentDate || new Date()),
+                    "MaturityDate": formatDateForUTUMISHI(maturityDate || validityDate)
                 }
             }
         };

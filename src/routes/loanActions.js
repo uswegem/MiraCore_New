@@ -5,6 +5,7 @@ const { authMiddleware, roleMiddleware } = require('../middleware/authMiddleware
 const LoanMappingService = require('../services/loanMappingService');
 const disbursementUtils = require('../utils/disbursementUtils');
 const digitalSignature = require('../utils/signatureUtils');
+const { formatDateForUTUMISHI } = require('../utils/dateUtils');
 const logger = require('../utils/logger');
 
 /**
@@ -130,7 +131,7 @@ router.post('/send-disbursement-failure', authMiddleware, roleMiddleware(['super
                 FailureReason: reason,
                 ErrorDetails: errorDetails || "Manual disbursement failure notification",
                 Status: "FAILED",
-                Timestamp: new Date().toISOString()
+                Timestamp: formatDateForUTUMISHI(new Date())
             }
         };
 

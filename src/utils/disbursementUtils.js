@@ -2,6 +2,7 @@ const logger = require('./logger');
 
 const digitalSignature = require('./signatureUtils');
 const thirdPartyService = require('../services/thirdPartyService');
+const { formatDateForUTUMISHI } = require('./dateUtils');
 
 /**
  * Create and send a LOAN_DISBURSEMENT_NOTIFICATION
@@ -22,7 +23,7 @@ async function sendDisbursementNotification(loanDetails) {
             FSPReferenceNumber: loanDetails.fspReferenceNumber,
             LoanNumber: loanDetails.loanNumber,
             TotalAmountToPay: loanDetails.totalAmountToPay || loanDetails.amount,
-            DisbursementDate: new Date().toISOString().replace('Z', '')
+            DisbursementDate: formatDateForUTUMISHI(new Date())
         }
     };
 
