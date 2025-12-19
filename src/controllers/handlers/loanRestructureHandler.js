@@ -27,44 +27,73 @@ const handleLoanRestructureRequest = async (parsedData, res) => {
 
         // Extract request parameters
         const checkNumber = messageDetails.CheckNumber;
-        const loanNumber = messageDetails.LoanNumber;
+        const loanNumber = messageDetails.LoanNumber; // Primary identifier for the specific loan to restructure
         const tenure = parseInt(messageDetails.Tenure || 0);
         const desiredDeductibleAmount = parseFloat(messageDetails.DesiredDeductibleAmount || 0);
         const restructureApplicationNumber = messageDetails.ApplicationNumber; // New ApplicationNumber from UTUMISHI for restructure
 
-        // Validate required fields
-        if (!checkNumber) {
-            throw new Error('CheckNumber is required');
+        // Validate required fields - LoanNumber is critical since customer may have multiple loans
+        if (!loanNumber) {
+            throw new Error('LoanNumber is required to identify the specific loan to restructure');
         }
 
         if (!tenure || tenure <= 0) {
             throw new Error('Tenure must be greater than 0');
         }
 
-        // Find the loan mapping using check number (primary) or loan number (fallback)
-        let loanMapping = await LoanMapping.findOne({
-            $or: [
-                { checkNumber: checkNumber },
-                { essCheckNumber: checkNumber },
-                { fspReferenceNumber: loanNumber },
-                { essLoanNumberAlias: loanNumber },
-                { newLoanNumber: loanNumber }
-            ]
+        // Find the SPECIFIC loan mapping using Loan Number (primary identifier)
+        // Customer may have multiple loans, so we identify by the specific loan number
+        logger.info('🔍 Searching for specific loan to restructure:', {
+            loanNumber: loanNumber,
+            checkNumber: checkNumber
         });
 
+        let loanMapping = await LoanMapping.findOne({
+            $or: [
+                { essLoanNumberAlias: loanNumber },           // FSP-generated loan number
+                { fspReferenceNumber: loanNumber },           // FSP reference number
+                { newLoanNumber: loanNumber },                // New loan number (from previous restructure)
+                { mifosLoanAccountNumber: loanNumber },       // MIFOS account number
+                // Fallback to CheckNumber only if LoanNumber doesn't match
+                { 
+                    $and: [
+                        { $or: [{ checkNumber: checkNumber }, { essCheckNumber: checkNumber }] },
+                        { status: { $nin: ['CANCELLED', 'REJECTED', 'CLOSED'] } }
+                    ]
+                }
+            ]
+        }).sort({ createdAt: -1 }); // Get most recent if multiple matches
+
         if (!loanMapping) {
-            logger.warn('Loan mapping not found for loanNumber:', loanNumber);
+            logger.error('❌ Loan mapping not found:', {
+                loanNumber: loanNumber,
+                checkNumber: checkNumber
+            });
             throw new Error(`No active loan found for loan number: ${loanNumber}`);
         }
 
+        logger.info('✅ Found specific loan for restructuring:', {
+            mappingId: loanMapping._id,
+            essLoanNumberAlias: loanMapping.essLoanNumberAlias,
+            checkNumber: loanMapping.essCheckNumber,
+            mifosLoanId: loanMapping.mifosLoanId,
+            currentStatus: loanMapping.status
+        });
+
+        logger.info('✅ Found specific loan for restructuring:', {
+            mappingId: loanMapping._id,
+            essLoanNumberAlias: loanMapping.essLoanNumberAlias,
+            checkNumber: loanMapping.essCheckNumber,
+            mifosLoanId: loanMapping.mifosLoanId,
+            currentStatus: loanMapping.status
+        });
+
         if (!loanMapping.mifosLoanId) {
-            throw new Error('MIFOS Loan ID not found in loan mapping');
+            throw new Error('MIFOS Loan ID not found in loan mapping - cannot restructure loan without MIFOS ID');
         }
 
-        logger.info('Found loan mapping:', {
-            checkNumber,
-            mifosLoanId: loanMapping.mifosLoanId,
-            applicationNumber: loanMapping.applicationNumber
+        logger.info('📞 Fetching loan details from MIFOS:', {
+            mifosLoanId: loanMapping.mifosLoanId
         });
 
         // Fetch existing loan details from MIFOS
