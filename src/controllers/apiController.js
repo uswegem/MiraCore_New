@@ -623,6 +623,7 @@ const handleTakeoverPayOffBalanceRequest = async (parsedData, res) => {
 
         // Get loan details from MIFOS
         let totalPayOffAmount = 0;
+        let principalOutstanding = 0;
         let outstandingBalance = 0;
 
         try {
@@ -636,32 +637,35 @@ const handleTakeoverPayOffBalanceRequest = async (parsedData, res) => {
                 const loanResponse = await api.getLoanDetails(loanId);
                 const mifosLoanData = loanResponse.data;
                 
-                // Calculate outstanding balance
+                // Get principal outstanding and interest rate
+                principalOutstanding = parseFloat(mifosLoanData.summary?.principalOutstanding || 0);
                 outstandingBalance = parseFloat(mifosLoanData.summary?.totalOutstanding || 0);
+                const annualInterestRate = parseFloat(mifosLoanData.interestRatePerPeriod || 0);
                 
-                // Calculate remaining tenor and add 15% interest
-                const currentDate = new Date();
-                const maturityDate = new Date(mifosLoanData.timeline?.expectedMaturityDate);
-                const remainingMonths = Math.max(0, (maturityDate - currentDate) / (1000 * 60 * 60 * 24 * 30));
+                // Calculate 7 days of interest on principal
+                // Formula: Principal × (Annual Rate / 100) × (7 / 365)
+                const sevenDaysInterest = principalOutstanding * (annualInterestRate / 100) * (7 / 365);
                 
-                // Add 15% of remaining period interest
-                const monthlyInterestRate = parseFloat(mifosLoanData.interestRatePerPeriod || 0) / 100;
-                const remainingInterest = outstandingBalance * monthlyInterestRate * remainingMonths;
-                const additionalInterest = remainingInterest * 0.15;
+                // Total payoff = Principal Outstanding + 7 days interest
+                totalPayOffAmount = principalOutstanding + sevenDaysInterest;
                 
-                totalPayOffAmount = outstandingBalance + additionalInterest;
-                
-                logger.info(`💰 Calculated takeover amounts - Outstanding: ${outstandingBalance}, Total Payoff: ${totalPayOffAmount}`);
+                logger.info(`💰 Calculated takeover amounts - Principal: ${principalOutstanding}, 7 Days Interest: ${sevenDaysInterest.toFixed(2)}, Total Payoff: ${totalPayOffAmount.toFixed(2)}`);
             } else {
                 logger.warn('⚠️ Loan not found in MIFOS, using default values');
-                outstandingBalance = parseFloat(messageDetails.DeductionBalance || 0);
-                totalPayOffAmount = outstandingBalance * 1.15; // Add 15% as fallback
+                principalOutstanding = parseFloat(messageDetails.DeductionBalance || 0);
+                outstandingBalance = principalOutstanding;
+                // Assume 20% annual interest rate for fallback calculation
+                const sevenDaysInterest = principalOutstanding * 0.20 * (7 / 365);
+                totalPayOffAmount = principalOutstanding + sevenDaysInterest;
             }
         } catch (mifosError) {
             logger.error('❌ Error fetching loan from MIFOS:', mifosError);
             // Use fallback values from request
-            outstandingBalance = parseFloat(messageDetails.DeductionBalance || 0);
-            totalPayOffAmount = outstandingBalance * 1.15;
+            principalOutstanding = parseFloat(messageDetails.DeductionBalance || 0);
+            outstandingBalance = principalOutstanding;
+            // Assume 20% annual interest rate for fallback calculation
+            const sevenDaysInterest = principalOutstanding * 0.20 * (7 / 365);
+            totalPayOffAmount = principalOutstanding + sevenDaysInterest;
         }
 
         // Calculate dates for response
