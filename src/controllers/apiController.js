@@ -1103,8 +1103,10 @@ const sendPaymentAcknowledgmentNotification = async (applicationNumber, loanNumb
                 },
                 MessageDetails: {
                     "ApplicationNumber": applicationNumber,
+                    "Remarks": "settled",
+                    "FSPReferenceNumber": fspReferenceNumber,
                     "LoanNumber": loanNumber,
-                    "FSPReferenceNumber": fspReferenceNumber
+                    "PaymentStatus": "SETTLED"
                 }
             }
         };
