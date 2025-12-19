@@ -20,6 +20,7 @@ const handleLoanRestructureRequest = async (parsedData, res) => {
         logger.info('🔄 Processing LOAN_RESTRUCTURE_REQUEST:', {
             checkNumber: messageDetails.CheckNumber,
             loanNumber: messageDetails.LoanNumber || 'Not provided',
+            applicationNumber: messageDetails.ApplicationNumber || 'Not provided',
             tenure: messageDetails.Tenure,
             requestedAmount: messageDetails.RequestedAmount
         });
@@ -29,6 +30,7 @@ const handleLoanRestructureRequest = async (parsedData, res) => {
         const loanNumber = messageDetails.LoanNumber;
         const tenure = parseInt(messageDetails.Tenure || 0);
         const desiredDeductibleAmount = parseFloat(messageDetails.DesiredDeductibleAmount || 0);
+        const restructureApplicationNumber = messageDetails.ApplicationNumber; // New ApplicationNumber from UTUMISHI for restructure
 
         // Validate required fields
         if (!checkNumber) {
@@ -136,6 +138,7 @@ const handleLoanRestructureRequest = async (parsedData, res) => {
                     isRestructure: true,
                     restructureRequested: true,
                     restructureDate: new Date(),
+                    restructureApplicationNumber: restructureApplicationNumber, // Store new ApplicationNumber from UTUMISHI
                     newTenure: tenure,
                     existingLoanAmount: existingLoanAmount,
                     currentOutstanding: currentOutstanding,
@@ -192,7 +195,7 @@ const handleLoanRestructureRequest = async (parsedData, res) => {
                             "MessageType": "LOAN_INITIAL_APPROVAL_NOTIFICATION"
                         },
                         MessageDetails: {
-                            "ApplicationNumber": loanMapping.applicationNumber || loanMapping.essApplicationNumber,
+                            "ApplicationNumber": restructureApplicationNumber || loanMapping.applicationNumber || loanMapping.essApplicationNumber,
                             "Reason": "Loan Restructure Request Approved",
                             "FSPReferenceNumber": newFspReferenceNumber,
                             "LoanNumber": newLoanNumber,
