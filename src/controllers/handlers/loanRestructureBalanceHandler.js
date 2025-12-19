@@ -165,11 +165,11 @@ async function handleLoanRestructureBalanceRequest(parsedData, res) {
             maturityDate
         });
         
-        // Format dates to ISO format (YYYY-MM-DDTHH:mm:ss) for ESS_UTUMISHI
+        // Format dates to YYYY-MM-DD format for ESS_UTUMISHI
         const formatDateToISO = (dateStr) => {
-            if (!dateStr) return new Date().toISOString().replace(/\.\d{3}Z$/, '');
+            if (!dateStr) return new Date().toISOString().split('T')[0];
             const date = new Date(dateStr);
-            return date.toISOString().replace(/\.\d{3}Z$/, '');
+            return date.toISOString().split('T')[0];
         };
         
         // Prepare synchronous response data
