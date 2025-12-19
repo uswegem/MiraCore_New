@@ -611,126 +611,98 @@ const handleTopUpOfferRequest = async (parsedData, res) => {
 
 const handleTakeoverPayOffBalanceRequest = async (parsedData, res) => {
     try {
-        logger.info('Processing TAKEOVER_PAY_OFF_BALANCE_REQUEST...');
+        logger.info('Processing TAKEOVER_PAY_OFF_BALANCE_REQUEST (synchronous)...');
         const header = parsedData.Document.Data.Header;
         const messageDetails = parsedData.Document.Data.MessageDetails;
-        
-        // Step 1: Send immediate ACK response
-        const ackResponseData = {
+        const loanNumber = messageDetails.LoanNumber;
+
+        if (!loanNumber) {
+            logger.error('LoanNumber is required for takeover payoff request');
+            return sendErrorResponse(res, '8013', 'LoanNumber is required', 'xml', parsedData);
+        }
+
+        // Get loan details from MIFOS
+        let totalPayOffAmount = 0;
+        let outstandingBalance = 0;
+
+        try {
+            // Search for loan by external ID or account number
+            const searchResponse = await api.searchLoans(loanNumber);
+            
+            if (searchResponse.data && searchResponse.data.length > 0) {
+                const loanId = searchResponse.data[0].id;
+                
+                // Get detailed loan information
+                const loanResponse = await api.getLoanDetails(loanId);
+                const mifosLoanData = loanResponse.data;
+                
+                // Calculate outstanding balance
+                outstandingBalance = parseFloat(mifosLoanData.summary?.totalOutstanding || 0);
+                
+                // Calculate remaining tenor and add 15% interest
+                const currentDate = new Date();
+                const maturityDate = new Date(mifosLoanData.timeline?.expectedMaturityDate);
+                const remainingMonths = Math.max(0, (maturityDate - currentDate) / (1000 * 60 * 60 * 24 * 30));
+                
+                // Add 15% of remaining period interest
+                const monthlyInterestRate = parseFloat(mifosLoanData.interestRatePerPeriod || 0) / 100;
+                const remainingInterest = outstandingBalance * monthlyInterestRate * remainingMonths;
+                const additionalInterest = remainingInterest * 0.15;
+                
+                totalPayOffAmount = outstandingBalance + additionalInterest;
+                
+                logger.info(`💰 Calculated takeover amounts - Outstanding: ${outstandingBalance}, Total Payoff: ${totalPayOffAmount}`);
+            } else {
+                logger.warn('⚠️ Loan not found in MIFOS, using default values');
+                outstandingBalance = parseFloat(messageDetails.DeductionBalance || 0);
+                totalPayOffAmount = outstandingBalance * 1.15; // Add 15% as fallback
+            }
+        } catch (mifosError) {
+            logger.error('❌ Error fetching loan from MIFOS:', mifosError);
+            // Use fallback values from request
+            outstandingBalance = parseFloat(messageDetails.DeductionBalance || 0);
+            totalPayOffAmount = outstandingBalance * 1.15;
+        }
+
+        // Calculate dates for response
+        const currentDate = new Date();
+        const finalPaymentDate = new Date(currentDate.getTime() + (7 * 24 * 60 * 60 * 1000)); // 7 days from now
+        const lastDeductionDate = new Date(currentDate.getTime() - (30 * 24 * 60 * 60 * 1000)); // 30 days ago
+        const deductionEndDate = new Date(currentDate.getTime() + (7 * 24 * 60 * 60 * 1000)); // 7 days from now
+
+        // Build LOAN_TAKEOVER_BALANCE_RESPONSE
+        const responseData = {
             Data: {
                 Header: {
                     "Sender": process.env.FSP_NAME || "ZE DONE",
                     "Receiver": "ESS_UTUMISHI",
                     "FSPCode": header.FSPCode,
-                    "MsgId": getMessageId("RESPONSE"),
-                    "MessageType": "RESPONSE"
+                    "MsgId": header.MsgId,
+                    "MessageType": "LOAN_TAKEOVER_BALANCE_RESPONSE"
                 },
                 MessageDetails: {
-                    "Status": "SUCCESS",
-                    "StatusCode": "8000",
-                    "StatusDesc": "Request received and being processed"
+                    "LoanNumber": loanNumber,
+                    "FSPCode": process.env.FSP_CODE || "FL8090",
+                    "FSPReferenceNumber": messageDetails.FSPReferenceNumber || `FSP_${Date.now()}`,
+                    "PaymentReferenceNumber": `PAY_${Date.now()}`,
+                    "TotalPayOffAmount": totalPayOffAmount.toFixed(2),
+                    "OutstandingBalance": outstandingBalance.toFixed(2),
+                    "FSPBankAccount": "0152562001300",
+                    "FSPBankAccountName": "ZE DONE LIMITED",
+                    "SWIFTCode": "NMIBTZTZ",
+                    "MNOChannels": "MPESA,TIGOPESA,AIRTELMONEY",
+                    "FinalPaymentDate": formatDateForUTUMISHI(finalPaymentDate),
+                    "LastDeductionDate": formatDateForUTUMISHI(lastDeductionDate),
+                    "DeductionEndDate": formatDateForUTUMISHI(deductionEndDate)
                 }
             }
         };
-        
-        const signedResponse = digitalSignature.createSignedXML(ackResponseData.Data);
-        res.status(200).send(signedResponse);
-        logger.info('✅ Sent immediate ACK response for TAKEOVER_PAY_OFF_BALANCE_REQUEST');
 
-        // Step 2-5: Process in background after response sent
-        setTimeout(async () => {
-            try {
-                logger.info('⏰ Starting delayed TAKEOVER balance processing...');
+        logger.info('Returning LOAN_TAKEOVER_BALANCE_RESPONSE:', responseData.Data.MessageDetails);
 
-                // Step 2: Get loan details from MIFOS
-                const loanNumber = messageDetails.LoanNumber;
-                let mifosLoanData = null;
-                let totalPayOffAmount = 0;
-                let outstandingBalance = 0;
-
-                try {
-                    // Search for loan by external ID or account number
-                    const searchResponse = await api.searchLoans(loanNumber);
-                    
-                    if (searchResponse.data && searchResponse.data.length > 0) {
-                        const loanId = searchResponse.data[0].id;
-                        
-                        // Get detailed loan information
-                        const loanResponse = await api.getLoanDetails(loanId);
-                        mifosLoanData = loanResponse.data;
-                        
-                        // Calculate outstanding balance
-                        outstandingBalance = parseFloat(mifosLoanData.summary?.totalOutstanding || 0);
-                        
-                        // Calculate remaining tenor and add 15% interest
-                        const currentDate = new Date();
-                        const maturityDate = new Date(mifosLoanData.timeline?.expectedMaturityDate);
-                        const remainingMonths = Math.max(0, (maturityDate - currentDate) / (1000 * 60 * 60 * 24 * 30));
-                        
-                        // Add 15% of remaining period interest
-                        const monthlyInterestRate = parseFloat(mifosLoanData.interestRatePerPeriod || 0) / 100;
-                        const remainingInterest = outstandingBalance * monthlyInterestRate * remainingMonths;
-                        const additionalInterest = remainingInterest * 0.15;
-                        
-                        totalPayOffAmount = outstandingBalance + additionalInterest;
-                        
-                        logger.info(`💰 Calculated takeover amounts - Outstanding: ${outstandingBalance}, Total Payoff: ${totalPayOffAmount}`);
-                    } else {
-                        logger.warn('⚠️ Loan not found in MIFOS, using default values');
-                        outstandingBalance = parseFloat(messageDetails.DeductionBalance || 0);
-                        totalPayOffAmount = outstandingBalance * 1.15; // Add 15% as fallback
-                    }
-                } catch (mifosError) {
-                    logger.error('❌ Error fetching loan from MIFOS:', mifosError);
-                    // Use fallback values from request
-                    outstandingBalance = parseFloat(messageDetails.DeductionBalance || 0);
-                    totalPayOffAmount = outstandingBalance * 1.15;
-                }
-
-                // Step 3: Wait 10 seconds (already in setTimeout)
-                await new Promise(resolve => setTimeout(resolve, 10000));
-
-                // Step 4 & 5: Send LOAN_TAKEOVER_BALANCE_RESPONSE callback
-                const currentDate = new Date();
-                const finalPaymentDate = new Date(currentDate.getTime() + (7 * 24 * 60 * 60 * 1000)); // 7 days from now
-                const lastDeductionDate = new Date(currentDate.getTime() - (30 * 24 * 60 * 60 * 1000)); // 30 days ago
-                const deductionEndDate = new Date(currentDate.getTime() + (7 * 24 * 60 * 60 * 1000)); // 7 days from now
-
-                const takeoverResponseData = {
-                    Header: {
-                        "Sender": process.env.FSP_NAME || "ZE DONE",
-                        "Receiver": "ESS_UTUMISHI",
-                        "FSPCode": header.FSPCode,
-                        "MsgId": getMessageId("LOAN_TAKEOVER_BALANCE_RESPONSE"),
-                        "MessageType": "LOAN_TAKEOVER_BALANCE_RESPONSE"
-                    },
-                    MessageDetails: {
-                        "LoanNumber": loanNumber,
-                        "FSPCode": process.env.FSP_CODE || "FL8090",
-                        "FSPReferenceNumber": header.FSPReferenceNumber || `FSP_${Date.now()}`,
-                        "PaymentReferenceNumber": `PAY_${Date.now()}`,
-                        "TotalPayOffAmount": totalPayOffAmount.toFixed(2),
-                        "OutstandingBalance": outstandingBalance.toFixed(2),
-                        "FSPBankAccount": "0152562001300",
-                        "FSPBankAccountName": "ZE DONE LIMITED",
-                        "SWIFTCode": "NMIBTZTZ",
-                        "MNOChannels": "MPESA,TIGOPESA,AIRTELMONEY",
-                        "FinalPaymentDate": formatDateForUTUMISHI(finalPaymentDate),
-                        "LastDeductionDate": formatDateForUTUMISHI(lastDeductionDate),
-                        "DeductionEndDate": formatDateForUTUMISHI(deductionEndDate)
-                    }
-                };
-
-                // Send callback using the callback utility
-                await sendCallback(takeoverResponseData);
-                logger.info('✅ Successfully sent LOAN_TAKEOVER_BALANCE_RESPONSE callback');
-
-            } catch (callbackError) {
-                logger.error('❌ Error sending LOAN_TAKEOVER_BALANCE_RESPONSE callback:', callbackError);
-            }
-        }, 10000); // 10 seconds delay
-
-        logger.info('🕐 Scheduled LOAN_TAKEOVER_BALANCE_RESPONSE to be sent in 10 seconds');
+        // Sign and return synchronous response
+        const signedResponse = digitalSignature.createSignedXML(responseData.Data);
+        return res.status(200).set('Content-Type', 'application/xml').send(signedResponse);
 
     } catch (error) {
         logger.error('Error processing takeover pay off balance request:', error);
