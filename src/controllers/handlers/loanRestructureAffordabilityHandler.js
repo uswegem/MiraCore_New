@@ -220,10 +220,6 @@ const handleLoanRestructureAffordabilityRequest = async (parsedData, res) => {
                     "MessageType": "LOAN_RESTRUCTURE_AFFORDABILITY_RESPONSE"
                 },
                 MessageDetails: {
-                    "LoanNumber": loanNumber,
-                    "CurrentOutstandingBalance": currentOutstandingBalance.toFixed(2),
-                    "TopUpAmount": topUpAmount.toFixed(2),
-                    "NewLoanAmount": newLoanAmount.toFixed(2),
                     "DesiredDeductibleAmount": monthlyReturnAmount.toFixed(2),
                     "TotalInsurance": totalInsurance.toFixed(2),
                     "TotalProcessingFees": totalProcessingFees.toFixed(2),
@@ -233,8 +229,7 @@ const handleLoanRestructureAffordabilityRequest = async (parsedData, res) => {
                     "TotalAmountToPay": totalAmountToPay.toFixed(2),
                     "Tenure": requestedTenure,
                     "EligibleAmount": newLoanAmount.toFixed(2),
-                    "MonthlyReturnAmount": monthlyReturnAmount.toFixed(2),
-                    "RestructureType": restructureType
+                    "MonthlyReturnAmount": monthlyReturnAmount.toFixed(2)
                 }
             }
         };

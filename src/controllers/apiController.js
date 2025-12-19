@@ -15,6 +15,7 @@ const AuditLog = require('../models/AuditLog');
 const { getMessageId } = require('../utils/messageIdGenerator');
 const LOAN_CONSTANTS = require('../utils/loanConstants');
 const LoanCalculations = require('../utils/loanCalculations');
+const { API_ENDPOINTS } = require('../services/cbs.endpoints');
 
 // Enhanced CBS services
 const { authManager, healthMonitor, errorHandler, requestManager } = cbsApi;
@@ -99,8 +100,8 @@ exports.processRequest = async (req, res) => {
                 const TypeMessage = parsedData?.Document?.Data.Header?.MessageType;
                 
                 // Track incoming message
-                if (TypeMessage) {
-                    trackLoanMessage(TypeMessage, 'received');
+                if (TypeMessage && typeof TypeMessage === 'string' && TypeMessage.trim()) {
+                    trackLoanMessage(TypeMessage.trim(), 'received');
                 }
                 
                 switch (TypeMessage) {
@@ -143,6 +144,12 @@ exports.processRequest = async (req, res) => {
                     case 'TAKEOVER_PAYMENT_NOTIFICATION':
                         trackLoanMessage('TAKEOVER_PAYMENT_NOTIFICATION', 'processing');
                         return await handleTakeoverPaymentNotification(parsedData, res);
+                    case 'TAKEOVER_DISBURSEMENT_NOTIFICATION':
+                        trackLoanMessage('TAKEOVER_DISBURSEMENT_NOTIFICATION', 'processing');
+                        return await handleTakeoverDisbursementNotification(parsedData, res);
+                    case 'PAYMENT_ACKNOWLEDGMENT_NOTIFICATION':
+                        trackLoanMessage('PAYMENT_ACKNOWLEDGMENT_NOTIFICATION', 'processing');
+                        return await handlePaymentAcknowledgmentNotification(parsedData, res);
 
                     default:
                         return await forwardToThirdParty(parsedData.Document.Data, res, contentType);
@@ -155,9 +162,11 @@ exports.processRequest = async (req, res) => {
         }
     } catch (error) {
         logger.error('Controller error:', error);
-        trackLoanError(error.message, 'controller');
+        // Safely track error with validation
+        const errorMessage = error?.message || 'Unknown error';
+        trackLoanError(errorMessage.substring(0, 100), 'controller'); // Limit error message length
         const contentType = req.get('Content-Type');
-        return sendErrorResponse(res, '8011', 'Error processing request: ' + error.message, contentType.includes('json') ? 'json' : 'xml', null);
+        return sendErrorResponse(res, '8011', 'Error processing request: ' + errorMessage, contentType.includes('json') ? 'json' : 'xml', null);
     }
 };
 
@@ -1699,6 +1708,222 @@ const handleLoanFinalApproval = async (parsedData, res) => {
             return sendErrorResponse(res, '8012', error.message, 'xml', parsedData);
             responseSent = true;
         }
+    }
+};
+
+const handleTakeoverDisbursementNotification = async (parsedData, res) => {
+    try {
+        logger.info('Processing TAKEOVER_DISBURSEMENT_NOTIFICATION...');
+        
+        const header = parsedData.Document.Data.Header;
+        const messageDetails = parsedData.Document.Data.MessageDetails;
+        
+        // Extract request data
+        const applicationNumber = messageDetails.ApplicationNumber;
+        const loanNumber = messageDetails.LoanNumber;
+        const fspReferenceNumber = messageDetails.FSPReferenceNumber;
+        
+        logger.info('Takeover disbursement notification details:', {
+            applicationNumber,
+            loanNumber,
+            fspReferenceNumber
+        });
+
+        // Validate required fields
+        if (!applicationNumber) {
+            logger.error('Missing required field: ApplicationNumber');
+            return sendErrorResponse(res, '8003', 'Missing required field: ApplicationNumber', 'xml', parsedData);
+        }
+
+        // Find loan mapping
+        let loanMapping;
+        try {
+            loanMapping = await LoanMappingService.getByEssApplicationNumber(applicationNumber);
+        } catch (error) {
+            logger.error('Error finding loan mapping:', error);
+            return sendErrorResponse(res, '8010', 'Error finding loan mapping: ' + error.message, 'xml', parsedData);
+        }
+
+        if (!loanMapping) {
+            logger.error('Loan mapping not found for application:', applicationNumber);
+            return sendErrorResponse(res, '8010', 'Loan mapping not found', 'xml', parsedData);
+        }
+
+        // Update loan status to indicate disbursement
+        try {
+            await LoanMappingService.updateStatus(loanMapping.essApplicationNumber, 'DISBURSED');
+            logger.info('Updated loan status to DISBURSED');
+        } catch (updateError) {
+            logger.error('Error updating loan status:', updateError);
+            // Continue anyway, don't fail the request
+        }
+
+        // Send success response
+        const responseData = {
+            Data: {
+                Header: {
+                    "Sender": process.env.FSP_NAME || "ZE DONE",
+                    "Receiver": header.Sender,
+                    "FSPCode": process.env.FSP_CODE || "FL8090", 
+                    "MsgId": getMessageId("RESPONSE"),
+                    "MessageType": "RESPONSE"
+                },
+                MessageDetails: {
+                    "Status": "SUCCESS",
+                    "StatusCode": "8000",
+                    "StatusDesc": "Takeover disbursement notification received and processed"
+                }
+            }
+        };
+        
+        const signedResponse = digitalSignature.createSignedXML(responseData.Data);
+        res.status(200).send(signedResponse);
+        
+    } catch (error) {
+        logger.error('Error processing takeover disbursement notification:', error);
+        return sendErrorResponse(res, '8011', 'Error processing request: ' + error.message, 'xml', parsedData);
+    }
+};
+
+const handlePaymentAcknowledgmentNotification = async (parsedData, res) => {
+    try {
+        logger.info('Processing PAYMENT_ACKNOWLEDGMENT_NOTIFICATION...');
+        
+        const header = parsedData.Document.Data.Header;
+        const messageDetails = parsedData.Document.Data.MessageDetails;
+        
+        // Extract request data
+        const applicationNumber = messageDetails.ApplicationNumber;
+        const loanNumber = messageDetails.LoanNumber;
+        const fspReferenceNumber = messageDetails.FSPReferenceNumber;
+        const totalPayoffAmount = messageDetails.TotalPayoffAmount;
+        const paymentReferenceNumber = messageDetails.PaymentReferenceNumber;
+        const paymentDate = messageDetails.PaymentDate;
+        
+        logger.info('Payment acknowledgment details:', {
+            applicationNumber,
+            loanNumber,
+            fspReferenceNumber,
+            totalPayoffAmount,
+            paymentReferenceNumber,
+            paymentDate
+        });
+
+        // Validate required fields
+        if (!applicationNumber) {
+            logger.error('Missing required field: ApplicationNumber');
+            return sendErrorResponse(res, '8003', 'Missing required field: ApplicationNumber', 'xml', parsedData);
+        }
+
+        // Send acknowledgment response first
+        const responseData = {
+            Data: {
+                Header: {
+                    "Sender": process.env.FSP_NAME || "ZE DONE",
+                    "Receiver": header.Sender,
+                    "FSPCode": process.env.FSP_CODE || "FL8090", 
+                    "MsgId": getMessageId("RESPONSE"),
+                    "MessageType": "RESPONSE"
+                },
+                MessageDetails: {
+                    "Status": "SUCCESS",
+                    "StatusCode": "8000",
+                    "StatusDesc": "Payment acknowledgment received and being processed"
+                }
+            }
+        };
+        
+        const signedResponse = digitalSignature.createSignedXML(responseData.Data);
+        res.status(200).send(signedResponse);
+
+        // Now process the payment acknowledgment asynchronously
+        processPaymentAcknowledgment(parsedData);
+        
+    } catch (error) {
+        logger.error('Error processing payment acknowledgment notification:', error);
+        return sendErrorResponse(res, '8011', 'Error processing request: ' + error.message, 'xml', parsedData);
+    }
+};
+
+// Async function to process payment acknowledgment
+const processPaymentAcknowledgment = async (parsedData) => {
+    try {
+        const messageDetails = parsedData.Document.Data.MessageDetails;
+        const applicationNumber = messageDetails.ApplicationNumber;
+        const totalPayoffAmount = messageDetails.TotalPayoffAmount;
+        const paymentDate = messageDetails.PaymentDate;
+
+        // Find loan mapping
+        let loanMapping;
+        try {
+            loanMapping = await LoanMappingService.getByEssApplicationNumber(applicationNumber);
+        } catch (error) {
+            logger.error('Error finding loan mapping for payment acknowledgment:', error);
+            return;
+        }
+
+        if (!loanMapping) {
+            logger.error('Loan mapping not found for payment acknowledgment, application:', applicationNumber);
+            return;
+        }
+
+        const mifosLoanId = loanMapping.mifosLoanId;
+        logger.info('Found loan mapping, MIFOS loan ID:', mifosLoanId);
+
+        // Query MIFOS to get loan details
+        let loanDetails;
+        try {
+            const loanResponse = await api.get(`/v1/loans/${mifosLoanId}?associations=repaymentSchedule,transactions`);
+            if (!loanResponse.status) {
+                throw new Error('Failed to fetch loan details from MIFOS');
+            }
+            loanDetails = loanResponse.response;
+            logger.info('Fetched loan details from MIFOS');
+        } catch (error) {
+            logger.error('Error fetching loan details from MIFOS:', error);
+            return;
+        }
+
+        // Calculate outstanding amount
+        const outstandingBalance = loanDetails.summary?.totalOutstanding || 0;
+        logger.info('Loan outstanding balance:', outstandingBalance);
+
+        // Make full repayment to close the loan
+        if (outstandingBalance > 0) {
+            try {
+                const repaymentAmount = outstandingBalance;
+                const repaymentResponse = await api.post(`${API_ENDPOINTS.LOAN}${mifosLoanId}/transactions?command=repayment`, {
+                    transactionDate: paymentDate || formatDateForMifos(new Date()),
+                    transactionAmount: repaymentAmount,
+                    paymentTypeId: 1, // Assuming cash payment type
+                    note: `Full repayment for loan closure - Payment ref: ${messageDetails.PaymentReferenceNumber || 'N/A'}`
+                });
+
+                if (!repaymentResponse.status) {
+                    throw new Error('Failed to make repayment: ' + JSON.stringify(repaymentResponse.response));
+                }
+
+                logger.info('✅ Successfully made full repayment to close loan:', {
+                    loanId: mifosLoanId,
+                    amount: repaymentAmount
+                });
+
+                // Update loan mapping status
+                await LoanMappingService.updateStatus(loanMapping.essApplicationNumber, 'CLOSED');
+                logger.info('Updated loan status to CLOSED');
+
+            } catch (repaymentError) {
+                logger.error('Error making repayment:', repaymentError);
+                // Update status to indicate payment processing failed
+                await LoanMappingService.updateStatus(loanMapping.essApplicationNumber, 'PAYMENT_FAILED');
+            }
+        } else {
+            logger.info('Loan already has zero outstanding balance');
+            await LoanMappingService.updateStatus(loanMapping.essApplicationNumber, 'CLOSED');
+        }
+
+    } catch (error) {
+        logger.error('Error in processPaymentAcknowledgment:', error);
     }
 };
 

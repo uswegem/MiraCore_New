@@ -105,16 +105,32 @@ const httpMetricsMiddleware = (req, res, next) => {
 
 // Function to track loan messages
 const trackLoanMessage = (messageType, status = 'success') => {
-    loanMessagesTotal
-        .labels(messageType, status)
-        .inc();
+    // Validate inputs to prevent Prometheus label errors
+    const safeMessageType = (typeof messageType === 'string' && messageType.trim()) ? messageType.trim() : 'unknown';
+    const safeStatus = (typeof status === 'string' && status.trim()) ? status.trim() : 'unknown';
+
+    try {
+        loanMessagesTotal
+            .labels(safeMessageType, safeStatus)
+            .inc();
+    } catch (error) {
+        console.error('Error tracking loan message:', error.message, { messageType, status });
+    }
 };
 
 // Function to track loan errors
 const trackLoanError = (errorType, messageType) => {
-    loanErrorsTotal
-        .labels(errorType, messageType)
-        .inc();
+    // Validate inputs to prevent Prometheus label errors
+    const safeErrorType = (typeof errorType === 'string' && errorType.trim()) ? errorType.trim() : 'unknown_error';
+    const safeMessageType = (typeof messageType === 'string' && messageType.trim()) ? messageType.trim() : 'unknown';
+
+    try {
+        loanErrorsTotal
+            .labels(safeErrorType, safeMessageType)
+            .inc();
+    } catch (error) {
+        console.error('Error tracking loan error:', error.message, { errorType, messageType });
+    }
 };
 
 // Function to track database queries

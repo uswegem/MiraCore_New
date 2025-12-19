@@ -10,6 +10,17 @@ const builder = new xml2js.Builder({
 });
 
 function createSignedResponse(responseCode, description, additionalData = {}) {
+  // Sanitize description to escape XML special characters
+  const sanitizedDescription = String(description || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+    .replace(/\n/g, ' ')  // Replace newlines with spaces
+    .replace(/\r/g, '')   // Remove carriage returns
+    .trim();
+
   const responseObj = {
     Header: {
       Sender: 'ZE DONE',
@@ -20,7 +31,7 @@ function createSignedResponse(responseCode, description, additionalData = {}) {
     },
     MessageDetails: {
       ResponseCode: responseCode,
-      Description: description,
+      Description: sanitizedDescription,
       ...additionalData
     }
   };
@@ -46,6 +57,17 @@ function createResponse(responseCode, description, additionalData = {}) {
 }
 
 function sendErrorResponse(res, responseCode, description, format = 'xml', parsedData = null) {
+  // Sanitize description to escape XML special characters
+  const sanitizedDescription = String(description || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+    .replace(/\n/g, ' ')  // Replace newlines with spaces
+    .replace(/\r/g, '')   // Remove carriage returns
+    .trim();
+
   const errorResponse = {
     Header: {
       Sender: process.env.FSP_NAME || 'ZE DONE',
@@ -56,7 +78,7 @@ function sendErrorResponse(res, responseCode, description, format = 'xml', parse
     },
     MessageDetails: {
       ResponseCode: responseCode,
-      Description: description
+      Description: sanitizedDescription
     }
   };
 
