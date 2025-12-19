@@ -387,7 +387,12 @@ class LoanMappingService {
    */
   static async getByEssApplicationNumber(essApplicationNumber, includeInactive = true) {
     try {
-      const query = { essApplicationNumber };
+      const query = {
+        $or: [
+          { essApplicationNumber },
+          { restructureApplicationNumber: essApplicationNumber } // Also search by restructure application number
+        ]
+      };
       
       // Optionally exclude inactive statuses
       if (!includeInactive) {
