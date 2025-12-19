@@ -26,17 +26,12 @@ const handleLoanRestructureRequest = async (parsedData, res) => {
 
         // Extract request parameters
         const checkNumber = messageDetails.CheckNumber;
-        const requestedAmount = parseFloat(messageDetails.RequestedAmount || 0);
         const tenure = parseInt(messageDetails.Tenure || 0);
         const desiredDeductibleAmount = parseFloat(messageDetails.DesiredDeductibleAmount || 0);
 
         // Validate required fields
         if (!checkNumber) {
             throw new Error('CheckNumber is required');
-        }
-
-        if (!requestedAmount || requestedAmount <= 0) {
-            throw new Error('RequestedAmount must be greater than 0');
         }
 
         if (!tenure || tenure <= 0) {
@@ -60,6 +55,24 @@ const handleLoanRestructureRequest = async (parsedData, res) => {
             mifosLoanId: loanMapping.mifosLoanId,
             applicationNumber: loanMapping.applicationNumber
         });
+
+        // Fetch existing loan details from MIFOS
+        const api = maker;
+        const loanResponse = await api.get(`/v1/loans/${loanMapping.mifosLoanId}?associations=repaymentSchedule,transactions`);
+
+        if (!loanResponse.data) {
+            logger.error(`MIFOS loan not found: ${loanMapping.mifosLoanId}`);
+            throw new Error('Loan details not available from MIFOS');
+        }
+
+        const mifosLoan = loanResponse.data;
+        const existingLoanAmount = parseFloat(mifosLoan.principal || 0);
+        const currentOutstanding = parseFloat(mifosLoan.summary?.totalOutstanding || 0);
+
+        logger.info(`MIFOS Loan Details: Principal=${existingLoanAmount}, Outstanding=${currentOutstanding}, Status=${mifosLoan.status?.value}`);
+
+        // Use existing loan amount for restructure calculations
+        const requestedAmount = existingLoanAmount;
 
         // Step 1: Send immediate ACK response
         const ackResponseData = {
@@ -92,8 +105,9 @@ const handleLoanRestructureRequest = async (parsedData, res) => {
         const otherCharges = 50000; // Standard charges
 
         logger.info('Calculated restructure details:', {
-            requestedAmount,
-            tenure,
+            existingLoanAmount,
+            currentOutstanding,
+            newTenure: tenure,
             interestRate,
             totalInterestRateAmount,
             totalAmountToPay,
@@ -114,7 +128,8 @@ const handleLoanRestructureRequest = async (parsedData, res) => {
                     restructureRequested: true,
                     restructureDate: new Date(),
                     newTenure: tenure,
-                    newRequestedAmount: requestedAmount,
+                    existingLoanAmount: existingLoanAmount,
+                    currentOutstanding: currentOutstanding,
                     newTotalAmountToPay: totalAmountToPay,
                     newInterestRate: interestRate,
                     newOtherCharges: otherCharges,
@@ -137,10 +152,11 @@ const handleLoanRestructureRequest = async (parsedData, res) => {
             data: {
                 checkNumber,
                 originalLoanNumber: loanMapping.loanNumber,
+                existingLoanAmount,
+                currentOutstanding,
+                newTenure: tenure,
                 newLoanNumber,
                 mifosLoanId: loanMapping.mifosLoanId,
-                requestedAmount,
-                tenure,
                 totalAmountToPay
             }
         });
