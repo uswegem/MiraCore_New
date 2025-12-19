@@ -165,6 +165,13 @@ async function handleLoanRestructureBalanceRequest(parsedData, res) {
             maturityDate
         });
         
+        // Format dates to ISO format (YYYY-MM-DDTHH:mm:ss) for ESS_UTUMISHI
+        const formatDateToISO = (dateStr) => {
+            if (!dateStr) return new Date().toISOString().replace(/\.\d{3}Z$/, '');
+            const date = new Date(dateStr);
+            return date.toISOString().replace(/\.\d{3}Z$/, '');
+        };
+        
         // Prepare synchronous response data
         const responseData = {
             Data: {
@@ -176,13 +183,14 @@ async function handleLoanRestructureBalanceRequest(parsedData, res) {
                     "MessageType": "LOAN_RESTRUCTURE_BALANCE_RESPONSE"
                 },
                 MessageDetails: {
+                    "ResponseCode": "8000",
                     "LoanNumber": LoanNumber,
                     "InstallmentAmount": installmentAmount.toFixed(2),
                     "OutstandingBalance": outstandingBalance.toFixed(2),
                     "PrincipalBalance": principalOutstanding.toFixed(2),
-                    "ValidityDate": formattedValidityDate,
-                    "LastRepaymentDate": lastRepaymentDate || formatDateForMifos(new Date()),
-                    "MaturityDate": maturityDate || formatDateForMifos(validityDate)
+                    "ValidityDate": formatDateToISO(validityDate),
+                    "LastRepaymentDate": formatDateToISO(lastRepaymentDate || new Date()),
+                    "MaturityDate": formatDateToISO(maturityDate || validityDate)
                 }
             }
         };
