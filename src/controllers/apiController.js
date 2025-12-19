@@ -621,7 +621,7 @@ const handleTakeoverPayOffBalanceRequest = async (parsedData, res) => {
             return sendErrorResponse(res, '8013', 'LoanNumber is required', 'xml', parsedData);
         }
 
-        // Get loan details from MIFOS
+        // Get loan details from MIFOS with repayment schedule
         let totalPayOffAmount = 0;
         let principalOutstanding = 0;
         let outstandingBalance = 0;
@@ -633,18 +633,50 @@ const handleTakeoverPayOffBalanceRequest = async (parsedData, res) => {
             if (searchResponse.data && searchResponse.data.length > 0) {
                 const loanId = searchResponse.data[0].id;
                 
-                // Get detailed loan information
-                const loanResponse = await api.getLoanDetails(loanId);
+                // Get detailed loan information with repayment schedule
+                const loanResponse = await api.get(`/v1/loans/${loanId}?associations=repaymentSchedule`);
                 const mifosLoanData = loanResponse.data;
                 
-                // Get principal outstanding and interest rate
+                // Get principal outstanding from summary
                 principalOutstanding = parseFloat(mifosLoanData.summary?.principalOutstanding || 0);
                 outstandingBalance = parseFloat(mifosLoanData.summary?.totalOutstanding || 0);
-                const annualInterestRate = parseFloat(mifosLoanData.interestRatePerPeriod || 0);
                 
-                // Calculate 7 days of interest on principal
-                // Formula: Principal × (Annual Rate / 100) × (7 / 365)
-                const sevenDaysInterest = principalOutstanding * (annualInterestRate / 100) * (7 / 365);
+                // Calculate 7 days interest from repayment schedule
+                let sevenDaysInterest = 0;
+                
+                if (mifosLoanData.repaymentSchedule?.periods) {
+                    // Get unpaid periods from schedule
+                    const unpaidPeriods = mifosLoanData.repaymentSchedule.periods.filter(
+                        period => period.period && !period.complete && period.dueDate
+                    );
+                    
+                    if (unpaidPeriods.length > 0) {
+                        // Get the next unpaid period's interest
+                        const nextPeriod = unpaidPeriods[0];
+                        const periodInterest = parseFloat(nextPeriod.interestOriginalDue || nextPeriod.interestDue || 0);
+                        
+                        // Get period length in days
+                        const periodStartDate = new Date(nextPeriod.fromDate || mifosLoanData.timeline?.expectedDisbursementDate);
+                        const periodEndDate = new Date(nextPeriod.dueDate);
+                        const periodDays = Math.max(1, (periodEndDate - periodStartDate) / (1000 * 60 * 60 * 24));
+                        
+                        // Calculate daily interest rate and multiply by 7
+                        const dailyInterest = periodInterest / periodDays;
+                        sevenDaysInterest = dailyInterest * 7;
+                        
+                        logger.info(`📊 Schedule calculation - Period Interest: ${periodInterest}, Period Days: ${periodDays}, Daily: ${dailyInterest.toFixed(2)}, 7 Days: ${sevenDaysInterest.toFixed(2)}`);
+                    } else {
+                        // Fallback to annual rate if no unpaid periods
+                        const annualInterestRate = parseFloat(mifosLoanData.interestRatePerPeriod || 0);
+                        sevenDaysInterest = principalOutstanding * (annualInterestRate / 100) * (7 / 365);
+                        logger.info(`⚠️ No unpaid periods, using annual rate calculation`);
+                    }
+                } else {
+                    // Fallback to annual rate if schedule not available
+                    const annualInterestRate = parseFloat(mifosLoanData.interestRatePerPeriod || 0);
+                    sevenDaysInterest = principalOutstanding * (annualInterestRate / 100) * (7 / 365);
+                    logger.info(`⚠️ Schedule not available, using annual rate calculation`);
+                }
                 
                 // Total payoff = Principal Outstanding + 7 days interest
                 totalPayOffAmount = principalOutstanding + sevenDaysInterest;
