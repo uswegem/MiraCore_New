@@ -26,24 +26,32 @@ const handleLoanRestructureRequest = async (parsedData, res) => {
 
         // Extract request parameters
         const checkNumber = messageDetails.CheckNumber;
+        const loanNumber = messageDetails.LoanNumber;
         const tenure = parseInt(messageDetails.Tenure || 0);
         const desiredDeductibleAmount = parseFloat(messageDetails.DesiredDeductibleAmount || 0);
 
         // Validate required fields
-        if (!checkNumber) {
-            throw new Error('CheckNumber is required');
+        if (!loanNumber) {
+            throw new Error('LoanNumber is required');
         }
 
         if (!tenure || tenure <= 0) {
             throw new Error('Tenure must be greater than 0');
         }
 
-        // Find the loan mapping using check number
-        const loanMapping = await LoanMapping.findOne({ checkNumber });
+        // Find the loan mapping using loan number (try multiple lookup strategies)
+        let loanMapping = await LoanMapping.findOne({
+            $or: [
+                { fspReferenceNumber: loanNumber },
+                { essLoanNumberAlias: loanNumber },
+                { newLoanNumber: loanNumber },
+                { checkNumber: checkNumber } // fallback to checkNumber if provided
+            ]
+        });
 
         if (!loanMapping) {
-            logger.warn('Loan mapping not found for checkNumber:', checkNumber);
-            throw new Error(`No active loan found for check number: ${checkNumber}`);
+            logger.warn('Loan mapping not found for loanNumber:', loanNumber);
+            throw new Error(`No active loan found for loan number: ${loanNumber}`);
         }
 
         if (!loanMapping.mifosLoanId) {
