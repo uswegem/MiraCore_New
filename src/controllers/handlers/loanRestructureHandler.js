@@ -151,23 +151,28 @@ const handleLoanRestructureRequest = async (parsedData, res) => {
 
         logger.info('✅ Updated loan mapping with restructure details');
 
-        // Create audit log
-        await AuditLog.create({
-            userId: 'system',
-            action: 'LOAN_RESTRUCTURE_REQUESTED',
-            description: `Loan restructure requested for check ${checkNumber}`,
-            eventType: 'LOAN_RESTRUCTURE_REQUESTED',
-            data: {
-                checkNumber,
-                originalLoanNumber: loanMapping.loanNumber,
-                existingLoanAmount,
-                currentOutstanding,
-                newTenure: tenure,
-                newLoanNumber,
-                mifosLoanId: loanMapping.mifosLoanId,
-                totalAmountToPay
-            }
-        });
+        // Create audit log (optional - don't fail if it doesn't work)
+        try {
+            await AuditLog.create({
+                userId: null, // System action, no user
+                action: 'api_call',
+                description: `Loan restructure requested for check ${checkNumber}`,
+                eventType: 'LOAN_RESTRUCTURE_REQUESTED',
+                data: {
+                    checkNumber,
+                    originalLoanNumber: loanMapping.loanNumber,
+                    existingLoanAmount,
+                    currentOutstanding,
+                    newTenure: tenure,
+                    newLoanNumber,
+                    mifosLoanId: loanMapping.mifosLoanId,
+                    totalAmountToPay
+                }
+            });
+        } catch (auditError) {
+            logger.warn('Failed to create audit log for restructure request:', auditError.message);
+            // Continue with the process even if audit logging fails
+        }
 
         // Step 3: Send LOAN_INITIAL_APPROVAL_NOTIFICATION callback
         logger.info('📤 Sending LOAN_INITIAL_APPROVAL_NOTIFICATION for restructure...');

@@ -16,7 +16,9 @@ const auditLogSchema = new mongoose.Schema({
   userId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true
+    required: function() {
+      return this.action !== 'api_call'; // userId not required for api_call actions
+    }
   },
   userAgent: {
     type: String
