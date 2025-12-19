@@ -123,7 +123,7 @@ const handleLoanRestructureRequest = async (parsedData, res) => {
         });
 
         // Generate new loan/reference numbers for restructure
-        const { generateLoanNumber, generateFSPReferenceNumber } = require('../../utils/messageIdGenerator');
+        const { generateLoanNumber, generateFSPReferenceNumber } = require('../../utils/loanUtils');
         const newLoanNumber = generateLoanNumber();
         const newFspReferenceNumber = generateFSPReferenceNumber();
 
