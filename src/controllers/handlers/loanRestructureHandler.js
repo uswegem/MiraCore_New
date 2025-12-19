@@ -31,21 +31,22 @@ const handleLoanRestructureRequest = async (parsedData, res) => {
         const desiredDeductibleAmount = parseFloat(messageDetails.DesiredDeductibleAmount || 0);
 
         // Validate required fields
-        if (!loanNumber) {
-            throw new Error('LoanNumber is required');
+        if (!checkNumber) {
+            throw new Error('CheckNumber is required');
         }
 
         if (!tenure || tenure <= 0) {
             throw new Error('Tenure must be greater than 0');
         }
 
-        // Find the loan mapping using loan number (try multiple lookup strategies)
+        // Find the loan mapping using check number (primary) or loan number (fallback)
         let loanMapping = await LoanMapping.findOne({
             $or: [
+                { checkNumber: checkNumber },
+                { essCheckNumber: checkNumber },
                 { fspReferenceNumber: loanNumber },
                 { essLoanNumberAlias: loanNumber },
-                { newLoanNumber: loanNumber },
-                { checkNumber: checkNumber } // fallback to checkNumber if provided
+                { newLoanNumber: loanNumber }
             ]
         });
 
