@@ -778,7 +778,12 @@ const handleLoanTakeoverOfferRequest = async (parsedData, res) => {
                 requestedAmount: messageDetails.RequestedTakeoverAmount,
                 tenure: messageDetails.Tenure,
                 existingLoanNumber: messageDetails.ExistingLoanNumber,
-                loanPurpose: messageDetails.LoanPurpose
+                loanPurpose: messageDetails.LoanPurpose,
+                takeOverAmount: parseFloat(messageDetails.TakeOverAmount || 0),
+                fsp1LoanNumber: messageDetails.FSP1LoanNumber,
+                fsp1BankAccount: messageDetails.FSP1BankAccount,
+                fsp1BankAccountName: messageDetails.FSP1BankAccountName,
+                fsp1SwiftCode: messageDetails.FSP1SWIFTCode
             };
 
             const employmentData = {
@@ -1739,12 +1744,18 @@ const handleLoanFinalApproval = async (parsedData, res) => {
                                     
                                     logger.info(`Using loan amount: ${loanAmount}, tenure: ${loanTenure}`);
                                     
-                                    // Check if this is a top-up loan
+                                    // Check if this is a top-up or takeover loan
                                     const isTopUp = loanMappingData.isTopUp === true;
+                                    const isTakeover = loanMappingData.isTakeover === true;
                                     const existingLoanId = loanMappingData.existingLoanId;
+                                    const takeOverAmount = parseFloat(existingMapping?.metadata?.loanData?.takeOverAmount || 0);
                                     
                                     if (isTopUp && existingLoanId) {
                                         logger.info(`🔄 Creating TOP-UP loan linked to existing loan ${existingLoanId}`);
+                                    }
+                                    
+                                    if (isTakeover && takeOverAmount > 0) {
+                                        logger.info(`🔄 Creating TAKEOVER loan - Total: ${loanAmount}, TakeOver Amount: ${takeOverAmount}, Net to Customer: ${loanAmount - takeOverAmount}`);
                                     }
                                     
                                     // Create loan in CBS
@@ -1797,14 +1808,38 @@ const handleLoanFinalApproval = async (parsedData, res) => {
                                         logger.info(`Loan ${loanId} approved successfully`);
 
                                         // Disburse loan
+                                        // For takeover loans, only disburse net amount (LoanAmount - TakeOverAmount) to customer
+                                        // The TakeOverAmount will be paid to FSP1 separately via TAKEOVER_DISBURSEMENT_NOTIFICATION
+                                        let netDisbursementAmount = loanAmount;
+                                        
+                                        if (isTakeover && takeOverAmount > 0) {
+                                            netDisbursementAmount = loanAmount - takeOverAmount;
+                                            logger.info(`💰 Takeover loan disbursement - Net to customer: ${netDisbursementAmount} (Principal: ${loanAmount} - TakeOver: ${takeOverAmount})`);
+                                        }
+                                        
                                         const disbursePayload = {
                                             actualDisbursementDate: new Date().toISOString().split('T')[0],
+                                            transactionAmount: netDisbursementAmount.toString(),
                                             dateFormat: "yyyy-MM-dd",
-                                            locale: "en"
+                                            locale: "en",
+                                            note: isTakeover ? `Takeover loan disbursement. Net amount after FSP1 settlement: ${netDisbursementAmount}` : undefined
                                         };
 
                                         await api.post(`/v1/loans/${loanId}?command=disburse`, disbursePayload);
-                                        logger.info(`Loan ${loanId} disbursed successfully`);
+                                        logger.info(`Loan ${loanId} disbursed successfully with amount: ${netDisbursementAmount}`);
+                                        
+                                        // Store takeover details for later use in TAKEOVER_DISBURSEMENT_NOTIFICATION
+                                        if (isTakeover && takeOverAmount > 0) {
+                                            loanMappingData.takeoverDetails = {
+                                                totalLoanAmount: loanAmount,
+                                                takeOverAmount: takeOverAmount,
+                                                netDisbursedToCustomer: netDisbursementAmount,
+                                                fsp1LoanNumber: existingMapping?.metadata?.loanData?.fsp1LoanNumber,
+                                                fsp1BankAccount: existingMapping?.metadata?.loanData?.fsp1BankAccount,
+                                                fsp1BankAccountName: existingMapping?.metadata?.loanData?.fsp1BankAccountName,
+                                                fsp1SwiftCode: existingMapping?.metadata?.loanData?.fsp1SwiftCode
+                                            };
+                                        }
 
                                         // Update loan mapping with loan details
                                         loanMappingData.mifosClientId = clientId;
