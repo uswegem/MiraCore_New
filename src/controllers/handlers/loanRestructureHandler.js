@@ -3,7 +3,7 @@ const { maker } = require('../../services/cbs.api');
 const digitalSignature = require('../../utils/signatureUtils');
 const { getMessageId } = require('../../utils/messageIdGenerator');
 const LoanMapping = require('../../models/LoanMapping');
-const { AuditLog } = require('../../models/AuditLog');
+const AuditLog = require('../../models/AuditLog');
 
 /**
  * Handle LOAN_RESTRUCTURE_REQUEST
