@@ -183,8 +183,6 @@ async function handleLoanRestructureBalanceRequest(parsedData, res) {
                     "MessageType": "LOAN_RESTRUCTURE_BALANCE_RESPONSE"
                 },
                 MessageDetails: {
-                    "ResponseCode": "8000",
-                    "LoanNumber": LoanNumber,
                     "InstallmentAmount": installmentAmount.toFixed(2),
                     "OutstandingBalance": outstandingBalance.toFixed(2),
                     "PrincipalBalance": principalOutstanding.toFixed(2),
