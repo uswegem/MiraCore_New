@@ -427,7 +427,8 @@ const handleLoanOfferRequest = async (parsedData, res) => {
                 messageDetails.CheckNumber,
                 clientData,
                 loanData,
-                employmentData
+                employmentData,
+                'LOAN_OFFER_REQUEST' // Set original message type
             );
             logger.info('✅ Client data stored successfully');
         } catch (storageError) {

@@ -135,6 +135,7 @@ const handleLoanRestructureRequest = async (parsedData, res) => {
             { _id: loanMapping._id },
             {
                 $set: {
+                    originalMessageType: 'LOAN_RESTRUCTURE_REQUEST', // Set original message type
                     isRestructure: true,
                     restructureRequested: true,
                     restructureDate: new Date(),

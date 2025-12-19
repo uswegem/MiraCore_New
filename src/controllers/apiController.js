@@ -482,7 +482,8 @@ const handleTopUpOfferRequest = async (parsedData, res) => {
                 messageDetails.CheckNumber,
                 clientData,
                 loanData,
-                employmentData
+                employmentData,
+                'TOP_UP_OFFER_REQUEST' // Set original message type
             );
             logger.info('✅ Top-up client data stored successfully');
         } catch (storageError) {
@@ -789,7 +790,8 @@ const handleLoanTakeoverOfferRequest = async (parsedData, res) => {
                 messageDetails.CheckNumber,
                 clientData,
                 loanData,
-                employmentData
+                employmentData,
+                'LOAN_TAKEOVER_OFFER_REQUEST' // Set original message type
             );
             logger.info('✅ Takeover client data stored successfully');
         } catch (storageError) {
@@ -1283,78 +1285,128 @@ const handleLoanFinalApproval = async (parsedData, res) => {
 
                         // If approved, create client in CBS and create loan
                         if (messageDetails.Approval === 'APPROVED') {
-                            // Check if this is a restructure request
-                            const isRestructure = existingMapping?.isRestructure || existingMapping?.restructureRequested;
+                            // Get original message type to determine loan processing flow
+                            const originalMessageType = existingMapping?.originalMessageType;
                             
-                            if (isRestructure) {
-                                logger.info('🔄 Detected LOAN RESTRUCTURE - will call MIFOS reschedule API');
-                                logger.info('Restructure details:', {
-                                    mifosLoanId: existingMapping?.mifosLoanId,
-                                    newTenure: existingMapping?.newTenure,
-                                    newRequestedAmount: existingMapping?.newRequestedAmount
-                                });
-                                
-                                try {
-                                    // Call MIFOS reschedule API
-                                    const reschedulePayload = {
-                                        dateFormat: "dd MMMM yyyy",
-                                        locale: "en",
-                                        rescheduleFromDate: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }),
-                                        rescheduleReasonId: 1,
-                                        submittedOnDate: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }),
-                                        adjustedDueDate: new Date(new Date().setMonth(new Date().getMonth() + existingMapping.newTenure)).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }),
-                                        graceOnPrincipal: 0,
-                                        graceOnInterest: 0,
-                                        extraTerms: 0,
-                                        rescheduleReasonComment: `Loan restructure approved. New tenure: ${existingMapping.newTenure} months, New amount: ${existingMapping.newRequestedAmount}`
-                                    };
-
-                                    logger.info('📞 Calling MIFOS reschedule API with payload:', JSON.stringify(reschedulePayload, null, 2));
-                                    const rescheduleResponse = await api.post(
-                                        `/v1/loans/${existingMapping.mifosLoanId}/schedule`,
-                                        reschedulePayload
-                                    );
-
-                                    logger.info('✅ MIFOS reschedule created:', {
-                                        resourceId: rescheduleResponse.data.resourceId,
-                                        loanId: rescheduleResponse.data.loanId
-                                    });
-
-                                    // Update loan mapping with reschedule details
-                                    loanMappingData.rescheduleId = rescheduleResponse.data.resourceId;
-                                    loanMappingData.status = 'RESTRUCTURED';
-                                    loanMappingData.restructuredAt = new Date().toISOString();
-
-                                    // Skip loan creation for restructure
-                                    logger.info('✅ Loan restructure completed, skipping new loan creation');
-                                    
-                                } catch (rescheduleError) {
-                                    logger.error('❌ Error calling MIFOS reschedule API:', rescheduleError);
-                                    throw rescheduleError;
+                            logger.info('🔍 Determined loan type:', {
+                                originalMessageType: originalMessageType,
+                                applicationNumber: messageDetails.ApplicationNumber,
+                                fallbackChecks: {
+                                    hasRestructureFlag: !!(existingMapping?.isRestructure || existingMapping?.restructureRequested),
+                                    hasExistingLoanId: !!(existingMapping?.metadata?.loanData?.existingLoanId || existingMapping?.mifosLoanId)
                                 }
-                            } else {
-                                // Check if this is a top-up loan by checking for existing loan number
-                                const existingLoanNumber = existingMapping?.metadata?.loanData?.existingLoanNumber;
-                                const existingLoanId = existingMapping?.metadata?.loanData?.existingLoanId || 
-                                                     existingMapping?.metadata?.existingLoanId ||
-                                                     existingMapping?.mifosLoanId;
-                                
-                                const isTopUpLoan = existingLoanNumber || existingLoanId;
-                                
-                                if (isTopUpLoan) {
-                                    logger.info('🔄 Detected TOP-UP loan - will create new top-up loan in CBS');
+                            });
+                            
+                            // Process based on original message type
+                            switch (originalMessageType) {
+                                case 'LOAN_RESTRUCTURE_REQUEST':
+                                    logger.info('🔄 Processing LOAN_RESTRUCTURE_REQUEST - will call MIFOS reschedule API');
+                                    logger.info('Restructure details:', {
+                                        mifosLoanId: existingMapping?.mifosLoanId,
+                                        newTenure: existingMapping?.newTenure,
+                                        newRequestedAmount: existingMapping?.newRequestedAmount
+                                    });
+                                    
+                                    try {
+                                        // Call MIFOS reschedule API
+                                        const reschedulePayload = {
+                                            dateFormat: "dd MMMM yyyy",
+                                            locale: "en",
+                                            rescheduleFromDate: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }),
+                                            rescheduleReasonId: 1,
+                                            submittedOnDate: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }),
+                                            adjustedDueDate: new Date(new Date().setMonth(new Date().getMonth() + existingMapping.newTenure)).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }),
+                                            graceOnPrincipal: 0,
+                                            graceOnInterest: 0,
+                                            extraTerms: 0,
+                                            rescheduleReasonComment: `Loan restructure approved. New tenure: ${existingMapping.newTenure} months, New amount: ${existingMapping.newRequestedAmount}`
+                                        };
+
+                                        logger.info('📞 Calling MIFOS reschedule API with payload:', JSON.stringify(reschedulePayload, null, 2));
+                                        const rescheduleResponse = await api.post(
+                                            `/v1/loans/${existingMapping.mifosLoanId}/schedule`,
+                                            reschedulePayload
+                                        );
+
+                                        logger.info('✅ MIFOS reschedule created:', {
+                                            resourceId: rescheduleResponse.data.resourceId,
+                                            loanId: rescheduleResponse.data.loanId
+                                        });
+
+                                        // Update loan mapping with reschedule details
+                                        loanMappingData.rescheduleId = rescheduleResponse.data.resourceId;
+                                        loanMappingData.status = 'RESTRUCTURED';
+                                        loanMappingData.restructuredAt = new Date().toISOString();
+
+                                        // Skip loan creation for restructure
+                                        logger.info('✅ Loan restructure completed, skipping new loan creation');
+                                        
+                                    } catch (rescheduleError) {
+                                        logger.error('❌ Error calling MIFOS reschedule API:', rescheduleError);
+                                        throw rescheduleError;
+                                    }
+                                    break;
+                                    
+                                case 'TOP_UP_OFFER_REQUEST':
+                                    logger.info('🔄 Processing TOP_UP_OFFER_REQUEST - will create top-up loan in CBS');
+                                    const topUpExistingLoanId = existingMapping?.metadata?.loanData?.existingLoanId || 
+                                                              existingMapping?.metadata?.existingLoanId ||
+                                                              existingMapping?.mifosLoanId;
+                                    
                                     logger.info('Top-up details:', {
-                                        existingLoanNumber: existingLoanNumber,
-                                        existingLoanId: existingLoanId,
+                                        existingLoanId: topUpExistingLoanId,
                                         mifosClientId: existingMapping?.mifosClientId
                                     });
                                     
                                     // Mark this so we create the loan with topup=true parameter
                                     loanMappingData.isTopUp = true;
-                                    loanMappingData.existingLoanId = existingLoanId;
-                                }
+                                    loanMappingData.existingLoanId = topUpExistingLoanId;
+                                    // Fall through to loan creation
+                                    break;
+                                    
+                                case 'LOAN_TAKEOVER_OFFER_REQUEST':
+                                    logger.info('🔄 Processing LOAN_TAKEOVER_OFFER_REQUEST - will create takeover loan in CBS');
+                                    const takeoverExistingLoanId = existingMapping?.metadata?.loanData?.existingLoanId || 
+                                                                 existingMapping?.mifosLoanId;
+                                    
+                                    logger.info('Takeover details:', {
+                                        existingLoanId: takeoverExistingLoanId,
+                                        mifosClientId: existingMapping?.mifosClientId
+                                    });
+                                    
+                                    loanMappingData.isTakeover = true;
+                                    loanMappingData.existingLoanId = takeoverExistingLoanId;
+                                    // Fall through to loan creation
+                                    break;
+                                    
+                                case 'LOAN_OFFER_REQUEST':
+                                    logger.info('✅ Processing LOAN_OFFER_REQUEST - will create new loan in CBS');
+                                    // Standard new loan - no special flags needed
+                                    break;
+                                    
+                                default:
+                                    // Fallback for legacy records without originalMessageType
+                                    logger.warn('⚠️ No originalMessageType found, using legacy detection logic');
+                                    const isRestructure = existingMapping?.isRestructure || existingMapping?.restructureRequested;
+                                    const existingLoanId = existingMapping?.metadata?.loanData?.existingLoanId || 
+                                                         existingMapping?.metadata?.existingLoanId ||
+                                                         existingMapping?.mifosLoanId;
+                                    
+                                    if (isRestructure) {
+                                        logger.info('🔄 Legacy: Detected restructure via flags');
+                                        // Handle as restructure (but this shouldn't happen with new code)
+                                    } else if (existingLoanId) {
+                                        logger.info('🔄 Legacy: Detected top-up via existing loan ID');
+                                        loanMappingData.isTopUp = true;
+                                        loanMappingData.existingLoanId = existingLoanId;
+                                    } else {
+                                        logger.info('✅ Legacy: Treating as new loan');
+                                    }
+                                    break;
+                            }
                             
-                                // Only create client/loan if NOT a restructure
+                            // Only create client/loan if NOT a restructure
+                            if (originalMessageType !== 'LOAN_RESTRUCTURE_REQUEST') {
                                 // Try to get client data from existing mapping or use message details
                                 const storedClientData = existingMapping?.metadata?.clientData;
                             const clientData = storedClientData ? {

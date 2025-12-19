@@ -52,6 +52,14 @@ const loanMappingSchema = new mongoose.Schema({
     required: true
   },
 
+  // Track original message type that initiated this loan
+  originalMessageType: {
+    type: String,
+    enum: ['LOAN_OFFER_REQUEST', 'TOP_UP_OFFER_REQUEST', 'LOAN_TAKEOVER_OFFER_REQUEST', 'LOAN_RESTRUCTURE_REQUEST'],
+    required: false, // Not required for backwards compatibility with existing records
+    index: true
+  },
+
   // Status tracking
   status: {
     type: String,

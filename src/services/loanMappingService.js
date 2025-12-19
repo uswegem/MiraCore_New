@@ -25,7 +25,7 @@ class LoanMappingService {
   /**
    * Create or update loan mapping with client data from LOAN_OFFER_REQUEST
    */
-  static async createOrUpdateWithClientData(applicationNumber, checkNumber, clientData, loanData, employmentData) {
+  static async createOrUpdateWithClientData(applicationNumber, checkNumber, clientData, loanData, employmentData, originalMessageType = null) {
     try {
       // Only update active mappings, not CANCELLED or REJECTED ones
       const filter = {
@@ -40,6 +40,7 @@ class LoanMappingService {
         requestedAmount: loanData.requestedAmount,
         tenure: loanData.tenure || 24,
         status: 'OFFER_SUBMITTED',
+        originalMessageType: originalMessageType, // Store original message type
         metadata: {
           clientData: clientData,
           loanData: loanData,
