@@ -10,7 +10,7 @@ const { LoanCalculate, CreateTopUpLoanOffer, CreateTakeoverLoanOffer, CreateLoan
 const LoanMappingService = require('../services/loanMappingService');
 const ClientService = require('../services/clientService');
 const cbsApi = require('../services/cbs.api');
-const { formatDateForMifos, formatDateForUTUMISHI } = require('../utils/dateUtils');
+const { formatDateForMifos, formatDateForUTUMISHI, formatDateTimeForUTUMISHI } = require('../utils/dateUtils');
 const AuditLog = require('../models/AuditLog');
 const { getMessageId } = require('../utils/messageIdGenerator');
 const LOAN_CONSTANTS = require('../utils/loanConstants');
@@ -383,14 +383,14 @@ const handleTopUpPayOffBalanceRequest = async (parsedData, res) => {
         // Add any actual fees or penalties that have been charged
         const totalPayoffAmount = principalOutstanding + feeChargesOutstanding + penaltyChargesOutstanding;
         
-        // Get last transaction dates
+        // Get last transaction dates (keep as Date objects for proper formatting later)
         const lastDeductionDate = loanData.timeline?.expectedDisbursementDate 
-            ? formatDateForUTUMISHI(loanData.timeline.expectedDisbursementDate)
-            : formatDateForUTUMISHI(currentDate);
+            ? new Date(loanData.timeline.expectedDisbursementDate)
+            : new Date(currentDate);
             
         const lastPayDate = loanData.timeline?.actualDisbursementDate 
-            ? formatDateForUTUMISHI(loanData.timeline.actualDisbursementDate)
-            : formatDateForUTUMISHI(currentDate);
+            ? new Date(loanData.timeline.actualDisbursementDate)
+            : new Date(currentDate);
 
         logger.info('Calculated payoff details:', {
             totalPayoffAmount: totalPayoffAmount.toFixed(2),
@@ -418,10 +418,10 @@ const handleTopUpPayOffBalanceRequest = async (parsedData, res) => {
                     "PaymentReferenceNumber": paymentReferenceNumber,
                     "TotalPayoffAmount": totalPayoffAmount.toFixed(2),
                     "OutstandingBalance": principalOutstanding.toFixed(2),
-                    "FinalPaymentDate": formatDateForUTUMISHI(finalPaymentDate),
-                    "LastDeductionDate": lastDeductionDate,
-                    "LastPayDate": lastPayDate,
-                    "EndDate": formatDateForUTUMISHI(finalPaymentDate)
+                    "FinalPaymentDate": formatDateTimeForUTUMISHI(finalPaymentDate),
+                    "LastDeductionDate": formatDateTimeForUTUMISHI(lastDeductionDate),
+                    "LastPayDate": formatDateTimeForUTUMISHI(lastPayDate),
+                    "EndDate": formatDateTimeForUTUMISHI(finalPaymentDate)
                 }
             }
         };
@@ -732,9 +732,9 @@ const handleTakeoverPayOffBalanceRequest = async (parsedData, res) => {
                     "FSPBankAccountName": "ZE DONE MICROFINANCE AND FINANCIAL CONSULTANCY",
                     "SWIFTCode": "NMIBTZTZ",
                     "MNOChannels": "MPESA,TIGOPESA,AIRTELMONEY",
-                    "FinalPaymentDate": formatDateForUTUMISHI(finalPaymentDate),
-                    "LastDeductionDate": formatDateForUTUMISHI(lastDeductionDate),
-                    "DeductionEndDate": formatDateForUTUMISHI(deductionEndDate)
+                    "FinalPaymentDate": formatDateTimeForUTUMISHI(finalPaymentDate),
+                    "LastDeductionDate": formatDateTimeForUTUMISHI(lastDeductionDate),
+                    "DeductionEndDate": formatDateTimeForUTUMISHI(deductionEndDate)
                 }
             }
         };
@@ -1953,7 +1953,7 @@ const handleLoanFinalApproval = async (parsedData, res) => {
                                     "FSPReferenceNumber": messageDetails.FSPReferenceNumber,
                                     "LoanNumber": messageDetails.LoanNumber,
                                     "TotalAmountToPay": updatedMapping.disbursedAmount || updatedMapping.requestedAmount,
-                                    "DisbursementDate": formatDateForUTUMISHI(new Date())
+                                    "DisbursementDate": formatDateTimeForUTUMISHI(new Date())
                                 }
                             }
                         };

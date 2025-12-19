@@ -177,7 +177,7 @@ async function sendLoanInitialApprovalNotification(loanMapping) {
                     "ProcessingFee": loanMapping.processingFee?.toString() || "0",
                     "Insurance": loanMapping.insurance?.toString() || "0",
                     "ApprovalDate": new Date().toISOString().split('T')[0],
-                    "DisbursementDate": new Date().toISOString().split('T')[0]
+                    "DisbursementDate": new Date().toISOString().replace(/\.\d{3}Z$/, '')
                 }
             }
         };

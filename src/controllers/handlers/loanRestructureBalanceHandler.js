@@ -4,7 +4,7 @@ const { sendErrorResponse } = require('../../utils/responseUtils');
 const LoanMappingService = require('../../services/loanMappingService');
 const LoanMapping = require('../../models/LoanMapping');
 const cbsApi = require('../../services/cbs.api');
-const { formatDateForMifos, formatDateForUTUMISHI } = require('../../utils/dateUtils');
+const { formatDateForMifos, formatDateForUTUMISHI, formatDateTimeForUTUMISHI } = require('../../utils/dateUtils');
 
 /**
  * Handle LOAN_RESTRUCTURE_BALANCE_REQUEST from ESS
@@ -179,9 +179,9 @@ async function handleLoanRestructureBalanceRequest(parsedData, res) {
                     "InstallmentAmount": installmentAmount.toFixed(2),
                     "OutstandingBalance": outstandingBalance.toFixed(2),
                     "PrincipalBalance": principalOutstanding.toFixed(2),
-                    "ValidityDate": formatDateForUTUMISHI(validityDate),
-                    "LastRepaymentDate": formatDateForUTUMISHI(lastRepaymentDate || new Date()),
-                    "MaturityDate": formatDateForUTUMISHI(maturityDate || validityDate)
+                    "ValidityDate": formatDateTimeForUTUMISHI(validityDate),
+                    "LastRepaymentDate": formatDateTimeForUTUMISHI(lastRepaymentDate || new Date()),
+                    "MaturityDate": formatDateTimeForUTUMISHI(maturityDate || validityDate)
                 }
             }
         };
