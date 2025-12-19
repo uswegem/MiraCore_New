@@ -625,14 +625,28 @@ const handleTakeoverPayOffBalanceRequest = async (parsedData, res) => {
         let totalPayOffAmount = 0;
         let principalOutstanding = 0;
         let outstandingBalance = 0;
+        let loanId = null;
 
         try {
-            // Search for loan by external ID or account number
-            const searchResponse = await api.searchLoans(loanNumber);
+            // First, check if loan exists in loan mapping database
+            logger.info(`🔍 Searching for loan mapping with alias: ${loanNumber}`);
+            const loanMapping = await LoanMappingService.getByEssLoanNumberAlias(loanNumber);
             
-            if (searchResponse.data && searchResponse.data.length > 0) {
-                const loanId = searchResponse.data[0].id;
+            if (loanMapping && loanMapping.mifosLoanId) {
+                loanId = loanMapping.mifosLoanId;
+                logger.info(`✅ Found loan mapping - Mifos Loan ID: ${loanId}`);
+            } else {
+                // If not in mapping, try searching Mifos directly by external ID
+                logger.info(`⚠️ Loan not in mapping database, searching Mifos by externalId: ${loanNumber}`);
+                const searchResponse = await api.get(`/v1/loans?externalId=${loanNumber}&limit=1`);
                 
+                if (searchResponse.data && searchResponse.data.length > 0) {
+                    loanId = searchResponse.data[0].id;
+                    logger.info(`✅ Found loan in Mifos by externalId - Loan ID: ${loanId}`);
+                }
+            }
+            
+            if (loanId) {
                 // Get detailed loan information with repayment schedule
                 const loanResponse = await api.get(`/v1/loans/${loanId}?associations=repaymentSchedule`);
                 const mifosLoanData = loanResponse.data;
@@ -641,8 +655,8 @@ const handleTakeoverPayOffBalanceRequest = async (parsedData, res) => {
                 principalOutstanding = parseFloat(mifosLoanData.summary?.principalOutstanding || 0);
                 outstandingBalance = parseFloat(mifosLoanData.summary?.totalOutstanding || 0);
                 
-                // Calculate 7 days interest from repayment schedule
-                let sevenDaysInterest = 0;
+                // Calculate 30 days interest from repayment schedule
+                let thirtyDaysInterest = 0;
                 
                 if (mifosLoanData.repaymentSchedule?.periods) {
                     // Get unpaid periods from schedule
@@ -660,44 +674,35 @@ const handleTakeoverPayOffBalanceRequest = async (parsedData, res) => {
                         const periodEndDate = new Date(nextPeriod.dueDate);
                         const periodDays = Math.max(1, (periodEndDate - periodStartDate) / (1000 * 60 * 60 * 24));
                         
-                        // Calculate daily interest rate and multiply by 7
+                        // Calculate daily interest rate and multiply by 30
                         const dailyInterest = periodInterest / periodDays;
-                        sevenDaysInterest = dailyInterest * 7;
+                        thirtyDaysInterest = dailyInterest * 30;
                         
-                        logger.info(`📊 Schedule calculation - Period Interest: ${periodInterest}, Period Days: ${periodDays}, Daily: ${dailyInterest.toFixed(2)}, 7 Days: ${sevenDaysInterest.toFixed(2)}`);
+                        logger.info(`📊 Schedule calculation - Period Interest: ${periodInterest}, Period Days: ${periodDays}, Daily: ${dailyInterest.toFixed(2)}, 30 Days: ${thirtyDaysInterest.toFixed(2)}`);
                     } else {
                         // Fallback to annual rate if no unpaid periods
                         const annualInterestRate = parseFloat(mifosLoanData.interestRatePerPeriod || 0);
-                        sevenDaysInterest = principalOutstanding * (annualInterestRate / 100) * (7 / 365);
+                        thirtyDaysInterest = principalOutstanding * (annualInterestRate / 100) * (30 / 365);
                         logger.info(`⚠️ No unpaid periods, using annual rate calculation`);
                     }
                 } else {
                     // Fallback to annual rate if schedule not available
                     const annualInterestRate = parseFloat(mifosLoanData.interestRatePerPeriod || 0);
-                    sevenDaysInterest = principalOutstanding * (annualInterestRate / 100) * (7 / 365);
+                    thirtyDaysInterest = principalOutstanding * (annualInterestRate / 100) * (30 / 365);
                     logger.info(`⚠️ Schedule not available, using annual rate calculation`);
                 }
                 
-                // Total payoff = Principal Outstanding + 7 days interest
-                totalPayOffAmount = principalOutstanding + sevenDaysInterest;
+                // Total payoff = Principal Outstanding + 30 days interest
+                totalPayOffAmount = principalOutstanding + thirtyDaysInterest;
                 
-                logger.info(`💰 Calculated takeover amounts - Principal: ${principalOutstanding}, 7 Days Interest: ${sevenDaysInterest.toFixed(2)}, Total Payoff: ${totalPayOffAmount.toFixed(2)}`);
+                logger.info(`💰 Calculated takeover amounts - Principal: ${principalOutstanding}, 30 Days Interest: ${thirtyDaysInterest.toFixed(2)}, Total Payoff: ${totalPayOffAmount.toFixed(2)}`);
             } else {
-                logger.warn('⚠️ Loan not found in MIFOS, using default values');
-                principalOutstanding = parseFloat(messageDetails.DeductionBalance || 0);
-                outstandingBalance = principalOutstanding;
-                // Assume 20% annual interest rate for fallback calculation
-                const sevenDaysInterest = principalOutstanding * 0.20 * (7 / 365);
-                totalPayOffAmount = principalOutstanding + sevenDaysInterest;
+                logger.error('❌ Loan not found in MIFOS with externalId:', loanNumber);
+                return sendErrorResponse(res, '8014', `Loan ${loanNumber} not found in MIFOS. Please ensure the loan is created and active.`, 'xml', parsedData);
             }
         } catch (mifosError) {
             logger.error('❌ Error fetching loan from MIFOS:', mifosError);
-            // Use fallback values from request
-            principalOutstanding = parseFloat(messageDetails.DeductionBalance || 0);
-            outstandingBalance = principalOutstanding;
-            // Assume 20% annual interest rate for fallback calculation
-            const sevenDaysInterest = principalOutstanding * 0.20 * (7 / 365);
-            totalPayOffAmount = principalOutstanding + sevenDaysInterest;
+            return sendErrorResponse(res, '8015', `Error fetching loan from MIFOS: ${mifosError.message}`, 'xml', parsedData);
         }
 
         // Calculate dates for response

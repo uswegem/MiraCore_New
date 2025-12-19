@@ -173,7 +173,7 @@ app.use((req, res, next) => {
                 statusCode: res.statusCode,
                 contentType: res.get('Content-Type') || 'application/xml',
                 messageType: data.match(/<MessageType>(.*?)<\/MessageType>/)?.[1] || 'RESPONSE',
-                responseCode: data.match(/<ResponseCode>(.*?)<\/ResponseCode>/)?.[1] || 'UNKNOWN',
+                responseCode: data.match(/<ResponseCode>(.*?)<\/ResponseCode>/)?.[1] || data.match(/<StatusCode>(.*?)<\/StatusCode>/)?.[1] || '8000',
                 xmlContent: data,
                 contentLength: data.length
             });
