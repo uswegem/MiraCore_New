@@ -1948,6 +1948,7 @@ const handleLoanFinalApproval = async (parsedData, res) => {
                     loanNumber: savedMapping.essLoanNumberAlias,
                     requestedAmount: savedMapping.requestedAmount,
                     clientId: savedMapping.mifosClientId,
+                    loanId: savedMapping.mifosLoanId,
                     status: savedMapping.status
                 });
 
@@ -1961,6 +1962,8 @@ const handleLoanFinalApproval = async (parsedData, res) => {
                             essApplicationNumber: savedMapping.essApplicationNumber,
                             essLoanNumberAlias: savedMapping.essLoanNumberAlias,
                             fspReferenceNumber: savedMapping.fspReferenceNumber,
+                            mifosClientId: savedMapping.mifosClientId,
+                            mifosLoanId: savedMapping.mifosLoanId,
                             status: 'DISBURSED',
                             disbursedAmount: disbursementAmount,
                             disbursedAt: new Date().toISOString(),
@@ -1977,6 +1980,8 @@ const handleLoanFinalApproval = async (parsedData, res) => {
                         logger.info('✅ Loan mapping updated with disbursement details:', {
                             applicationNumber: updatedMapping.essApplicationNumber,
                             loanNumber: updatedMapping.essLoanNumberAlias,
+                            mifosLoanId: updatedMapping.mifosLoanId,
+                            mifosClientId: updatedMapping.mifosClientId,
                             status: updatedMapping.status,
                             requestedAmount: updatedMapping.requestedAmount
                         });
