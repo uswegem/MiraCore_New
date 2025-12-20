@@ -16,6 +16,7 @@ const { getMessageId } = require('../utils/messageIdGenerator');
 const LOAN_CONSTANTS = require('../utils/loanConstants');
 const LoanCalculations = require('../utils/loanCalculations');
 const { API_ENDPOINTS } = require('../services/cbs.endpoints');
+const { rejectLoan, cancelLoan, completeLoan, setWaitingForLiquidation } = require('../utils/loanStatusHelpers');
 
 // Enhanced CBS services
 const { authManager, healthMonitor, errorHandler, requestManager } = cbsApi;
@@ -1362,17 +1363,14 @@ const handleLoanCancellation = async (parsedData, res) => {
             }
         }
 
-        // Update loan mapping status to CANCELLED
-        const updateResult = await LoanMappingService.updateStatus(
-            applicationNumber,
-            'CANCELLED',
-            {
-                reason: reason || 'Loan cancelled by employee',
-                cancelledAt: new Date(),
-                cancelledBy: 'Employee',
-                fspReferenceNumber: fspReferenceNumber || loanMapping.fspReferenceNumber
-            }
-        );
+        // Update loan mapping status to CANCELLED using helper function
+        await cancelLoan(loanMapping, 'EMPLOYEE', reason || 'Loan cancelled by employee');
+        
+        // Update FSP reference if provided
+        if (fspReferenceNumber && fspReferenceNumber !== loanMapping.fspReferenceNumber) {
+            loanMapping.fspReferenceNumber = fspReferenceNumber;
+            await loanMapping.save();
+        }
 
         logger.info('Loan mapping updated to CANCELLED:', {
             applicationNumber,
@@ -1467,10 +1465,40 @@ const handleLoanFinalApproval = async (parsedData, res) => {
         setImmediate(async () => {
             try {
                 // Try to retrieve existing loan mapping, or create a new one
-                // IMPORTANT: Only get active mappings (exclude CANCELLED/REJECTED)
+                // IMPORTANT: For restructures, the ApplicationNumber is NEW but the loan mapping uses the OLD one
+                // We need to search by multiple identifiers
                 let existingMapping;
                 try {
+                    // First, try by ApplicationNumber
                     existingMapping = await LoanMappingService.getByEssApplicationNumber(messageDetails.ApplicationNumber, false);
+                    
+                    // If not found, try by restructureApplicationNumber (for restructures)
+                    if (!existingMapping && messageDetails.ApplicationNumber) {
+                        existingMapping = await LoanMapping.findOne({
+                            restructureApplicationNumber: messageDetails.ApplicationNumber,
+                            status: { $nin: ['CANCELLED', 'REJECTED', 'CLOSED'] }
+                        }).lean();
+                        if (existingMapping) {
+                            logger.info(`✅ Found loan mapping by restructureApplicationNumber: ${messageDetails.ApplicationNumber}`);
+                        }
+                    }
+                    
+                    // If still not found, try by LoanNumber or FSPReferenceNumber
+                    if (!existingMapping && (messageDetails.LoanNumber || messageDetails.FSPReferenceNumber)) {
+                        existingMapping = await LoanMapping.findOne({
+                            $or: [
+                                { newLoanNumber: messageDetails.LoanNumber },
+                                { essLoanNumberAlias: messageDetails.LoanNumber },
+                                { newFspReferenceNumber: messageDetails.FSPReferenceNumber },
+                                { fspReferenceNumber: messageDetails.FSPReferenceNumber }
+                            ],
+                            status: { $nin: ['CANCELLED', 'REJECTED', 'CLOSED'] }
+                        }).lean();
+                        if (existingMapping) {
+                            logger.info(`✅ Found loan mapping by LoanNumber/FSPReferenceNumber: ${messageDetails.LoanNumber}`);
+                        }
+                    }
+                    
                     if (!existingMapping) {
                         // Check if there's a cancelled/rejected mapping (for logging only)
                         const inactiveMapping = await LoanMappingService.getByEssApplicationNumber(messageDetails.ApplicationNumber, true);
@@ -1493,9 +1521,25 @@ const handleLoanFinalApproval = async (parsedData, res) => {
                     productCode: '17',
                     requestedAmount: messageDetails.LoanAmount || messageDetails.RequestedAmount || 5000000,
                     tenure: messageDetails.LoanTenure || messageDetails.Tenure || 60,
-                    reason: messageDetails.Reason || (messageDetails.Approval === 'REJECTED' ? 'Application rejected' : null),
                     finalApprovalReceivedAt: new Date().toISOString()
                 };
+                
+                // Handle rejection with proper actor tracking
+                if (messageDetails.Approval === 'REJECTED') {
+                    const reason = messageDetails.Reason || 'Application rejected by employer';
+                    if (existingMapping) {
+                        await rejectLoan(existingMapping, 'EMPLOYER', reason);
+                        logger.info('✅ Loan rejected with actor tracking:', {
+                            applicationNumber: messageDetails.ApplicationNumber,
+                            rejectedBy: 'EMPLOYER',
+                            reason: reason
+                        });
+                    } else {
+                        // For new mapping, set rejection info in metadata
+                        loanMappingData.rejectedBy = 'EMPLOYER';
+                        loanMappingData.rejectionReason = reason;
+                    }
+                }
 
                         // If approved, create client in CBS and create loan
                         if (messageDetails.Approval === 'APPROVED') {
