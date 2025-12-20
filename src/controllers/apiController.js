@@ -732,7 +732,7 @@ const handleTakeoverPayOffBalanceRequest = async (parsedData, res) => {
                     "FSPBankAccount": "32310002165",
                     "FSPBankAccountName": "ZE DONE MICROFINANCE AND FINANCIAL CONSULTANCY",
                     "SWIFTCode": "NMIBTZTZ",
-                    "MNOChannels": "MPESA,TIGOPESA,AIRTELMONEY",
+                    "MNOChannels": "255754730813",
                     "FinalPaymentDate": formatDateTimeForUTUMISHI(finalPaymentDate),
                     "LastDeductionDate": formatDateTimeForUTUMISHI(lastDeductionDate),
                     "DeductionEndDate": formatDateTimeForUTUMISHI(deductionEndDate)
