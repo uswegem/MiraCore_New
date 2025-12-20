@@ -7,9 +7,18 @@ const loanCalculations = require('../../utils/loanCalculations');
 const LoanMapping = require('../../models/LoanMapping');
 const cbsApi = require('../../services/cbs.api');
 
-const path = require('path');
-const loanUtilsPath = path.resolve(__dirname, '../../utils/loanUtils.js');
-const loanUtils = require(loanUtilsPath);
+/**
+ * Handle LOAN_RESTRUCTURE_AFFORDABILITY_REQUEST
+ * 
+ * This handler calculates restructure affordability for existing loans.
+ * It uses the total outstanding balance from MIFOS as the loan amount.
+ * 
+ * Input scenarios:
+ * - Scenario A: Tenure is provided → Calculate EMI
+ * - Scenario B: DesiredDeductibleAmount (EMI) is provided → Calculate Tenure
+ * 
+ * Note: This is SEPARATE from new loan and top-up flows which use loanOfferHandler.js
+ */
 
 const handleLoanRestructureAffordabilityRequest = async (parsedData, res) => {
     try {
@@ -56,10 +65,9 @@ const handleLoanRestructureAffordabilityRequest = async (parsedData, res) => {
             return sendErrorResponse(res, '8015', 'MIFOS Loan ID not available', 'xml', parsedData);
         }
 
-
         logger.info(`Found loan mapping: mifosLoanId=${loanMapping.mifosLoanId}, status=${loanMapping.status}`);
 
-        // Fetch loan details from MIFOS with full associations
+        // Fetch loan details from MIFOS
         const api = cbsApi.maker;
         const loanResponse = await api.get(`/v1/loans/${loanMapping.mifosLoanId}?associations=repaymentSchedule,transactions`);
 
@@ -69,145 +77,85 @@ const handleLoanRestructureAffordabilityRequest = async (parsedData, res) => {
         }
 
         const mifosLoan = loanResponse.data;
-        logger.info(`MIFOS Loan Status: ${mifosLoan.status?.value}, Principal: ${mifosLoan.principal}, Outstanding: ${mifosLoan.summary?.totalOutstanding}`);
-
-        // Get current loan details
-        const currentOutstandingBalance = parseFloat(mifosLoan.summary?.totalOutstanding || 0);
-        const currentPrincipalOutstanding = parseFloat(mifosLoan.summary?.principalOutstanding || 0);
-        const currentInterestOutstanding = parseFloat(mifosLoan.summary?.interestOutstanding || 0);
-        const originalPrincipal = parseFloat(mifosLoan.principal || 0);
-        const originalTenure = parseInt(mifosLoan.numberOfRepayments || 0);
         
-        // Calculate remaining tenure (unpaid installments)
-        const repaymentSchedule = mifosLoan.repaymentSchedule?.periods || [];
-        const remainingInstallments = repaymentSchedule.filter(period => 
-            period.period && !period.complete && period.dueDate
-        ).length;
+        // ============================================
+        // RESTRUCTURE AFFORDABILITY CALCULATION
+        // The loan amount = Total Outstanding Balance from MIFOS
+        // ============================================
+        const loanAmount = parseFloat(mifosLoan.summary?.totalOutstanding || 0);
+        
+        if (loanAmount <= 0) {
+            logger.error(`Loan has no outstanding balance: ${loanNumber}`);
+            return sendErrorResponse(res, '8017', 'Loan has no outstanding balance for restructuring', 'xml', parsedData);
+        }
 
-        logger.info(`Current Loan: Outstanding=${currentOutstandingBalance}, Principal=${currentPrincipalOutstanding}, Interest=${currentInterestOutstanding}, RemainingTenure=${remainingInstallments}/${originalTenure}`);
+        logger.info(`MIFOS Loan: Status=${mifosLoan.status?.value}, Outstanding Balance (Loan Amount)=${loanAmount}`);
 
-        // Parse restructure request parameters
-        let requestedAmount = messageDetails.RequestedAmount !== undefined ? parseFloat(messageDetails.RequestedAmount) : null;
-        let requestedTenure = messageDetails.Tenure !== undefined ? parseInt(messageDetails.Tenure) : null;
-        let deductibleAmount = messageDetails.DeductibleAmount !== undefined ? parseFloat(messageDetails.DeductibleAmount) : null;
-
-        // Determine restructure type
-        const isTopUp = (requestedAmount !== null && requestedAmount > 0);
-        const restructureType = isTopUp ? 'TOP_UP' : 'TERM_EXTENSION';
-
-        logger.info(`Restructure Type: ${restructureType}, RequestedAmount: ${requestedAmount}, RequestedTenure: ${requestedTenure}`);
-
-        // Set interest rate from constants
+        // Parse input parameters - either Tenure OR DesiredDeductibleAmount (EMI) will be provided
+        const providedTenure = messageDetails.Tenure !== undefined ? parseInt(messageDetails.Tenure) : 0;
+        const providedEMI = messageDetails.DesiredDeductibleAmount !== undefined ? parseFloat(messageDetails.DesiredDeductibleAmount) : 0;
+        
+        // Interest rate from constants
         const interestRate = LOAN_CONSTANTS.DEFAULT_INTEREST_RATE;
+        const maxTenure = LOAN_CONSTANTS.MAX_TENURE || 96;
+        
+        let calculatedTenure = 0;
+        let calculatedEMI = 0;
 
-        // Validate and set tenure
-        if (requestedTenure === null || requestedTenure === 0) {
-            requestedTenure = LOAN_CONSTANTS.DEFAULT_TENURE;
-            logger.info(`Tenure not provided, defaulting to: ${requestedTenure} months`);
-        }
+        logger.info(`Input: ProvidedTenure=${providedTenure}, ProvidedEMI=${providedEMI}, LoanAmount=${loanAmount}, InterestRate=${interestRate}%`);
 
-        // Validate retirement age
-        const retirementMonthsLeft = loanUtils.calculateMonthsUntilRetirement(messageDetails.RetirementDate);
-        requestedTenure = loanUtils.validateRetirementAge(requestedTenure, retirementMonthsLeft);
-        if (!requestedTenure || requestedTenure <= 0) {
-            requestedTenure = Math.min(LOAN_CONSTANTS.DEFAULT_TENURE, remainingInstallments + 24);
-            logger.info(`Tenure adjusted for retirement: ${requestedTenure} months`);
-        }
-
-        // Calculate repayment capacity
-        const desiredDeductibleAmount = parseFloat(messageDetails.DesiredDeductibleAmount || 0);
-        const oneThirdAmount = parseFloat(messageDetails.OneThirdAmount || 0);
-        const MIN_LOAN_AMOUNT = LOAN_CONSTANTS.MIN_LOAN_AMOUNT;
-
-        // Calculate maxAffordableEMI based on available deduction capacity
-        let maxAffordableEMI = 0;
-        if (deductibleAmount !== null && deductibleAmount > 0) {
-            maxAffordableEMI = deductibleAmount;
-        } else if (oneThirdAmount > 0) {
-            maxAffordableEMI = oneThirdAmount;
-        } else {
-            maxAffordableEMI = 0;
-        }
-
-        // Calculate desirableEMI (capped desired deduction)
-        let desirableEMI = 0;
-        if (desiredDeductibleAmount > 0) {
-            desirableEMI = Math.min(desiredDeductibleAmount, maxAffordableEMI);
-        } else {
-            desirableEMI = maxAffordableEMI;
-        }
-
-        logger.info(`EMI Capacity: DeductibleAmount=${deductibleAmount}, MaxAffordableEMI=${maxAffordableEMI}, DesirableEMI=${desirableEMI}`);
-
-        let newLoanAmount = 0;
-        let topUpAmount = 0;
-        let totalLoanAmount = 0;
-        let monthlyReturnAmount = 0;
-
-        if (restructureType === 'TOP_UP') {
-            // TOP-UP: Customer wants additional funds on top of outstanding balance
-            topUpAmount = requestedAmount;
+        // ============================================
+        // SCENARIO A: Tenure is provided → Calculate EMI
+        // SCENARIO B: EMI is provided → Calculate Tenure
+        // ============================================
+        if (providedTenure > 0) {
+            // SCENARIO A: Tenure provided, calculate EMI
+            calculatedTenure = Math.min(providedTenure, maxTenure);
+            calculatedEMI = await loanCalculations.calculateEMI(loanAmount, interestRate, calculatedTenure);
+            logger.info(`Scenario A (Tenure provided): Tenure=${calculatedTenure}, Calculated EMI=${calculatedEMI}`);
             
-            // Total loan amount = Outstanding balance + Top-up amount
-            totalLoanAmount = currentOutstandingBalance + topUpAmount;
+        } else if (providedEMI > 0) {
+            // SCENARIO B: EMI provided, calculate Tenure
+            calculatedEMI = providedEMI;
+            calculatedTenure = await loanCalculations.calculateTenureFromEMI(loanAmount, interestRate, calculatedEMI);
+            calculatedTenure = Math.min(calculatedTenure, maxTenure);
             
-            // Calculate new EMI based on total loan amount
-            monthlyReturnAmount = await loanCalculations.calculateEMI(totalLoanAmount, interestRate, requestedTenure);
-            
-            logger.info(`Top-up calculation: TopUp=${topUpAmount}, Outstanding=${currentOutstandingBalance}, Total=${totalLoanAmount}, NewEMI=${monthlyReturnAmount}`);
-            
-            // Check if new EMI fits within capacity
-            if (monthlyReturnAmount > maxAffordableEMI) {
-                // Recalculate with maximum affordable EMI
-                totalLoanAmount = await loanCalculations.calculateMaxLoanFromEMI(desirableEMI, interestRate, requestedTenure);
-                topUpAmount = Math.max(0, totalLoanAmount - currentOutstandingBalance);
-                monthlyReturnAmount = desirableEMI;
-                logger.info(`EMI-capped top-up: Adjusted TotalLoan=${totalLoanAmount}, TopUp=${topUpAmount}, EMI=${monthlyReturnAmount}`);
+            // Recalculate EMI with capped tenure to ensure accuracy
+            if (calculatedTenure === maxTenure) {
+                calculatedEMI = await loanCalculations.calculateEMI(loanAmount, interestRate, calculatedTenure);
             }
+            logger.info(`Scenario B (EMI provided): EMI=${calculatedEMI}, Calculated Tenure=${calculatedTenure}`);
             
-            newLoanAmount = totalLoanAmount;
         } else {
-            // TERM EXTENSION: Restructure existing balance with new tenure (no additional funds)
-            totalLoanAmount = currentOutstandingBalance;
-            newLoanAmount = currentOutstandingBalance;
-            topUpAmount = 0;
-            
-            // Calculate new EMI based on outstanding balance and new tenure
-            monthlyReturnAmount = await loanCalculations.calculateEMI(totalLoanAmount, interestRate, requestedTenure);
-            
-            logger.info(`Term extension: Outstanding=${currentOutstandingBalance}, NewTenure=${requestedTenure}, NewEMI=${monthlyReturnAmount}`);
-            
-            // Check if new EMI fits within capacity
-            if (monthlyReturnAmount > maxAffordableEMI) {
-                // Extend tenure further to reduce EMI
-                const extendedTenure = await loanCalculations.calculateTenureFromEMI(totalLoanAmount, interestRate, desirableEMI);
-                requestedTenure = Math.min(extendedTenure, retirementMonthsLeft);
-                monthlyReturnAmount = desirableEMI;
-                logger.info(`Extended tenure for EMI capacity: NewTenure=${requestedTenure}, EMI=${monthlyReturnAmount}`);
-            }
+            // Neither provided - use default tenure
+            calculatedTenure = LOAN_CONSTANTS.DEFAULT_TENURE || 96;
+            calculatedEMI = await loanCalculations.calculateEMI(loanAmount, interestRate, calculatedTenure);
+            logger.info(`Default: Using default tenure=${calculatedTenure}, EMI=${calculatedEMI}`);
         }
 
-        // Ensure minimum loan amount
-        newLoanAmount = Math.max(newLoanAmount, MIN_LOAN_AMOUNT);
+        // Validate calculations
+        if (calculatedTenure <= 0 || calculatedEMI <= 0) {
+            logger.error(`Invalid calculation results: Tenure=${calculatedTenure}, EMI=${calculatedEMI}`);
+            return sendErrorResponse(res, '8018', 'Unable to calculate restructure terms', 'xml', parsedData);
+        }
 
-        // Calculate charges on the NEW loan amount (not top-up only)
-        const charges = loanCalculations.calculateCharges(newLoanAmount);
+        // Calculate charges on the loan amount
+        const charges = loanCalculations.calculateCharges(loanAmount);
         const totalProcessingFees = charges.processingFee;
         const totalInsurance = charges.insurance;
         const otherCharges = charges.otherCharges;
 
-        // Interest calculation on new loan amount with new tenure
-        const totalInterestRateAmount = await loanCalculations.calculateTotalInterest(newLoanAmount, interestRate, requestedTenure);
+        // Total interest over the restructured tenure
+        const totalInterestRateAmount = await loanCalculations.calculateTotalInterest(loanAmount, interestRate, calculatedTenure);
         
-        // Net amount (for top-up scenarios, this is what customer receives after fees)
+        // Net loan amount (after deducting fees)
         const totalDeductions = totalProcessingFees + totalInsurance + otherCharges;
-        const netTopUpAmount = topUpAmount - totalDeductions; // Net additional funds for top-up
-        const netLoanAmount = restructureType === 'TOP_UP' ? netTopUpAmount : (newLoanAmount - totalDeductions);
+        const netLoanAmount = loanAmount - totalDeductions;
         
         // Total amount to pay over the life of the restructured loan
-        const totalAmountToPay = newLoanAmount + totalInterestRateAmount;
+        const totalAmountToPay = loanAmount + totalInterestRateAmount;
 
-        logger.info(`Final Restructure: NewLoanAmount=${newLoanAmount}, TopUp=${topUpAmount}, NetTopUp=${netTopUpAmount}, TotalToPay=${totalAmountToPay}, EMI=${monthlyReturnAmount}, Tenure=${requestedTenure}`);
+        logger.info(`Restructure Calculation Complete: LoanAmount=${loanAmount}, Tenure=${calculatedTenure}, EMI=${calculatedEMI}, TotalToPay=${totalAmountToPay}`);
 
         // Prepare response
         const responseData = {
@@ -220,16 +168,16 @@ const handleLoanRestructureAffordabilityRequest = async (parsedData, res) => {
                     "MessageType": "LOAN_RESTRUCTURE_AFFORDABILITY_RESPONSE"
                 },
                 MessageDetails: {
-                    "DesiredDeductibleAmount": monthlyReturnAmount.toFixed(2),
+                    "DesiredDeductibleAmount": calculatedEMI.toFixed(2),
                     "TotalInsurance": totalInsurance.toFixed(2),
                     "TotalProcessingFees": totalProcessingFees.toFixed(2),
                     "TotalInterestRateAmount": totalInterestRateAmount.toFixed(2),
                     "OtherCharges": otherCharges.toFixed(2),
                     "NetLoanAmount": netLoanAmount.toFixed(2),
                     "TotalAmountToPay": totalAmountToPay.toFixed(2),
-                    "Tenure": requestedTenure,
-                    "EligibleAmount": newLoanAmount.toFixed(2),
-                    "MonthlyReturnAmount": monthlyReturnAmount.toFixed(2)
+                    "Tenure": calculatedTenure,
+                    "EligibleAmount": loanAmount.toFixed(2),
+                    "MonthlyReturnAmount": calculatedEMI.toFixed(2)
                 }
             }
         };
@@ -249,6 +197,12 @@ const handleLoanRestructureAffordabilityRequest = async (parsedData, res) => {
         logger.error('Error processing loan restructure affordability request:', error);
         
         // Track error
+        let trackLoanError;
+        try {
+            const metrics = require('../../../src/middleware/metricsMiddleware');
+            trackLoanError = metrics.trackLoanError;
+        } catch (err) {}
+        
         if (trackLoanError) {
             trackLoanError('processing_error', 'LOAN_RESTRUCTURE_AFFORDABILITY_REQUEST');
         }

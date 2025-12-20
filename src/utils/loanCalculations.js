@@ -122,6 +122,49 @@ class LoanCalculations {
   }
 
   /**
+   * Calculate tenure from target EMI (reverse calculation)
+   * Used when EMI is provided and we need to find the required tenure
+   * @param {number} principal - Loan principal amount
+   * @param {number} annualInterestRate - Annual interest rate (percentage)
+   * @param {number} targetEMI - Target monthly EMI
+   * @returns {number} Required tenure in months
+   */
+  static async calculateTenureFromEMI(principal, annualInterestRate, targetEMI) {
+    if (!principal || principal <= 0) return 0;
+    if (!targetEMI || targetEMI <= 0) return 0;
+
+    const monthlyRate = annualInterestRate / 100 / 12;
+
+    if (monthlyRate === 0) {
+      // Simple division when no interest
+      return Math.ceil(principal / targetEMI);
+    }
+
+    // Formula: n = -log(1 - (P * r / EMI)) / log(1 + r)
+    // Where P = principal, r = monthly rate, EMI = monthly payment
+    const numerator = principal * monthlyRate;
+    
+    // Check if EMI is sufficient to cover interest
+    if (targetEMI <= numerator) {
+      // EMI is too small to ever pay off the loan
+      // Return maximum allowed tenure
+      return LOAN_CONSTANTS.MAX_TENURE || 96;
+    }
+
+    const logArg = 1 - (numerator / targetEMI);
+    
+    if (logArg <= 0) {
+      return LOAN_CONSTANTS.MAX_TENURE || 96;
+    }
+
+    const tenure = -Math.log(logArg) / Math.log(1 + monthlyRate);
+    
+    // Round up to nearest whole month and cap at max tenure
+    const maxTenure = LOAN_CONSTANTS.MAX_TENURE || 96;
+    return Math.min(Math.ceil(tenure), maxTenure);
+  }
+
+  /**
    * Calculate total interest for loan
    * @param {number} principal - Loan principal amount
    * @param {number} annualInterestRate - Annual interest rate (percentage)
