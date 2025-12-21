@@ -183,8 +183,10 @@ const updateSystemMetrics = () => {
     }
 };
 
-// Update system metrics every 30 seconds
-setInterval(updateSystemMetrics, 30000);
+// Update system metrics every 30 seconds (skip in test mode)
+if (process.env.NODE_ENV !== 'test') {
+    setInterval(updateSystemMetrics, 30000);
+}
 
 // Metrics endpoint
 const metricsHandler = async (req, res) => {

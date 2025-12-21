@@ -9,15 +9,17 @@ const logger = require('./src/utils/logger');
 const swaggerUi = require('swagger-ui-express');
 const swaggerSpec = require('./src/config/swagger');
 
-// Validate environment variables before proceeding
+// Validate environment variables before proceeding (skip in test mode)
 const { validateEnvironment, validateEnvPatterns, logEnvironmentConfig } = require('./src/config/validateEnv');
-try {
-  validateEnvironment();
-  validateEnvPatterns();
-  logEnvironmentConfig();
-} catch (error) {
-  logger.error('Environment validation failed:', { error: error.message });
-  process.exit(1);
+if (process.env.NODE_ENV !== 'test') {
+  try {
+    validateEnvironment();
+    validateEnvPatterns();
+    logEnvironmentConfig();
+  } catch (error) {
+    logger.error('Environment validation failed:', { error: error.message });
+    process.exit(1);
+  }
 }
 
 // Import routes
@@ -387,8 +389,13 @@ app.use('*', (req, res) => {
     }
 });
 
-// Create server with proper error handling
-const server = app.listen(PORT, async () => {
+// Export app for testing
+module.exports = app;
+
+// Only start server if not in test mode
+if (require.main === module || process.env.NODE_ENV !== 'test') {
+  // Create server with proper error handling
+  const server = app.listen(PORT, async () => {
     try {
         logger.info(`Miracore Backend running on port ${PORT}`);
         logger.info(`Supports: XML & JSON`);
@@ -442,13 +449,13 @@ const server = app.listen(PORT, async () => {
         }
     }
     process.exit(1);
-});
+  });
 
-// Graceful shutdown handling
-process.on('SIGTERM', async () => {
-    logger.info('SIGTERM received, shutting down gracefully');
-    
-    server.close(async () => {
+  // Graceful shutdown handling
+  process.on('SIGTERM', async () => {
+      logger.info('SIGTERM received, shutting down gracefully');
+      
+      server.close(async () => {
         logger.info('HTTP server closed');
         
         // Close database connections
@@ -469,30 +476,31 @@ process.on('SIGTERM', async () => {
         logger.error('Forced shutdown after timeout');
         process.exit(1);
     }, 30000);
-});
+  });
 
-process.on('SIGINT', async () => {
-    logger.info('SIGINT received, shutting down gracefully');
-    
-    server.close(async () => {
-        logger.info('HTTP server closed');
-        
-        // Close database connections
-        const mongoose = require('mongoose');
-        try {
-            await mongoose.connection.close(false);
-            logger.info('MongoDB connection closed');
-        } catch (error) {
-            logger.error('Error closing MongoDB connection:', error);
-        }
-        
-        logger.info('Graceful shutdown completed');
-        process.exit(0);
-    });
-    
-    // Force close after 30s if graceful shutdown fails
-    setTimeout(() => {
-        logger.error('Forced shutdown after timeout');
-        process.exit(1);
-    }, 30000);
-});
+  process.on('SIGINT', async () => {
+      logger.info('SIGINT received, shutting down gracefully');
+      
+      server.close(async () => {
+          logger.info('HTTP server closed');
+          
+          // Close database connections
+          const mongoose = require('mongoose');
+          try {
+              await mongoose.connection.close(false);
+              logger.info('MongoDB connection closed');
+          } catch (error) {
+              logger.error('Error closing MongoDB connection:', error);
+          }
+          
+          logger.info('Graceful shutdown completed');
+          process.exit(0);
+      });
+      
+      // Force close after 30s if graceful shutdown fails
+      setTimeout(() => {
+          logger.error('Forced shutdown after timeout');
+          process.exit(1);
+      }, 30000);
+  });
+}
