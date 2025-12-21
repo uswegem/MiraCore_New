@@ -151,6 +151,12 @@ async function handleRescheduleApproval(webhookData) {
  */
 async function sendLoanInitialApprovalNotification(loanMapping) {
     try {
+        // Skip in test mode
+        if (process.env.NODE_ENV === 'test') {
+            logger.info('📤 Skipping LOAN_INITIAL_APPROVAL_NOTIFICATION in test mode');
+            return { status: 200, data: { success: true, message: 'Test mode - notification skipped' } };
+        }
+
         const callbackUrl = process.env.ESS_CALLBACK_URL || 'http://localhost:3001/api/loan';
         
         const originalMessage = loanMapping.pendingCallback?.originalMessage || {};

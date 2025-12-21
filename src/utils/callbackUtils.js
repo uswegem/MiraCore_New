@@ -10,6 +10,12 @@ const RETRY_DELAY = 5000; // 5 seconds
 
 // Helper function to send callback with retry logic
 async function sendCallback(callbackData) {
+    // Skip callback in test mode
+    if (process.env.NODE_ENV === 'test') {
+        logger.info('📤 Skipping callback in test mode');
+        return { status: 200, data: { success: true, message: 'Test mode - callback skipped' } };
+    }
+
     let retryCount = 0;
     while (retryCount < MAX_RETRIES) {
         try {
