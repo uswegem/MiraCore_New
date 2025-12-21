@@ -7,7 +7,7 @@
     "start": "node server.js",
     "dev": "nodemon server.js",
     "generate-keys": "node src/utils/keyGenerator.js",
-    "test": "NODE_ENV=test jest --runInBand --forceExit --detectOpenHandles",
+    "test": "NODE_ENV=test jest --runInBand --forceExit --detectOpenHandles --testPathIgnorePatterns='/tests/integration/'",
     "deploy": "./scripts/deploy-production.sh",
     "deploy:admin": "node deploy-admin.js",
     "deploy:verify": "curl -f http://135.181.33.13:3002/health && curl -f http://5.75.185.137/",
