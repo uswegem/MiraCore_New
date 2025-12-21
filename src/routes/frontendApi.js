@@ -1,0 +1,492 @@
+const express = require('express');
+const router = express.Router();
+const logger = require('../utils/logger');
+const { formatDateForMifos, formatDateForUTUMISHI, formatDateTimeForUTUMISHI } = require('../utils/dateUtils');
+const ClientService = require('../services/clientService');
+const LoanMappingService = require('../models/loanMapping');
+const cbsApi = require('../services/cbs.api');
+
+/**
+ * Frontend API Routes
+ * Base path: /api/frontend
+ * 
+ * All endpoints return JSON format
+ * Authentication: JWT token or session-based
+ */
+
+// Middleware to validate request
+const validateRequest = (req, res, next) => {
+  try {
+    // Add authentication validation here (JWT, session, etc.)
+    // For now, just log the request
+    logger.info('Frontend API request received:', {
+      path: req.path,
+      method: req.method,
+      body: req.body
+    });
+    next();
+  } catch (error) {
+    logger.error('Request validation failed:', error);
+    return res.status(401).json({
+      success: false,
+      code: '401',
+      message: 'Unauthorized',
+      error: error.message
+    });
+  }
+};
+
+// Apply middleware to all routes
+router.use(validateRequest);
+
+/**
+ * POST /api/frontend/loan/check-eligibility
+ * Check if customer is eligible for a loan
+ */
+router.post('/loan/check-eligibility', async (req, res) => {
+  try {
+    const { nin, mobileNumber } = req.body;
+
+    if (!nin) {
+      return res.status(400).json({
+        success: false,
+        code: '400',
+        message: 'NIN is required'
+      });
+    }
+
+    // Check if client exists in Mifos
+    const existingClient = await ClientService.findClientByNIN(nin);
+
+    if (existingClient) {
+      // Get active loans
+      const loansResponse = await cbsApi.maker.get(`/v1/clients/${existingClient.id}/accounts`);
+      const activeLoans = loansResponse.data.loanAccounts?.filter(
+        loan => loan.status?.active
+      ) || [];
+
+      return res.json({
+        success: true,
+        data: {
+          eligible: activeLoans.length === 0,
+          clientExists: true,
+          clientId: existingClient.id,
+          activeLoans: activeLoans.length,
+          message: activeLoans.length > 0 
+            ? 'Customer has active loans' 
+            : 'Customer is eligible for a new loan'
+        }
+      });
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        eligible: true,
+        clientExists: false,
+        message: 'New customer - eligible for loan application'
+      }
+    });
+
+  } catch (error) {
+    logger.error('Error checking eligibility:', error);
+    return res.status(500).json({
+      success: false,
+      code: '500',
+      message: 'Error checking eligibility',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/frontend/loan/apply
+ * Submit a new loan application
+ */
+router.post('/loan/apply', async (req, res) => {
+  try {
+    const {
+      // Customer details
+      firstName,
+      middleName,
+      lastName,
+      sex,
+      nin,
+      mobileNumber,
+      dateOfBirth,
+      maritalStatus,
+      bankAccountNumber,
+      swiftCode,
+      emailAddress,
+      
+      // Loan details
+      productCode,
+      requestedAmount,
+      tenure,
+      purpose,
+      
+      // Additional info
+      employerName,
+      employerCheckNumber,
+      netSalary,
+      grossSalary
+    } = req.body;
+
+    // Validate required fields
+    if (!firstName || !lastName || !nin || !mobileNumber || !requestedAmount || !tenure) {
+      return res.status(400).json({
+        success: false,
+        code: '400',
+        message: 'Missing required fields'
+      });
+    }
+
+    // Create application number
+    const applicationNumber = `APP${Date.now()}`;
+
+    // Store client data
+    try {
+      const clientData = {
+        firstName,
+        middleName,
+        lastName,
+        sex: sex || 'M',
+        nin,
+        mobileNo: mobileNumber,
+        dateOfBirth,
+        maritalStatus,
+        bankAccountNumber,
+        swiftCode,
+        emailAddress
+      };
+
+      const loanData = {
+        productCode: productCode || 'WWL',
+        requestedAmount,
+        tenure,
+        purpose,
+        employerName,
+        employerCheckNumber,
+        netSalary,
+        grossSalary
+      };
+
+      await ClientService.storeClientData(applicationNumber, clientData, loanData);
+      
+      logger.info('Loan application stored:', {
+        applicationNumber,
+        nin,
+        requestedAmount,
+        tenure
+      });
+
+      return res.json({
+        success: true,
+        data: {
+          applicationNumber,
+          status: 'PENDING',
+          message: 'Loan application submitted successfully'
+        }
+      });
+
+    } catch (error) {
+      logger.error('Error storing application:', error);
+      return res.status(500).json({
+        success: false,
+        code: '500',
+        message: 'Error submitting application',
+        error: error.message
+      });
+    }
+
+  } catch (error) {
+    logger.error('Error processing loan application:', error);
+    return res.status(500).json({
+      success: false,
+      code: '500',
+      message: 'Error processing loan application',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/frontend/loan/status/:applicationNumber
+ * Get loan application status
+ */
+router.get('/loan/status/:applicationNumber', async (req, res) => {
+  try {
+    const { applicationNumber } = req.params;
+
+    // Find loan mapping
+    const loanMapping = await LoanMappingService.getByEssApplicationNumber(applicationNumber, false);
+
+    if (!loanMapping) {
+      return res.status(404).json({
+        success: false,
+        code: '404',
+        message: 'Application not found'
+      });
+    }
+
+    // Get loan details from Mifos if loan was created
+    if (loanMapping.mifosLoanId) {
+      const loanResponse = await cbsApi.maker.get(`/v1/loans/${loanMapping.mifosLoanId}`);
+      const loan = loanResponse.data;
+
+      return res.json({
+        success: true,
+        data: {
+          applicationNumber,
+          loanNumber: loanMapping.essLoanNumberAlias,
+          status: loan.status?.value || 'UNKNOWN',
+          principal: loan.principal,
+          approvedAmount: loan.approvedPrincipal,
+          disbursedAmount: loan.summary?.principalDisbursed,
+          outstandingBalance: loan.summary?.totalOutstanding,
+          nextPaymentDate: loan.repaymentSchedule?.periods?.find(p => !p.complete)?.dueDate,
+          nextPaymentAmount: loan.repaymentSchedule?.periods?.find(p => !p.complete)?.totalDueForPeriod
+        }
+      });
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        applicationNumber,
+        status: loanMapping.status || 'PENDING',
+        message: 'Application is being processed'
+      }
+    });
+
+  } catch (error) {
+    logger.error('Error fetching loan status:', error);
+    return res.status(500).json({
+      success: false,
+      code: '500',
+      message: 'Error fetching loan status',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/frontend/loan/details/:loanNumber
+ * Get detailed loan information
+ */
+router.get('/loan/details/:loanNumber', async (req, res) => {
+  try {
+    const { loanNumber } = req.params;
+
+    // Find loan by number
+    const loanMapping = await LoanMappingService.getByEssLoanNumberAlias(loanNumber);
+
+    if (!loanMapping || !loanMapping.mifosLoanId) {
+      return res.status(404).json({
+        success: false,
+        code: '404',
+        message: 'Loan not found'
+      });
+    }
+
+    // Get loan details with repayment schedule
+    const loanResponse = await cbsApi.maker.get(
+      `/v1/loans/${loanMapping.mifosLoanId}?associations=repaymentSchedule,transactions`
+    );
+    const loan = loanResponse.data;
+
+    // Format repayment schedule
+    const schedule = loan.repaymentSchedule?.periods
+      ?.filter(p => p.period)
+      .map(period => ({
+        period: period.period,
+        dueDate: period.dueDate,
+        principalDue: period.principalDue || period.principalOriginalDue,
+        interestDue: period.interestDue || period.interestOriginalDue,
+        feesDue: period.feeChargesDue || 0,
+        penaltiesDue: period.penaltyChargesDue || 0,
+        totalDue: period.totalDueForPeriod,
+        totalPaid: period.totalPaidForPeriod,
+        completed: period.complete
+      })) || [];
+
+    // Format transactions
+    const transactions = loan.transactions
+      ?.filter(t => !t.reversed)
+      .map(txn => ({
+        id: txn.id,
+        date: txn.date,
+        type: txn.type?.value,
+        amount: txn.amount,
+        principalPortion: txn.principalPortion,
+        interestPortion: txn.interestPortion,
+        feesPortion: txn.feeChargesPortion,
+        penaltiesPortion: txn.penaltyChargesPortion,
+        outstandingBalance: txn.outstandingLoanBalance
+      })) || [];
+
+    return res.json({
+      success: true,
+      data: {
+        loanNumber,
+        accountNumber: loan.accountNo,
+        status: loan.status?.value,
+        principal: loan.principal,
+        approvedAmount: loan.approvedPrincipal,
+        disbursedAmount: loan.summary?.principalDisbursed,
+        disbursementDate: loan.timeline?.actualDisbursementDate,
+        principalOutstanding: loan.summary?.principalOutstanding,
+        interestOutstanding: loan.summary?.interestOutstanding,
+        feesOutstanding: loan.summary?.feeChargesOutstanding,
+        penaltiesOutstanding: loan.summary?.penaltyChargesOutstanding,
+        totalOutstanding: loan.summary?.totalOutstanding,
+        totalPaid: loan.summary?.totalRepayment,
+        interestRate: loan.interestRatePerPeriod,
+        numberOfRepayments: loan.numberOfRepayments,
+        maturityDate: loan.timeline?.expectedMaturityDate,
+        schedule,
+        transactions
+      }
+    });
+
+  } catch (error) {
+    logger.error('Error fetching loan details:', error);
+    return res.status(500).json({
+      success: false,
+      code: '500',
+      message: 'Error fetching loan details',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/frontend/customer/loans/:nin
+ * Get all loans for a customer by NIN
+ */
+router.get('/customer/loans/:nin', async (req, res) => {
+  try {
+    const { nin } = req.params;
+
+    // Find client by NIN
+    const client = await ClientService.findClientByNIN(nin);
+
+    if (!client) {
+      return res.status(404).json({
+        success: false,
+        code: '404',
+        message: 'Customer not found'
+      });
+    }
+
+    // Get all loans for client
+    const loansResponse = await cbsApi.maker.get(`/v1/clients/${client.id}/accounts`);
+    const loans = loansResponse.data.loanAccounts || [];
+
+    const loanList = loans.map(loan => ({
+      loanId: loan.id,
+      accountNumber: loan.accountNo,
+      externalId: loan.externalId,
+      status: loan.status?.value,
+      productName: loan.productName,
+      principal: loan.originalLoan,
+      loanBalance: loan.loanBalance
+    }));
+
+    return res.json({
+      success: true,
+      data: {
+        customerName: `${client.firstname} ${client.lastname}`,
+        nin,
+        totalLoans: loanList.length,
+        loans: loanList
+      }
+    });
+
+  } catch (error) {
+    logger.error('Error fetching customer loans:', error);
+    return res.status(500).json({
+      success: false,
+      code: '500',
+      message: 'Error fetching customer loans',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/frontend/loan/calculate-schedule
+ * Calculate loan repayment schedule without creating a loan
+ */
+router.post('/loan/calculate-schedule', async (req, res) => {
+  try {
+    const { amount, tenure, interestRate } = req.body;
+
+    if (!amount || !tenure) {
+      return res.status(400).json({
+        success: false,
+        code: '400',
+        message: 'Amount and tenure are required'
+      });
+    }
+
+    const rate = interestRate || 24; // Default 24% if not provided
+    const monthlyRate = rate / 12 / 100;
+    const monthlyPayment = (amount * monthlyRate * Math.pow(1 + monthlyRate, tenure)) / 
+                          (Math.pow(1 + monthlyRate, tenure) - 1);
+
+    let balance = amount;
+    const schedule = [];
+
+    for (let i = 1; i <= tenure; i++) {
+      const interest = balance * monthlyRate;
+      const principal = monthlyPayment - interest;
+      balance -= principal;
+
+      schedule.push({
+        period: i,
+        principalDue: Math.round(principal * 100) / 100,
+        interestDue: Math.round(interest * 100) / 100,
+        totalDue: Math.round(monthlyPayment * 100) / 100,
+        outstandingBalance: Math.round(Math.max(0, balance) * 100) / 100
+      });
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        loanAmount: amount,
+        tenure,
+        interestRate: rate,
+        monthlyPayment: Math.round(monthlyPayment * 100) / 100,
+        totalInterest: Math.round((monthlyPayment * tenure - amount) * 100) / 100,
+        totalRepayment: Math.round(monthlyPayment * tenure * 100) / 100,
+        schedule
+      }
+    });
+
+  } catch (error) {
+    logger.error('Error calculating schedule:', error);
+    return res.status(500).json({
+      success: false,
+      code: '500',
+      message: 'Error calculating schedule',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/frontend/health
+ * Health check endpoint
+ */
+router.get('/health', (req, res) => {
+  res.json({
+    success: true,
+    service: 'Frontend API',
+    status: 'healthy',
+    timestamp: new Date().toISOString()
+  });
+});
+
+module.exports = router;

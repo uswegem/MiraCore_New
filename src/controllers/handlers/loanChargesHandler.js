@@ -171,6 +171,50 @@ const handleLoanChargesRequest = async (parsedData, res) => {
         const totalDeductions = totalProcessingFees + totalInsurance + otherCharges;
         const netLoanAmount = eligibleAmount - totalDeductions;
         const totalAmountToPay = eligibleAmount + totalInterestRateAmount;
+        
+        // Update loan mapping to track charges request
+        try {
+            if (messageDetails.ApplicationNumber || messageDetails.CheckNumber) {
+                const identifier = messageDetails.ApplicationNumber || messageDetails.CheckNumber;
+                let mapping = null;
+                
+                try {
+                    mapping = await LoanMappingService.getByEssApplicationNumber(identifier);
+                } catch (e) {
+                    // No mapping found, continue without tracking
+                    logger.info('No existing loan mapping found for charges request');
+                }
+                
+                if (mapping) {
+                    await LoanMappingService.updateStatus(mapping.essApplicationNumber, mapping.status, {
+                        metadata: {
+                            ...(mapping.metadata || {}),
+                            chargesRequests: [
+                                ...((mapping.metadata?.chargesRequests) || []),
+                                {
+                                    type: messageType,
+                                    requestedAt: new Date(),
+                                    requestedAmount: requestedAmount,
+                                    tenure: requestedTenure,
+                                    eligibleAmount: eligibleAmount,
+                                    monthlyReturnAmount: monthlyReturnAmount,
+                                    totalProcessingFees: totalProcessingFees,
+                                    totalInsurance: totalInsurance,
+                                    otherCharges: otherCharges,
+                                    affordabilityType: affordabilityType,
+                                    netLoanAmount: netLoanAmount,
+                                    totalAmountToPay: totalAmountToPay
+                                }
+                            ]
+                        }
+                    });
+                    logger.info('✅ Updated loan mapping with charges request details');
+                }
+            }
+        } catch (mappingError) {
+            logger.warn('⚠️ Could not update loan mapping for charges request:', mappingError.message);
+            // Don't fail the request if mapping update fails
+        }
 
         // Prepare response - dynamic response type based on request type
         const responseType = messageType === 'LOAN_RESTRUCTURE_AFFORDABILITY_REQUEST' 

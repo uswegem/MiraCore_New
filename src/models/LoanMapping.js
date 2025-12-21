@@ -5,15 +5,20 @@ const loanMappingSchema = new mongoose.Schema({
   essApplicationNumber: {
     type: String,
     required: true,
-    index: true
+    index: true,
+    // Unique per loan application
   },
   essCheckNumber: {
     type: String,
-    index: true
+    index: true,
+    // IMPORTANT: Unique per CLIENT, NOT per loan
+    // One client (check number) can have multiple loan records
+    // DO NOT use this field alone for loan lookups
   },
   essLoanNumberAlias: {
     type: String,
-    index: true
+    index: true,
+    // Unique loan identifier - use this for loan lookups
   },
 
   // FSP generated identifiers
@@ -63,8 +68,45 @@ const loanMappingSchema = new mongoose.Schema({
   // Status tracking
   status: {
     type: String,
-    enum: ['INITIAL_OFFER', 'INITIAL_APPROVAL_SENT', 'APPROVED', 'REJECTED', 'CANCELLED', 'FINAL_APPROVAL_RECEIVED', 'CLIENT_CREATED', 'LOAN_CREATED', 'DISBURSED', 'DISBURSEMENT_FAILURE_NOTIFICATION_SENT', 'FAILED', 'OFFER_SUBMITTED'],
+    enum: [
+      'INITIAL_OFFER', 
+      'INITIAL_APPROVAL_SENT', 
+      'APPROVED', 
+      'REJECTED', 
+      'CANCELLED', 
+      'FINAL_APPROVAL_RECEIVED', 
+      'CLIENT_CREATED', 
+      'LOAN_CREATED', 
+      'DISBURSED', 
+      'COMPLETED',                              // NEW: Loan fully Disbursed, repaid/closed
+      'WAITING_FOR_LIQUIDATION',                // NEW: Takeover loan awaiting liquidation
+      'DISBURSEMENT_FAILURE_NOTIFICATION_SENT', 
+      'FAILED', 
+      'OFFER_SUBMITTED'
+    ],
     default: 'INITIAL_OFFER'
+  },
+
+  // Actor tracking for rejections and cancellations
+  rejectedBy: {
+    type: String,
+    enum: ['FSP', 'EMPLOYEE', 'EMPLOYER', 'SYSTEM'],
+    required: false,
+    index: true
+  },
+  cancelledBy: {
+    type: String,
+    enum: ['FSP', 'EMPLOYEE', 'EMPLOYER', 'SYSTEM'],
+    required: false,
+    index: true
+  },
+  rejectionReason: {
+    type: String,
+    required: false
+  },
+  cancellationReason: {
+    type: String,
+    required: false
   },
 
   // Timestamps for each stage
@@ -82,6 +124,12 @@ const loanMappingSchema = new mongoose.Schema({
     type: Date
   },
   disbursedAt: {
+    type: Date
+  },
+  completedAt: {
+    type: Date
+  },
+  liquidationRequestedAt: {
     type: Date
   },
   disbursementFailureNotificationSentAt: {
@@ -115,8 +163,18 @@ loanMappingSchema.index({ status: 1, createdAt: -1 }); // Status queries with so
 loanMappingSchema.index({ essApplicationNumber: 1, status: 1 }); // Application + status lookups
 
 // Instance methods
-loanMappingSchema.methods.updateStatus = function(newStatus) {
+loanMappingSchema.methods.updateStatus = function(newStatus, actor = null, reason = null) {
   this.status = newStatus;
+
+  // Track actor for rejections and cancellations
+  if (newStatus === 'REJECTED' && actor) {
+    this.rejectedBy = actor;
+    if (reason) this.rejectionReason = reason;
+  }
+  if (newStatus === 'CANCELLED' && actor) {
+    this.cancelledBy = actor;
+    if (reason) this.cancellationReason = reason;
+  }
 
   // Update timestamp based on status
   const timestampFields = {
@@ -124,6 +182,8 @@ loanMappingSchema.methods.updateStatus = function(newStatus) {
     'CLIENT_CREATED': 'clientCreatedAt',
     'LOAN_CREATED': 'loanCreatedAt',
     'DISBURSED': 'disbursedAt',
+    'COMPLETED': 'completedAt',
+    'WAITING_FOR_LIQUIDATION': 'liquidationRequestedAt',
     'DISBURSEMENT_FAILURE_NOTIFICATION_SENT': 'disbursementFailureNotificationSentAt'
   };
 
@@ -155,6 +215,16 @@ loanMappingSchema.statics.findByFspReference = function(fspReferenceNumber) {
 loanMappingSchema.statics.findByMifosLoanId = function(mifosLoanId) {
   return this.findOne({ mifosLoanId });
 };
+
+// Compound indexes for common query patterns
+loanMappingSchema.index({ essApplicationNumber: 1, status: 1 }); // Application status queries
+loanMappingSchema.index({ mifosLoanId: 1, status: 1 }); // MIFOS loan status queries
+loanMappingSchema.index({ essCheckNumber: 1, originalMessageType: 1 }); // Client loan type queries
+loanMappingSchema.index({ createdAt: -1 }); // Chronological queries
+loanMappingSchema.index({ status: 1, createdAt: -1 }); // Status with time filtering
+loanMappingSchema.index({ originalMessageType: 1, status: 1 }); // Message type analytics
+loanMappingSchema.index({ rejectedBy: 1, status: 1 }, { sparse: true }); // Rejection analytics
+loanMappingSchema.index({ cancelledBy: 1, status: 1 }, { sparse: true }); // Cancellation analytics
 
 const LoanMapping = mongoose.model('LoanMapping', loanMappingSchema);
 

@@ -114,7 +114,7 @@ const trackLoanMessage = (messageType, status = 'success') => {
             .labels(safeMessageType, safeStatus)
             .inc();
     } catch (error) {
-        console.error('Error tracking loan message:', error.message, { messageType, status });
+        logger.error('Error tracking loan message:', { error: error.message, messageType, status });
     }
 };
 
@@ -129,7 +129,7 @@ const trackLoanError = (errorType, messageType) => {
             .labels(safeErrorType, safeMessageType)
             .inc();
     } catch (error) {
-        console.error('Error tracking loan error:', error.message, { errorType, messageType });
+        logger.error('Error tracking loan error:', { error: error.message, errorType, messageType });
     }
 };
 

@@ -238,9 +238,58 @@ async function handleTopUpOfferRequestAuto(parsedData, res, clientData, loanData
                 trackLoanMessage('LOAN_INITIAL_APPROVAL_NOTIFICATION', 'sent');
                 logger.info('✅ Sent LOAN_INITIAL_APPROVAL_NOTIFICATION for auto-detected top-up');
                 
+                // Track callback in loan mapping
+                try {
+                    const mapping = await LoanMappingService.getByEssApplicationNumber(messageDetails.ApplicationNumber);
+                    if (mapping) {
+                        await LoanMappingService.updateStatus(mapping.essApplicationNumber, mapping.status, {
+                            metadata: {
+                                ...(mapping.metadata || {}),
+                                callbacksSent: [
+                                    ...((mapping.metadata?.callbacksSent) || []),
+                                    {
+                                        type: 'LOAN_INITIAL_APPROVAL_NOTIFICATION',
+                                        sentAt: new Date(),
+                                        status: 'success',
+                                        loanNumber: loanNumber,
+                                        fspReferenceNumber: fspReferenceNumber,
+                                        context: 'auto-detected-top-up'
+                                    }
+                                ]
+                            }
+                        });
+                    }
+                } catch (trackError) {
+                    logger.warn('⚠️ Could not track callback in mapping:', trackError.message);
+                }
+                
             } catch (callbackError) {
                 logger.error('❌ Error sending auto top-up callback:', callbackError);
                 trackLoanError('LOAN_INITIAL_APPROVAL_NOTIFICATION', callbackError.message);
+                
+                // Track failed callback
+                try {
+                    const mapping = await LoanMappingService.getByEssApplicationNumber(messageDetails.ApplicationNumber);
+                    if (mapping) {
+                        await LoanMappingService.updateStatus(mapping.essApplicationNumber, mapping.status, {
+                            metadata: {
+                                ...(mapping.metadata || {}),
+                                callbacksSent: [
+                                    ...((mapping.metadata?.callbacksSent) || []),
+                                    {
+                                        type: 'LOAN_INITIAL_APPROVAL_NOTIFICATION',
+                                        sentAt: new Date(),
+                                        status: 'failed',
+                                        error: callbackError.message,
+                                        context: 'auto-detected-top-up'
+                                    }
+                                ]
+                            }
+                        });
+                    }
+                } catch (trackError) {
+                    logger.warn('⚠️ Could not track failed callback:', trackError.message);
+                }
             }
         }, 20000);
         
@@ -487,9 +536,58 @@ const handleLoanOfferRequest = async (parsedData, res) => {
                 await sendCallback(approvalResponseData);
                 trackLoanMessage('LOAN_INITIAL_APPROVAL_NOTIFICATION', 'sent');
                 logger.info('✅ Successfully sent LOAN_INITIAL_APPROVAL_NOTIFICATION callback');
+                
+                // Track callback in loan mapping
+                try {
+                    const mapping = await LoanMappingService.getByEssApplicationNumber(messageDetails.ApplicationNumber);
+                    if (mapping) {
+                        await LoanMappingService.updateStatus(mapping.essApplicationNumber, mapping.status, {
+                            metadata: {
+                                ...(mapping.metadata || {}),
+                                callbacksSent: [
+                                    ...((mapping.metadata?.callbacksSent) || []),
+                                    {
+                                        type: 'LOAN_INITIAL_APPROVAL_NOTIFICATION',
+                                        sentAt: new Date(),
+                                        status: 'success',
+                                        loanNumber: loanNumber,
+                                        fspReferenceNumber: fspReferenceNumber,
+                                        context: 'standard-loan-offer'
+                                    }
+                                ]
+                            }
+                        });
+                    }
+                } catch (trackError) {
+                    logger.warn('⚠️ Could not track callback in mapping:', trackError.message);
+                }
 
             } catch (callbackError) {
                 logger.error('❌ Error sending LOAN_INITIAL_APPROVAL_NOTIFICATION callback:', callbackError);
+                
+                // Track failed callback
+                try {
+                    const mapping = await LoanMappingService.getByEssApplicationNumber(messageDetails.ApplicationNumber);
+                    if (mapping) {
+                        await LoanMappingService.updateStatus(mapping.essApplicationNumber, mapping.status, {
+                            metadata: {
+                                ...(mapping.metadata || {}),
+                                callbacksSent: [
+                                    ...((mapping.metadata?.callbacksSent) || []),
+                                    {
+                                        type: 'LOAN_INITIAL_APPROVAL_NOTIFICATION',
+                                        sentAt: new Date(),
+                                        status: 'failed',
+                                        error: callbackError.message,
+                                        context: 'standard-loan-offer'
+                                    }
+                                ]
+                            }
+                        });
+                    }
+                } catch (trackError) {
+                    logger.warn('⚠️ Could not track failed callback:', trackError.message);
+                }
             }
         }, 20000); // 20 seconds delay
 

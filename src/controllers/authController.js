@@ -98,7 +98,7 @@ class AuthController {
       });
 
     } catch (error) {
-      console.error('Login error:', error);
+      logger.error('Login error:', { error: error.message, stack: error.stack });
       res.status(500).json({
         success: false,
         message: 'Internal server error during login.'
@@ -115,7 +115,7 @@ class AuthController {
         }
       });
     } catch (error) {
-      console.error('Get profile error:', error);
+      logger.error('Get profile error:', { error: error.message, stack: error.stack });
       res.status(500).json({
         success: false,
         message: 'Internal server error.'
@@ -161,7 +161,7 @@ class AuthController {
       });
 
     } catch (error) {
-      console.error('Change password error:', error);
+      logger.error('Change password error:', { error: error.message, stack: error.stack });
       res.status(500).json({
         success: false,
         message: 'Internal server error.'
@@ -185,7 +185,7 @@ class AuthController {
         message: 'Logout successful.'
       });
     } catch (error) {
-      console.error('Logout error:', error);
+      logger.error('Logout error:', { error: error.message, stack: error.stack });
       res.status(500).json({
         success: false,
         message: 'Internal server error during logout.'

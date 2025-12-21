@@ -1,5 +1,6 @@
 const axios = require('axios');
 const https = require('https');
+const logger = require('./logger');
 
 /**
  * Utility for ensuring Utumishi connectivity before making requests
@@ -28,17 +29,17 @@ class ConnectionValidator {
    */
   async validateConnection() {
     try {
-      console.log(`🔍 Validating connection to ${this.utumishiEndpoint}...`);
+      logger.info('Validating connection to Utumishi', { endpoint: this.utumishiEndpoint });
       
       const response = await this.axiosInstance.get(this.utumishiEndpoint, {
         timeout: this.timeout
       });
       
-      console.log(`✅ Connection validated - Status: ${response.status}`);
+      logger.info('Connection validated successfully', { status: response.status });
       return true;
       
     } catch (error) {
-      console.log(`❌ Connection validation failed: ${error.message}`);
+      logger.warn('Connection validation failed', { error: error.message, endpoint: this.utumishiEndpoint });
       return false;
     }
   }
@@ -48,20 +49,20 @@ class ConnectionValidator {
    * @returns {Promise<boolean>} True if connection is ready
    */
   async ensureConnection() {
-    console.log('🔗 Ensuring Utumishi connectivity...');
+    logger.info('Ensuring Utumishi connectivity');
     
     // First, try to validate current connection
     const isValid = await this.validateConnection();
     
     if (isValid) {
-      console.log('✅ Connection is already active');
+      logger.info('Connection is already active');
       return true;
     }
     
-    console.log('🔄 Connection appears down, attempting to re-establish...');
+    logger.warn('Connection appears down, attempting to re-establish');
     
     // Try manual IPSec reconnection
-    console.log('🔧 Attempting IPSec tunnel reconnection...');
+    logger.info('Attempting IPSec tunnel reconnection');
     
     try {
       await this.reconnectIPSecTunnel();
@@ -71,14 +72,14 @@ class ConnectionValidator {
       
       const isValidAfterReconnect = await this.validateConnection();
       if (isValidAfterReconnect) {
-        console.log('✅ Connection restored via IPSec reconnection');
+        logger.info('Connection restored via IPSec reconnection');
         return true;
       }
     } catch (error) {
-      console.log(`❌ IPSec reconnection failed: ${error.message}`);
+      logger.error('IPSec reconnection failed', { error: error.message });
     }
     
-    console.log('❌ Failed to establish connection to Utumishi');
+    logger.error('Failed to establish connection to Utumishi');
     return false;
   }
 
@@ -91,29 +92,28 @@ class ConnectionValidator {
     const { promisify } = require('util');
     const execAsync = promisify(exec);
     
-    console.log('🔧 Reconnecting IPSec tunnel...');
+    logger.info('Reconnecting IPSec tunnel');
     
     try {
       // First, bring down existing tunnel
-      console.log('📤 Bringing down existing tunnel...');
+      logger.info('Bringing down existing tunnel');
       await execAsync('sudo ipsec down utumishi-tunnel', { timeout: 10000 });
       
       // Wait a moment
       await new Promise(resolve => setTimeout(resolve, 2000));
       
       // Bring up the tunnel
-      console.log('📥 Bringing up tunnel...');
+      logger.info('Bringing up tunnel');
       const { stdout, stderr } = await execAsync('sudo ipsec up utumishi-tunnel', { timeout: 15000 });
       
       if (stderr && stderr.includes('ERROR')) {
         throw new Error(`IPSec error: ${stderr}`);
       }
       
-      console.log('✅ IPSec tunnel reconnection completed');
-      console.log('📋 Output:', stdout);
+      logger.info('IPSec tunnel reconnection completed', { output: stdout });
       
     } catch (error) {
-      console.log(`❌ IPSec reconnection error: ${error.message}`);
+      logger.error('IPSec reconnection error', { error: error.message });
       throw error;
     }
   }
@@ -126,7 +126,7 @@ class ConnectionValidator {
    */
   async requestWithEnsuredConnection(requestFn, retries = this.maxRetries) {
     for (let attempt = 1; attempt <= retries; attempt++) {
-      console.log(`📡 Request attempt ${attempt}/${retries}...`);
+      logger.info('Request attempt', { attempt, maxRetries: retries });
       
       // Ensure connection before making request
       const connectionReady = await this.ensureConnection();
@@ -135,21 +135,21 @@ class ConnectionValidator {
         if (attempt === retries) {
           throw new Error('Unable to establish connection to Utumishi after all attempts');
         }
-        console.log(`⏳ Waiting before retry attempt ${attempt + 1}...`);
+        logger.warn('Waiting before retry attempt', { nextAttempt: attempt + 1 });
         await new Promise(resolve => setTimeout(resolve, 3000));
         continue;
       }
       
       try {
         // Make the actual request
-        console.log('📤 Making request to Utumishi...');
+        logger.info('Making request to Utumishi');
         const result = await requestFn();
         
-        console.log('✅ Request completed successfully');
+        logger.info('Request completed successfully');
         return result;
         
       } catch (error) {
-        console.log(`❌ Request failed on attempt ${attempt}: ${error.message}`);
+        logger.error('Request failed', { attempt, error: error.message });
         
         if (attempt === retries) {
           throw error;
@@ -157,7 +157,7 @@ class ConnectionValidator {
         
         // Check if it's a network error that might benefit from reconnection
         if (error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND' || error.code === 'ETIMEDOUT') {
-          console.log('🔄 Network error detected, will retry with connection validation...');
+          logger.warn('Network error detected, will retry with connection validation', { errorCode: error.code });
         }
         
         await new Promise(resolve => setTimeout(resolve, 2000));

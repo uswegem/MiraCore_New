@@ -149,6 +149,33 @@ async function handleLoanRestructureBalanceRequest(parsedData, res) {
             ));
         }
         
+        // Update loan mapping to track restructure balance request
+        try {
+            await LoanMappingService.updateStatus(loanMapping.essApplicationNumber, loanMapping.status, {
+                metadata: {
+                    ...(loanMapping.metadata || {}),
+                    restructureBalanceRequests: [
+                        ...((loanMapping.metadata?.restructureBalanceRequests) || []),
+                        {
+                            type: 'LOAN_RESTRUCTURE_BALANCE_REQUEST',
+                            requestedAt: new Date(),
+                            checkNumber: CheckNumber,
+                            loanNumber: LoanNumber,
+                            outstandingBalance: outstandingBalance,
+                            principalBalance: principalOutstanding,
+                            installmentAmount: installmentAmount,
+                            lastRepaymentDate: lastRepaymentDate,
+                            maturityDate: maturityDate
+                        }
+                    ]
+                }
+            });
+            logger.info('✅ Updated loan mapping with restructure balance request details');
+        } catch (mappingError) {
+            logger.warn('⚠️ Could not update loan mapping for restructure balance request:', mappingError.message);
+            // Don't fail the request if mapping update fails
+        }
+        
         // Set validity date (30 days from now)
         const validityDate = new Date();
         validityDate.setDate(validityDate.getDate() + 30);

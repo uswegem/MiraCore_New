@@ -6,6 +6,19 @@ const compression = require('compression');
 const dotenv = require('dotenv');
 dotenv.config();
 const logger = require('./src/utils/logger');
+const swaggerUi = require('swagger-ui-express');
+const swaggerSpec = require('./src/config/swagger');
+
+// Validate environment variables before proceeding
+const { validateEnvironment, validateEnvPatterns, logEnvironmentConfig } = require('./src/config/validateEnv');
+try {
+  validateEnvironment();
+  validateEnvPatterns();
+  logEnvironmentConfig();
+} catch (error) {
+  logger.error('Environment validation failed:', { error: error.message });
+  process.exit(1);
+}
 
 // Import routes
 const apiRouter = require('./src/routes/api');
@@ -14,6 +27,7 @@ const userRoutes = require('./src/routes/auth');
 const auditRoutes = require('./src/routes/audit');
 const adminCompatRoutes = require('./src/routes/adminCompat');
 const loanActionsRoutes = require('./src/routes/loanActions');
+const frontendApiRoutes = require('./src/routes/frontendApi');
 // const messageRoutes = require('./src/routes/messages'); // Temporarily commented out
 
 // Import middleware
@@ -197,6 +211,22 @@ app.use(auditMiddleware);
 
 // ========== ROUTES ==========
 
+// Swagger API Documentation (public access for developer convenience)
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+    customCss: '.swagger-ui .topbar { display: none }',
+    customSiteTitle: 'ESS Loan API Documentation',
+    customfavIcon: '/favicon.ico'
+}));
+
+// Expose Swagger JSON spec
+app.get('/api-docs.json', (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.send(swaggerSpec);
+});
+
+// Metrics endpoint (no auth required for monitoring)
+app.get('/metrics', metricsHandler);
+
 // Authentication routes (before signature middleware and main API routes)
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/auth', authRoutes); // Compatibility route for existing admin portal
@@ -205,6 +235,9 @@ app.use('/api/auth', authRoutes); // Compatibility route for existing admin port
 app.get('/api/auth/test', (req, res) => {
     res.json({ success: true, message: 'Auth route is working' });
 });
+
+// Frontend API routes (for React frontend - JSON only, no XML signature required)
+app.use('/api/frontend', frontendApiRoutes);
 
 // User management routes (protected)  
 app.use('/api/v1/users', userRoutes);
@@ -221,6 +254,10 @@ app.use('/api/v1/loan-actions', loanActionsRoutes);
 // MIFOS administration and monitoring routes
 const mifosAdminRoutes = require('./src/routes/mifosAdmin');
 app.use('/api/v1/mifos', mifosAdminRoutes);
+
+// Circuit breaker monitoring routes
+const circuitBreakerRoutes = require('./src/routes/circuitBreaker');
+app.use('/api/v1/circuit-breaker', circuitBreakerRoutes);
 
 // Message management routes (protected) - Temporarily commented out
 // app.use('/api/v1/messages', messageRoutes);

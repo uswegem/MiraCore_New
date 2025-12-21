@@ -125,6 +125,16 @@ export const LOAN_STATUS = {
     color: 'green',
     description: 'Loan amount disbursed to employee'
   },
+  COMPLETED: {
+    label: 'Completed',
+    color: 'green',
+    description: 'Loan fully repaid and closed'
+  },
+  WAITING_FOR_LIQUIDATION: {
+    label: 'Awaiting Liquidation',
+    color: 'orange',
+    description: 'Loan takeover - waiting for liquidation of existing loan'
+  },
   CANCELLED: {
     label: 'Cancelled',
     color: 'red',

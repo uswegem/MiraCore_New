@@ -238,6 +238,30 @@ const handleLoanRestructureRequest = async (parsedData, res) => {
 
                 await sendCallback(approvalResponseData);
                 logger.info('✅ LOAN_INITIAL_APPROVAL_NOTIFICATION sent successfully for restructure');
+                
+                // Track callback in loan mapping
+                try {
+                    await LoanMapping.updateOne(
+                        { _id: loanMapping._id },
+                        {
+                            $set: {
+                                'metadata.callbacksSent': [
+                                    ...((loanMapping.metadata?.callbacksSent) || []),
+                                    {
+                                        type: 'LOAN_INITIAL_APPROVAL_NOTIFICATION',
+                                        sentAt: new Date(),
+                                        status: 'success',
+                                        loanNumber: newLoanNumber,
+                                        fspReferenceNumber: newFspReferenceNumber,
+                                        context: 'loan-restructure'
+                                    }
+                                ]
+                            }
+                        }
+                    );
+                } catch (trackError) {
+                    logger.warn('⚠️ Could not track callback in mapping:', trackError.message);
+                }
 
                 // Update mapping status
                 await LoanMapping.updateOne(

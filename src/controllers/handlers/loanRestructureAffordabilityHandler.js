@@ -148,6 +148,39 @@ const handleLoanRestructureAffordabilityRequest = async (parsedData, res) => {
         // Total interest over the restructured tenure
         const totalInterestRateAmount = await loanCalculations.calculateTotalInterest(loanAmount, interestRate, calculatedTenure);
         
+        // Update loan mapping to track restructure affordability request
+        try {
+            await LoanMapping.findOneAndUpdate(
+                { _id: loanMapping._id },
+                {
+                    $set: {
+                        'metadata.restructureAffordabilityRequests': [
+                            ...((loanMapping.metadata?.restructureAffordabilityRequests) || []),
+                            {
+                                type: 'LOAN_RESTRUCTURE_AFFORDABILITY_REQUEST',
+                                requestedAt: new Date(),
+                                loanNumber: loanNumber,
+                                loanAmount: loanAmount,
+                                providedTenure: providedTenure,
+                                providedEMI: providedEMI,
+                                calculatedTenure: calculatedTenure,
+                                calculatedEMI: calculatedEMI,
+                                interestRate: interestRate,
+                                totalInterestRateAmount: totalInterestRateAmount,
+                                totalProcessingFees: totalProcessingFees,
+                                totalInsurance: totalInsurance,
+                                otherCharges: otherCharges
+                            }
+                        ]
+                    }
+                }
+            );
+            logger.info('✅ Updated loan mapping with restructure affordability request details');
+        } catch (mappingError) {
+            logger.warn('⚠️ Could not update loan mapping for restructure affordability request:', mappingError.message);
+            // Don't fail the request if mapping update fails
+        }
+        
         // Net loan amount (after deducting fees)
         const totalDeductions = totalProcessingFees + totalInsurance + otherCharges;
         const netLoanAmount = loanAmount - totalDeductions;
@@ -201,7 +234,9 @@ const handleLoanRestructureAffordabilityRequest = async (parsedData, res) => {
         try {
             const metrics = require('../../../src/middleware/metricsMiddleware');
             trackLoanError = metrics.trackLoanError;
-        } catch (err) {}
+        } catch (err) {
+            logger.warn('Failed to load metrics middleware for error tracking', { error: err.message });
+        }
         
         if (trackLoanError) {
             trackLoanError('processing_error', 'LOAN_RESTRUCTURE_AFFORDABILITY_REQUEST');
