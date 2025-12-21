@@ -61,6 +61,15 @@
       "**/tests/**/*.test.js",
       "**/src/**/*.test.js"
     ],
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "/archive/",
+      "/scripts/"
+    ],
+    "modulePathIgnorePatterns": [
+      "<rootDir>/archive/",
+      "<rootDir>/scripts/test/"
+    ],
     "collectCoverageFrom": [
       "src/**/*.js",
       "!src/**/*.test.js"
