@@ -4,20 +4,9 @@ const mongoose = require('mongoose');
 const LoanMapping = require('../../src/models/LoanMapping');
 
 describe('Loan Offer Flow Integration Tests', () => {
-    beforeAll(async () => {
-        // Connect to test database
-        if (mongoose.connection.readyState === 0) {
-            await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/ess_test', {
-                useNewUrlParser: true,
-                useUnifiedTopology: true
-            });
-        }
-    });
-
     afterAll(async () => {
         // Clean up test database
         await LoanMapping.deleteMany({ essApplicationNumber: /^ESS_TEST/ });
-        await mongoose.connection.close();
     });
 
     describe('POST /api/loan - LOAN_OFFER_REQUEST', () => {

@@ -49,6 +49,7 @@
     "@types/jsonwebtoken": "^9.0.10",
     "decimal.js-light": "^2.5.1",
     "jest": "^30.2.0",
+    "mongodb-memory-server": "^10.1.2",
     "nodemon": "^3.0.1",
     "supertest": "^7.1.4"
   },
@@ -57,6 +58,7 @@
     "testTimeout": 10000,
     "forceExit": true,
     "detectOpenHandles": false,
+    "setupFilesAfterEnv": ["<rootDir>/tests/setup.js"],
     "testMatch": [
       "**/tests/**/*.test.js",
       "**/src/**/*.test.js"

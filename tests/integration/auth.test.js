@@ -15,14 +15,6 @@ describe('Authentication Flow Integration Tests', () => {
     let authToken;
 
     beforeAll(async () => {
-        // Connect to test database
-        if (mongoose.connection.readyState === 0) {
-            await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/ess_test', {
-                useNewUrlParser: true,
-                useUnifiedTopology: true
-            });
-        }
-
         // Clean up existing test user
         await User.deleteOne({ username: testUser.username });
     });
@@ -30,7 +22,6 @@ describe('Authentication Flow Integration Tests', () => {
     afterAll(async () => {
         // Clean up test data
         await User.deleteOne({ username: testUser.username });
-        await mongoose.connection.close();
     });
 
     describe('POST /auth/register', () => {

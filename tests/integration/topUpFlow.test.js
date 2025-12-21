@@ -7,20 +7,9 @@ describe('Top-Up Loan Flow Integration Tests', () => {
     let testApplicationNumber;
     let testLoanNumber;
 
-    beforeAll(async () => {
-        // Connect to test database
-        if (mongoose.connection.readyState === 0) {
-            await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/ess_test', {
-                useNewUrlParser: true,
-                useUnifiedTopology: true
-            });
-        }
-    });
-
     afterAll(async () => {
         // Clean up test data
         await LoanMapping.deleteMany({ essApplicationNumber: /^ESS_TOPUP_TEST/ });
-        await mongoose.connection.close();
     });
 
     describe('TOP_UP_PAY_0FF_BALANCE_REQUEST', () => {
@@ -35,7 +24,7 @@ describe('Top-Up Loan Flow Integration Tests', () => {
                 requestedAmount: 2000000,
                 tenure: 12,
                 mifosLoanId: 123, // Mock MIFOS ID
-                status: 'ACTIVE'
+                status: 'DISBURSED'
             });
 
             const balanceRequestXML = `<?xml version="1.0" encoding="UTF-8"?>
