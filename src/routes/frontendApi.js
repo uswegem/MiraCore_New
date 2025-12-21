@@ -3,7 +3,7 @@ const router = express.Router();
 const logger = require('../utils/logger');
 const { formatDateForMifos, formatDateForUTUMISHI, formatDateTimeForUTUMISHI } = require('../utils/dateUtils');
 const ClientService = require('../services/clientService');
-const LoanMappingService = require('../models/loanMapping');
+const LoanMappingService = require('../services/loanMappingService');
 const cbsApi = require('../services/cbs.api');
 
 /**
