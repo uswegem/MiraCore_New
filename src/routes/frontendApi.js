@@ -564,6 +564,138 @@ router.get('/loan/status-statistics', async (req, res) => {
 });
 
 /**
+ * GET /api/frontend/loan/records
+ * Get individual loan records in tabular format for export
+ * Query params:
+ *   - status: Filter by loan status (optional)
+ *   - limit: Max records to return (default: 1000, max: 5000)
+ *   - offset: Pagination offset (default: 0)
+ *   - format: 'json' or 'csv' (default: 'json')
+ */
+router.get('/loan/records', async (req, res) => {
+  try {
+    const LoanMapping = require('../models/LoanMapping');
+    
+    const { status, limit = 1000, offset = 0, format = 'json' } = req.query;
+    
+    // Build query
+    const query = {};
+    if (status) {
+      query.status = status;
+    }
+    
+    // Validate and cap limit
+    const limitNum = Math.min(parseInt(limit) || 1000, 5000);
+    const offsetNum = parseInt(offset) || 0;
+    
+    // Fetch loans with all details
+    const loans = await LoanMapping.find(query)
+      .select({
+        essApplicationNumber: 1,
+        essLoanNumberAlias: 1,
+        essCheckNumber: 1,
+        status: 1,
+        loanAmount: 1,
+        loanPurpose: 1,
+        employerName: 1,
+        employeeNIN: 1,
+        employeeName: 1,
+        employeeMobile: 1,
+        mifosClientId: 1,
+        mifosLoanId: 1,
+        rejectedBy: 1,
+        rejectionReason: 1,
+        cancelledBy: 1,
+        cancellationReason: 1,
+        failureReason: 1,
+        createdAt: 1,
+        updatedAt: 1,
+        disbursementDate: 1
+      })
+      .sort({ createdAt: -1 })
+      .skip(offsetNum)
+      .limit(limitNum)
+      .lean();
+    
+    // Get total count for pagination
+    const totalCount = await LoanMapping.countDocuments(query);
+    
+    // Format data for table display
+    const records = loans.map(loan => ({
+      applicationNumber: loan.essApplicationNumber || '',
+      loanNumber: loan.essLoanNumberAlias || '',
+      checkNumber: loan.essCheckNumber || '',
+      status: loan.status || '',
+      amount: loan.loanAmount || 0,
+      purpose: loan.loanPurpose || '',
+      employerName: loan.employerName || '',
+      employeeNIN: loan.employeeNIN || '',
+      employeeName: loan.employeeName || '',
+      employeeMobile: loan.employeeMobile || '',
+      mifosClientId: loan.mifosClientId || '',
+      mifosLoanId: loan.mifosLoanId || '',
+      rejectedBy: loan.rejectedBy || '',
+      rejectionReason: loan.rejectionReason || '',
+      cancelledBy: loan.cancelledBy || '',
+      cancellationReason: loan.cancellationReason || '',
+      failureReason: loan.failureReason || '',
+      createdAt: loan.createdAt ? new Date(loan.createdAt).toISOString() : '',
+      updatedAt: loan.updatedAt ? new Date(loan.updatedAt).toISOString() : '',
+      disbursementDate: loan.disbursementDate ? new Date(loan.disbursementDate).toISOString() : ''
+    }));
+    
+    // Return CSV format if requested
+    if (format === 'csv') {
+      const fields = [
+        'applicationNumber', 'loanNumber', 'checkNumber', 'status', 'amount',
+        'purpose', 'employerName', 'employeeNIN', 'employeeName', 'employeeMobile',
+        'mifosClientId', 'mifosLoanId', 'rejectedBy', 'rejectionReason',
+        'cancelledBy', 'cancellationReason', 'failureReason',
+        'createdAt', 'updatedAt', 'disbursementDate'
+      ];
+      
+      const csv = [
+        fields.join(','),
+        ...records.map(record => 
+          fields.map(field => {
+            const value = record[field] || '';
+            // Escape commas and quotes in CSV
+            return typeof value === 'string' && (value.includes(',') || value.includes('"'))
+              ? `"${value.replace(/"/g, '""')}"`
+              : value;
+          }).join(',')
+        )
+      ].join('\n');
+      
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename="loan-records-${new Date().toISOString()}.csv"`);
+      return res.send(csv);
+    }
+    
+    // Return JSON format (default)
+    res.json({
+      success: true,
+      data: records,
+      pagination: {
+        total: totalCount,
+        limit: limitNum,
+        offset: offsetNum,
+        hasMore: (offsetNum + limitNum) < totalCount
+      },
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    logger.error('Error fetching loan records:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch loan records',
+      error: error.message
+    });
+  }
+});
+
+/**
  * GET /api/frontend/health
  * Health check endpoint
  */
