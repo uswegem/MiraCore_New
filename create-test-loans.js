@@ -2,7 +2,7 @@
 const mongoose = require('mongoose');
 const LoanMapping = require('./src/models/LoanMapping');
 
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/ess';
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/miracore';
 
 async function createTestLoans() {
   try {
