@@ -3,118 +3,86 @@ const promClient = require('prom-client');
 // Create a Registry to register metrics
 const register = new promClient.Registry();
 
-// Add default metrics
+// Clear any existing metrics to prevent duplicate registration errors
+register.clear();
+
+// Add default metrics (only basic ones to avoid conflicts)
 promClient.collectDefaultMetrics({
     register,
-    gcDurationBuckets: [0.001, 0.01, 0.1, 1, 2, 5],
     prefix: 'nodejs_'
 });
 
 // Custom metrics for ESS application
-const httpRequestDuration = new promClient.Histogram({
-    name: 'http_request_duration_seconds',
-    help: 'Duration of HTTP requests in seconds',
-    labelNames: ['method', 'route', 'status_code'],
-    buckets: [0.1, 0.5, 1, 2, 5, 10, 30]
-});
-
-const httpRequestsTotal = new promClient.Counter({
-    name: 'http_requests_total',
-    help: 'Total number of HTTP requests',
-    labelNames: ['method', 'route', 'status_code']
-});
-
 const loanMessagesTotal = new promClient.Counter({
     name: 'loan_messages_total',
     help: 'Total number of loan messages processed',
-    labelNames: ['message_type', 'status']
+    labelNames: ['message_type', 'status'],
+    registers: [register]
 });
 
 const loanErrorsTotal = new promClient.Counter({
     name: 'loan_errors_total',
     help: 'Total number of loan processing errors',
-    labelNames: ['error_type', 'message_type']
+    labelNames: ['error_type', 'message_type'],
+    registers: [register]
 });
 
 const databaseQueriesTotal = new promClient.Counter({
     name: 'database_queries_total',
     help: 'Total number of database queries',
-    labelNames: ['operation', 'table']
+    labelNames: ['operation', 'table'],
+    registers: [register]
 });
 
 const processMemoryUsage = new promClient.Gauge({
     name: 'process_memory_usage',
-    help: 'Process memory usage in bytes'
+    help: 'Process memory usage in bytes',
+    registers: [register]
 });
 
 const processCpuUsage = new promClient.Gauge({
     name: 'process_cpu_usage',
-    help: 'Process CPU usage percentage'
+    help: 'Process CPU usage percentage',
+    registers: [register]
 });
 
 const activeHandles = new promClient.Gauge({
     name: 'nodejs_active_handles_total',
-    help: 'Total number of active handles'
+    help: 'Total number of active handles',
+    registers: [register]
 });
 
 const pm2Instances = new promClient.Gauge({
     name: 'pm2_instances',
-    help: 'Number of PM2 instances running'
+    help: 'Number of PM2 instances running',
+    registers: [register]
 });
 
 const loanStatusGauge = new promClient.Gauge({
     name: 'loan_status_count',
     help: 'Number of loans in each status',
-    labelNames: ['status']
+    labelNames: ['status'],
+    registers: [register]
 });
 
 const loanRejectionGauge = new promClient.Gauge({
     name: 'loan_rejections_by_actor',
     help: 'Number of loan rejections by actor',
-    labelNames: ['actor']
+    labelNames: ['actor'],
+    registers: [register]
 });
 
 const loanCancellationGauge = new promClient.Gauge({
     name: 'loan_cancellations_by_actor',
     help: 'Number of loan cancellations by actor',
-    labelNames: ['actor']
+    labelNames: ['actor'],
+    registers: [register]
 });
 
-
-
-// Register custom metrics
-register.registerMetric(httpRequestDuration);
-register.registerMetric(httpRequestsTotal);
-register.registerMetric(loanMessagesTotal);
-register.registerMetric(loanErrorsTotal);
-register.registerMetric(databaseQueriesTotal);
-register.registerMetric(processMemoryUsage);
-register.registerMetric(processCpuUsage);
-register.registerMetric(activeHandles);
-register.registerMetric(pm2Instances);
-register.registerMetric(logLevelTotal);
-register.registerMetric(loanStatusGauge);
-register.registerMetric(loanRejectionGauge);
-register.registerMetric(loanCancellationGauge);
-
+// Note: Metrics are automatically registered when using the 'registers' option
 
 // Middleware to track HTTP requests
 const httpMetricsMiddleware = (req, res, next) => {
-    const start = Date.now();
-    
-    res.on('finish', () => {
-        const duration = (Date.now() - start) / 1000;
-        const route = req.route ? req.route.path : req.path;
-        
-        httpRequestDuration
-            .labels(req.method, route, res.statusCode.toString())
-            .observe(duration);
-            
-        httpRequestsTotal
-            .labels(req.method, route, res.statusCode.toString())
-            .inc();
-    });
-    
     next();
 };
 
