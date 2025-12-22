@@ -79,6 +79,13 @@ const loanCancellationGauge = new promClient.Gauge({
     registers: [register]
 });
 
+const logLevelTotal = new promClient.Counter({
+    name: 'log_level_total',
+    help: 'Total number of log entries by level',
+    labelNames: ['level', 'service'],
+    registers: [register]
+});
+
 // Note: Metrics are automatically registered when using the 'registers' option
 
 // Middleware to track HTTP requests
