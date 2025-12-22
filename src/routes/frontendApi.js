@@ -620,6 +620,11 @@ router.get('/loan/records', async (req, res) => {
     // Get total count for pagination
     const totalCount = await LoanMapping.countDocuments(query);
     
+    console.log('[DEBUG] Query:', query);
+    console.log('[DEBUG] Total count:', totalCount);
+    console.log('[DEBUG] Loans found:', loans.length);
+    console.log('[DEBUG] First loan:', loans[0]);
+    
     // Format data for table display
     const records = loans.map(loan => ({
       applicationNumber: loan.essApplicationNumber || '',
