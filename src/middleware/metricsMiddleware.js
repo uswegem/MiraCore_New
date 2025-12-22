@@ -62,10 +62,22 @@ const pm2Instances = new promClient.Gauge({
     help: 'Number of PM2 instances running'
 });
 
-const logLevelTotal = new promClient.Counter({
-    name: 'log_level_total',
-    help: 'Total number of logs by level',
-    labelNames: ['level', 'service']
+const loanStatusGauge = new promClient.Gauge({
+    name: 'loan_status_count',
+    help: 'Number of loans in each status',
+    labelNames: ['status']
+});
+
+const loanRejectionGauge = new promClient.Gauge({
+    name: 'loan_rejections_by_actor',
+    help: 'Number of loan rejections by actor',
+    labelNames: ['actor']
+});
+
+const loanCancellationGauge = new promClient.Gauge({
+    name: 'loan_cancellations_by_actor',
+    help: 'Number of loan cancellations by actor',
+    labelNames: ['actor']
 });
 
 
@@ -81,6 +93,9 @@ register.registerMetric(processCpuUsage);
 register.registerMetric(activeHandles);
 register.registerMetric(pm2Instances);
 register.registerMetric(logLevelTotal);
+register.registerMetric(loanStatusGauge);
+register.registerMetric(loanRejectionGauge);
+register.registerMetric(loanCancellationGauge);
 
 
 // Middleware to track HTTP requests
@@ -183,9 +198,56 @@ const updateSystemMetrics = () => {
     }
 };
 
-// Update system metrics every 30 seconds (skip in test mode)
+// Function to update loan status metrics
+const updateLoanStatusMetrics = async () => {
+    try {
+        const LoanMapping = require('../models/LoanMapping');
+
+        // Update loan status counts
+        const statusStats = await LoanMapping.aggregate([
+            { $group: { _id: '$status', count: { $sum: 1 } } }
+        ]);
+
+        // Reset all gauges first
+        loanStatusGauge.reset();
+        loanRejectionGauge.reset();
+        loanCancellationGauge.reset();
+
+        // Set new values
+        statusStats.forEach(stat => {
+            loanStatusGauge.set({ status: stat._id }, stat.count);
+        });
+
+        // Update rejection stats
+        const rejectionStats = await LoanMapping.aggregate([
+            { $match: { status: 'REJECTED', rejectedBy: { $exists: true } } },
+            { $group: { _id: '$rejectedBy', count: { $sum: 1 } } }
+        ]);
+
+        rejectionStats.forEach(stat => {
+            loanRejectionGauge.set({ actor: stat._id }, stat.count);
+        });
+
+        // Update cancellation stats
+        const cancellationStats = await LoanMapping.aggregate([
+            { $match: { status: 'CANCELLED', cancelledBy: { $exists: true } } },
+            { $group: { _id: '$cancelledBy', count: { $sum: 1 } } }
+        ]);
+
+        cancellationStats.forEach(stat => {
+            loanCancellationGauge.set({ actor: stat._id }, stat.count);
+        });
+
+    } catch (error) {
+        logger.error('Error updating loan status metrics:', error);
+    }
+};
+
+// Update loan status metrics every 60 seconds (skip in test mode)
 if (process.env.NODE_ENV !== 'test') {
-    setInterval(updateSystemMetrics, 30000);
+    setInterval(updateLoanStatusMetrics, 60000);
+    // Initial update
+    updateLoanStatusMetrics();
 }
 
 // Metrics endpoint
@@ -206,5 +268,6 @@ module.exports = {
     trackLoanError,
     trackDatabaseQuery,
     trackLogLevel,
+    updateLoanStatusMetrics,
     register
 };

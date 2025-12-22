@@ -477,6 +477,93 @@ router.post('/loan/calculate-schedule', async (req, res) => {
 });
 
 /**
+ * GET /api/frontend/loan/status-statistics
+ * Get loan statistics grouped by status for Grafana tables
+ */
+router.get('/loan/status-statistics', async (req, res) => {
+  try {
+    const LoanMapping = require('../models/LoanMapping');
+
+    // Get all loan mappings with status counts
+    const statusStats = await LoanMapping.aggregate([
+      {
+        $group: {
+          _id: '$status',
+          count: { $sum: 1 },
+          loans: {
+            $push: {
+              applicationNumber: '$essApplicationNumber',
+              loanNumber: '$essLoanNumberAlias',
+              checkNumber: '$essCheckNumber',
+              amount: '$loanAmount',
+              status: '$status',
+              createdAt: '$createdAt',
+              updatedAt: '$updatedAt',
+              mifosClientId: '$mifosClientId',
+              mifosLoanId: '$mifosLoanId',
+              rejectedBy: '$rejectedBy',
+              cancelledBy: '$cancelledBy'
+            }
+          }
+        }
+      },
+      {
+        $sort: { count: -1 }
+      }
+    ]);
+
+    // Format for Grafana table panels
+    const formattedStats = statusStats.map(stat => ({
+      status: stat._id,
+      count: stat.count,
+      loans: stat.loans.slice(0, 100) // Limit to 100 loans per status for performance
+    }));
+
+    // Also get rejection/cancellation reasons
+    const rejectionStats = await LoanMapping.aggregate([
+      { $match: { status: 'REJECTED', rejectedBy: { $exists: true } } },
+      {
+        $group: {
+          _id: '$rejectedBy',
+          count: { $sum: 1 },
+          reasons: { $push: '$rejectionReason' }
+        }
+      }
+    ]);
+
+    const cancellationStats = await LoanMapping.aggregate([
+      { $match: { status: 'CANCELLED', cancelledBy: { $exists: true } } },
+      {
+        $group: {
+          _id: '$cancelledBy',
+          count: { $sum: 1 },
+          reasons: { $push: '$cancellationReason' }
+        }
+      }
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        statusBreakdown: formattedStats,
+        rejections: rejectionStats,
+        cancellations: cancellationStats,
+        totalLoans: formattedStats.reduce((sum, stat) => sum + stat.count, 0),
+        timestamp: new Date().toISOString()
+      }
+    });
+
+  } catch (error) {
+    logger.error('Error fetching loan status statistics:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch loan status statistics',
+      error: error.message
+    });
+  }
+});
+
+/**
  * GET /api/frontend/health
  * Health check endpoint
  */
