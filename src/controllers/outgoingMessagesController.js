@@ -2,6 +2,7 @@ const axios = require('axios');
 const digitalSignature = require('../utils/signatureUtils');
 const { getMessageId } = require('../utils/messageIdGenerator');
 const logger = require('../utils/logger');
+const xml2js = require('xml2js');
 
 async function sendToESS(signedXml) {
   const essUrl = process.env.THIRD_PARTY_BASE_URL || 'http://154.118.230.140:9802/ess-loans/mvtyztwq/consume';
@@ -24,6 +25,25 @@ exports.triggerOutgoingMessage = async (req, res) => {
     
     const msgId = MsgId || getMessageId(MessageType);
 
+    // Parse MessageDetails if it's a string (XML fragment)
+    let parsedMessageDetails = MessageDetails;
+    if (typeof MessageDetails === 'string' && MessageDetails.trim().startsWith('<')) {
+      try {
+        // Wrap in a root element for parsing
+        const wrappedXml = `<MessageDetails>${MessageDetails}</MessageDetails>`;
+        const parser = new xml2js.Parser({ explicitArray: false, mergeAttrs: true });
+        const result = await parser.parseStringPromise(wrappedXml);
+        parsedMessageDetails = result.MessageDetails;
+        logger.info('📝 Parsed MessageDetails from XML string to object');
+      } catch (parseError) {
+        logger.error('❌ Failed to parse MessageDetails XML string:', parseError.message);
+        return res.status(400).json({ 
+          success: false, 
+          error: 'Invalid MessageDetails XML format: ' + parseError.message 
+        });
+      }
+    }
+
     // Build data object
     const dataObject = {
       Header: {
@@ -33,7 +53,7 @@ exports.triggerOutgoingMessage = async (req, res) => {
         MsgId: msgId,
         MessageType
       },
-      MessageDetails: MessageDetails  // Use MessageDetails as provided (object or string)
+      MessageDetails: parsedMessageDetails
     };
 
     logger.info('Building outgoing message:', MessageType);
