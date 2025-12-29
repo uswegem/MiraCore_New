@@ -24,7 +24,7 @@ exports.triggerOutgoingMessage = async (req, res) => {
     
     const msgId = MsgId || getMessageId(MessageType);
 
-    // Build data object - MessageDetails should be an object, not a string
+    // Build data object
     const dataObject = {
       Header: {
         Sender,
@@ -33,9 +33,7 @@ exports.triggerOutgoingMessage = async (req, res) => {
         MsgId: msgId,
         MessageType
       },
-      MessageDetails: typeof MessageDetails === 'string' 
-        ? { Content: MessageDetails }  // Wrap string content
-        : MessageDetails               // Use object directly
+      MessageDetails: MessageDetails  // Use MessageDetails as provided (object or string)
     };
 
     logger.info('Building outgoing message:', MessageType);

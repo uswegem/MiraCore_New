@@ -89,8 +89,8 @@ class LoanMappingService {
       if (!fspReferenceNumber) {
         throw new Error('FSP Reference Number is required');
       }
-      if (!loanDetails || !loanDetails.requestedAmount) {
-        throw new Error('Loan details with requested amount are required');
+      if (!loanDetails || typeof loanDetails.requestedAmount !== 'number' || loanDetails.requestedAmount <= 0) {
+        throw new Error('Loan details with valid requested amount (greater than 0) are required');
       }
 
       // Check if mapping already exists to prevent duplicates

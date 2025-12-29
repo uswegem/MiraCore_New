@@ -35,7 +35,7 @@ const handleLoanTakeoverOfferRequest = async (parsedData, res) => {
 
             const loanData = {
                 productCode: messageDetails.ProductCode || '17',
-                requestedAmount: messageDetails.RequestedTakeoverAmount,
+                requestedAmount: messageDetails.RequestedAmount,
                 tenure: messageDetails.Tenure,
                 existingLoanNumber: messageDetails.ExistingLoanNumber,
                 loanPurpose: messageDetails.LoanPurpose,
@@ -102,14 +102,47 @@ const handleLoanTakeoverOfferRequest = async (parsedData, res) => {
                 logger.info('⏰ Sending delayed LOAN_INITIAL_APPROVAL_NOTIFICATION for takeover...');
 
                 // Generate loan details for takeover
-                const requestedAmount = parseFloat(messageDetails.RequestedTakeoverAmount) || 0;
+                // RequestedAmount is optional in XML, fallback to TakeOverAmount (required field)
+                let requestedAmount = parseFloat(messageDetails.RequestedAmount) || 0;
+                const takeOverAmount = parseFloat(messageDetails.TakeOverAmount) || 0;
+                
+                // Use TakeOverAmount if RequestedAmount is not provided (as per ESS API spec 2.5.5)
+                if (!requestedAmount || requestedAmount <= 0) {
+                    if (takeOverAmount > 0) {
+                        requestedAmount = takeOverAmount;
+                        logger.info('ℹ️ Using TakeOverAmount as requestedAmount for takeover', {
+                            essApplicationNumber: messageDetails.ApplicationNumber,
+                            takeOverAmount,
+                            reason: 'RequestedAmount is optional field'
+                        });
+                    } else {
+                        logger.error('❌ Both RequestedAmount and TakeOverAmount are missing/invalid', {
+                            essApplicationNumber: messageDetails.ApplicationNumber,
+                            requestedAmount: messageDetails.RequestedAmount,
+                            takeOverAmount: messageDetails.TakeOverAmount
+                        });
+                        return; // Skip processing if both amounts are invalid
+                    }
+                }
+                
                 const loanNumber = generateLoanNumber();
                 const fspReferenceNumber = generateFSPReferenceNumber();
                 
-                // Calculate basic charges (similar to regular loan processing)
-                const charges = LoanCalculations.calculateCharges(requestedAmount);
-                const totalAmountToPay = requestedAmount + (requestedAmount * 0.28 * (parseFloat(messageDetails.Tenure) || 12) / 12);
-                const otherCharges = charges.processingFee + charges.insurance + charges.otherCharges;
+                // Use UTUMISHI's provided financial values when available, otherwise calculate
+                const totalInterest = parseFloat(messageDetails.InterestRate) || (requestedAmount * 0.28 * (parseFloat(messageDetails.Tenure) || 12) / 12);
+                const processingFee = parseFloat(messageDetails.ProcessingFee) || (requestedAmount * 0.02);
+                const insurance = parseFloat(messageDetails.Insurance) || (requestedAmount * 0.015);
+                const totalAmountToPay = requestedAmount + totalInterest;
+                const otherCharges = processingFee + insurance;
+                
+                logger.info('💰 Using financial values', {
+                    requestedAmount,
+                    totalInterest,
+                    processingFee,
+                    insurance,
+                    totalAmountToPay,
+                    source: messageDetails.InterestRate ? 'UTUMISHI' : 'Calculated'
+                });
 
                 // Create/update loan mapping with approval details
                 try {

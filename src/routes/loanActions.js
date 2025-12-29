@@ -115,7 +115,7 @@ router.post('/send-disbursement-failure', authMiddleware, roleMiddleware(['super
             return res.status(400).json({ success: false, message: `Loan must be in LOAN_CREATED status. Current status: ${loanMapping.status}` });
         }
 
-        // Create failure notification
+        // Create failure notification - only include fields expected by Utumishi schema
         const failureNotificationData = {
             Header: {
                 Sender: process.env.FSP_NAME || "ZE DONE",
@@ -126,12 +126,7 @@ router.post('/send-disbursement-failure', authMiddleware, roleMiddleware(['super
             },
             MessageDetails: {
                 ApplicationNumber: loanMapping.essApplicationNumber,
-                LoanNumber: loanMapping.essLoanNumberAlias,
-                FSPReferenceNumber: loanMapping.fspReferenceNumber,
-                FailureReason: reason,
-                ErrorDetails: errorDetails || "Manual disbursement failure notification",
-                Status: "FAILED",
-                Timestamp: formatDateForUTUMISHI(new Date())
+                Reason: reason  // Only ApplicationNumber and Reason per Utumishi schema
             }
         };
 

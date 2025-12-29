@@ -595,12 +595,9 @@ router.get('/loan/records', async (req, res) => {
         essLoanNumberAlias: 1,
         essCheckNumber: 1,
         status: 1,
-        loanAmount: 1,
-        loanPurpose: 1,
-        employerName: 1,
-        employeeNIN: 1,
-        employeeName: 1,
-        employeeMobile: 1,
+        productCode: 1,
+        requestedAmount: 1,
+        tenure: 1,
         mifosClientId: 1,
         mifosLoanId: 1,
         rejectedBy: 1,
@@ -610,7 +607,9 @@ router.get('/loan/records', async (req, res) => {
         failureReason: 1,
         createdAt: 1,
         updatedAt: 1,
-        disbursementDate: 1
+        disbursementDate: 1,
+        initialOfferSentAt: 1,
+        finalApprovalReceivedAt: 1
       })
       .sort({ createdAt: -1 })
       .skip(offsetNum)
@@ -631,12 +630,9 @@ router.get('/loan/records', async (req, res) => {
       loanNumber: loan.essLoanNumberAlias || '',
       checkNumber: loan.essCheckNumber || '',
       status: loan.status || '',
-      amount: loan.loanAmount || 0,
-      purpose: loan.loanPurpose || '',
-      employerName: loan.employerName || '',
-      employeeNIN: loan.employeeNIN || '',
-      employeeName: loan.employeeName || '',
-      employeeMobile: loan.employeeMobile || '',
+      productCode: loan.productCode || '',
+      amount: loan.requestedAmount || 0,
+      tenure: loan.tenure || 0,
       mifosClientId: loan.mifosClientId || '',
       mifosLoanId: loan.mifosLoanId || '',
       rejectedBy: loan.rejectedBy || '',
@@ -646,17 +642,18 @@ router.get('/loan/records', async (req, res) => {
       failureReason: loan.failureReason || '',
       createdAt: loan.createdAt ? new Date(loan.createdAt).toISOString() : '',
       updatedAt: loan.updatedAt ? new Date(loan.updatedAt).toISOString() : '',
-      disbursementDate: loan.disbursementDate ? new Date(loan.disbursementDate).toISOString() : ''
+      disbursementDate: loan.disbursementDate ? new Date(loan.disbursementDate).toISOString() : '',
+      initialOfferSentAt: loan.initialOfferSentAt ? new Date(loan.initialOfferSentAt).toISOString() : '',
+      finalApprovalReceivedAt: loan.finalApprovalReceivedAt ? new Date(loan.finalApprovalReceivedAt).toISOString() : ''
     }));
     
     // Return CSV format if requested
     if (format === 'csv') {
       const fields = [
-        'applicationNumber', 'loanNumber', 'checkNumber', 'status', 'amount',
-        'purpose', 'employerName', 'employeeNIN', 'employeeName', 'employeeMobile',
+        'applicationNumber', 'loanNumber', 'checkNumber', 'status', 'productCode', 'amount', 'tenure',
         'mifosClientId', 'mifosLoanId', 'rejectedBy', 'rejectionReason',
         'cancelledBy', 'cancellationReason', 'failureReason',
-        'createdAt', 'updatedAt', 'disbursementDate'
+        'createdAt', 'updatedAt', 'disbursementDate', 'initialOfferSentAt', 'finalApprovalReceivedAt'
       ];
       
       const csv = [
