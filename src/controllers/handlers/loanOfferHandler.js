@@ -216,21 +216,23 @@ async function handleTopUpOfferRequestAuto(parsedData, res, clientData, loanData
                 }
                 
                 const approvalResponseData = {
-                    Header: {
-                        "Sender": process.env.FSP_NAME || "ZE DONE",
-                        "Receiver": "ESS_UTUMISHI",
-                        "FSPCode": header.FSPCode,
-                        "MsgId": getMessageId("LOAN_INITIAL_APPROVAL_NOTIFICATION"),
-                        "MessageType": "LOAN_INITIAL_APPROVAL_NOTIFICATION"
-                    },
-                    MessageDetails: {
-                        "ApplicationNumber": messageDetails.ApplicationNumber,
-                        "Reason": "Top-Up Loan Approved (Auto-detected existing loan)",
-                        "FSPReferenceNumber": fspReferenceNumber,
-                        "LoanNumber": loanNumber,
-                        "TotalAmountToPay": totalAmountToPay.toFixed(2),
-                        "OtherCharges": otherCharges.toFixed(2),
-                        "Approval": "APPROVED"
+                    Data: {
+                        Header: {
+                            "Sender": process.env.FSP_NAME || "ZE DONE",
+                            "Receiver": "ESS_UTUMISHI",
+                            "FSPCode": header.FSPCode,
+                            "MsgId": getMessageId("LOAN_INITIAL_APPROVAL_NOTIFICATION"),
+                            "MessageType": "LOAN_INITIAL_APPROVAL_NOTIFICATION"
+                        },
+                        MessageDetails: {
+                            "ApplicationNumber": messageDetails.ApplicationNumber,
+                            "Reason": "Top-Up Loan Approved (Auto-detected existing loan)",
+                            "FSPReferenceNumber": fspReferenceNumber,
+                            "LoanNumber": loanNumber,
+                            "TotalAmountToPay": totalAmountToPay.toFixed(2),
+                            "OtherCharges": otherCharges.toFixed(2),
+                            "Approval": "APPROVED"
+                        }
                     }
                 };
                 
@@ -514,21 +516,23 @@ const handleLoanOfferRequest = async (parsedData, res) => {
                 logger.info('⏰ Sending delayed LOAN_INITIAL_APPROVAL_NOTIFICATION callback...');
 
                 const approvalResponseData = {
-                    Header: {
-                        "Sender": process.env.FSP_NAME || "ZE DONE",
-                        "Receiver": "ESS_UTUMISHI",
-                        "FSPCode": header.FSPCode,
-                        "MsgId": getMessageId("LOAN_INITIAL_APPROVAL_NOTIFICATION"),
-                        "MessageType": "LOAN_INITIAL_APPROVAL_NOTIFICATION"
-                    },
-                    MessageDetails: {
-                        "ApplicationNumber": messageDetails.ApplicationNumber,
-                        "Reason": "Loan Request Approved",
-                        "FSPReferenceNumber": header.FSPReferenceNumber || messageDetails.CheckNumber || messageDetails.ApplicationNumber,
-                        "LoanNumber": loanNumber,
-                        "TotalAmountToPay": totalAmountToPay.toFixed(2),
-                        "OtherCharges": otherCharges.toFixed(2),
-                        "Approval": "APPROVED"
+                    Data: {
+                        Header: {
+                            "Sender": process.env.FSP_NAME || "ZE DONE",
+                            "Receiver": "ESS_UTUMISHI",
+                            "FSPCode": header.FSPCode,
+                            "MsgId": getMessageId("LOAN_INITIAL_APPROVAL_NOTIFICATION"),
+                            "MessageType": "LOAN_INITIAL_APPROVAL_NOTIFICATION"
+                        },
+                        MessageDetails: {
+                            "ApplicationNumber": messageDetails.ApplicationNumber,
+                            "Reason": "Loan Request Approved",
+                            "FSPReferenceNumber": header.FSPReferenceNumber || messageDetails.CheckNumber || messageDetails.ApplicationNumber,
+                            "LoanNumber": loanNumber,
+                            "TotalAmountToPay": totalAmountToPay.toFixed(2),
+                            "OtherCharges": otherCharges.toFixed(2),
+                            "Approval": "APPROVED"
+                        }
                     }
                 };
 
