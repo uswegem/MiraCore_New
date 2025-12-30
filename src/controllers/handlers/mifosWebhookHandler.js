@@ -4,6 +4,7 @@ const axios = require('axios');
 const LoanMapping = require('../../models/LoanMapping');
 const { AuditLog } = require('../../models/AuditLog');
 const { getMessageId } = require('../../utils/messageIdGenerator');
+const pdfGeneratorService = require('../../services/pdfGeneratorService');
 
 const handleMifosWebhook = async (req, res) => {
     try {
@@ -71,6 +72,10 @@ async function processWebhookEvent(webhookData) {
     // Handle loan reschedule approval
     if (entityName === 'RESCHEDULELOAN' && actionName === 'APPROVE') {
         await handleRescheduleApproval(webhookData);
+    }
+    // Handle loan approval - Generate PDFs for MSE products
+    else if (entityName === 'LOAN' && actionName === 'APPROVE') {
+        await handleLoanApproval(webhookData);
     }
     // Handle loan disbursement
     else if (entityName === 'LOAN' && actionName === 'DISBURSE') {
@@ -235,6 +240,76 @@ async function sendLoanInitialApprovalNotification(loanMapping) {
         });
         
         throw error;
+    }
+}
+
+/**
+ * Handle loan approval webhook - Generate PDFs for MSE products
+ */
+async function handleLoanApproval(webhookData) {
+    try {
+        const loanId = webhookData.entity?.id;
+        const loanAccountNo = webhookData.entity?.accountNo;
+        const productId = webhookData.entity?.loanProductId;
+        const productName = webhookData.entity?.loanProductName;
+        const clientId = webhookData.entity?.clientId;
+        const clientName = webhookData.entity?.clientName;
+
+        logger.info('🎯 Loan approved - checking for PDF generation:', {
+            loanId,
+            loanAccountNo,
+            productId,
+            productName
+        });
+
+        // Check if this is an MSE product that requires PDF generation
+        if (!pdfGeneratorService.isMseProduct(productId)) {
+            logger.info(`⏭️ Product ${productId} (${productName}) is not an MSE product - skipping PDF generation`);
+            return;
+        }
+
+        logger.info(`📄 MSE product detected - generating loan documents for ${loanAccountNo}`);
+
+        // Generate PDFs
+        const documents = await pdfGeneratorService.generateLoanDocuments({
+            loanId,
+            productId,
+            productName,
+            clientId,
+            clientName,
+            loanAccountNo
+        });
+
+        // Create audit log
+        await AuditLog.create({
+            eventType: 'LOAN_DOCUMENTS_GENERATED',
+            messageType: 'MIFOS_WEBHOOK',
+            direction: 'internal',
+            requestData: webhookData,
+            responseData: documents,
+            status: 'success',
+            loanNumber: loanAccountNo,
+            mifosLoanId: loanId
+        });
+
+        logger.info('✅ Loan documents generated successfully:', {
+            loanAccountNo,
+            facilityLetter: documents?.facilityLetter?.filename,
+            loanAgreement: documents?.loanAgreement?.filename
+        });
+
+    } catch (error) {
+        logger.error('❌ Error handling loan approval:', error);
+        
+        // Log failure but don't throw - PDF generation failure shouldn't block other processing
+        await AuditLog.create({
+            eventType: 'LOAN_DOCUMENTS_GENERATION_FAILED',
+            messageType: 'MIFOS_WEBHOOK',
+            direction: 'internal',
+            requestData: webhookData,
+            status: 'failed',
+            errorMessage: error.message
+        });
     }
 }
 
