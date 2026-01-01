@@ -7,6 +7,7 @@ const UserController = require('../controllers/userController');
 const AuditController = require('../controllers/auditController');
 const LoanMappingService = require('../services/loanMappingService');
 const { authMiddleware, roleMiddleware } = require('../middleware/authMiddleware');
+const logger = require('../utils/logger');
 
 // Authentication routes
 router.post('/auth/login', AuthController.login);
