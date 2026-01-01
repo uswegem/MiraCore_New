@@ -129,7 +129,7 @@ const generateCustomer = (index) => {
     activationDate: '01 January 2026',
     submittedOnDate: '01 January 2026',
     dateOfBirth: dob,
-    gender: isMale ? { id: 22 } : { id: 21 }, // Adjust based on your MIFOS gender code values
+    genderId: isMale ? 15 : 16, // 15 = Male, 16 = Female
     mobileNo: generatePhone(),
     address: {
       addressLine1: `${randomInt(1, 500)} ${randomItem(STREETS)}`,
@@ -148,6 +148,7 @@ const createClient = async (customer) => {
   try {
     const payload = {
       officeId: customer.officeId,
+      legalFormId: 1, // 1 = Person, 2 = Entity
       firstname: customer.firstname,
       middlename: customer.middlename,
       lastname: customer.lastname,
@@ -158,7 +159,9 @@ const createClient = async (customer) => {
       activationDate: customer.activationDate,
       submittedOnDate: customer.submittedOnDate,
       dateOfBirth: customer.dateOfBirth,
-      mobileNo: customer.mobileNo
+      mobileNo: customer.mobileNo,
+      genderId: customer.genderId,
+      clientTypeId: 17 // 17 = Retail
     };
     
     const response = await api.post('/clients', payload);
