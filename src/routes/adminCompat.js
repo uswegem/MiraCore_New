@@ -48,9 +48,79 @@ router.get('/admin/get_all_users', authMiddleware, roleMiddleware(['super_admin'
 router.get('/admin/get_user_details/:id', authMiddleware, roleMiddleware(['super_admin', 'admin']), UserController.getUserById);
 router.delete('/admin/delete_user/:id', authMiddleware, roleMiddleware(['super_admin', 'admin']), UserController.deleteUser);
 
+// Create user endpoint (for MiraAdmin frontend)
+router.post('/admin/create_user', authMiddleware, roleMiddleware(['super_admin', 'admin']), UserController.createUser);
+
+// Update user endpoint
+router.put('/admin/update_user/:id', authMiddleware, roleMiddleware(['super_admin', 'admin']), UserController.updateUser);
+
 // Admin profile routes
 router.get('/admin/get_admin', authMiddleware, AuthController.getProfile);
 router.put('/admin/edit_admin', authMiddleware, UserController.updateUser);
 router.post('/admin/change_password', authMiddleware, AuthController.changePassword);
+
+// Notification routes (for MiraAdmin frontend)
+router.get('/notification/list', authMiddleware, async (req, res) => {
+    try {
+        // Return notifications from database or empty list
+        const Notification = require('../models/Notification');
+        let notifications = [];
+        
+        try {
+            notifications = await Notification.find()
+                .sort({ createdAt: -1 })
+                .limit(50)
+                .lean();
+        } catch (e) {
+            // Model may not exist yet, return empty list
+            notifications = [];
+        }
+        
+        res.json({
+            success: true,
+            data: { notifications }
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// Mark notification as read
+router.put('/notification/read/:id', authMiddleware, async (req, res) => {
+    try {
+        const Notification = require('../models/Notification');
+        await Notification.findByIdAndUpdate(req.params.id, { read: true });
+        res.json({ success: true, message: 'Notification marked as read' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// Pending responses routes (for message tracking)
+router.get('/messages/pending-responses', authMiddleware, async (req, res) => {
+    try {
+        const MessageLog = require('../models/MessageLog');
+        let pendingResponses = [];
+        
+        try {
+            pendingResponses = await MessageLog.find({
+                status: { $in: ['PENDING', 'AWAITING_RESPONSE'] }
+            })
+            .sort({ createdAt: -1 })
+            .limit(100)
+            .lean();
+        } catch (e) {
+            // Model may not exist, return empty list
+            pendingResponses = [];
+        }
+        
+        res.json({
+            success: true,
+            data: { pendingResponses }
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
 
 module.exports = router;
