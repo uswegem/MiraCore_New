@@ -17,17 +17,65 @@ router.post('/auth/logout', authMiddleware, AuthController.logout);
 // Product/Loan routes
 router.get('/loan/list-products', authMiddleware, async (req, res) => {
     try {
-        // Return loan products from CBS or mock data
+        const Product = require('../models/Product');
+        const products = await Product.find({ isActive: true })
+            .select({
+                _id: 1,
+                productCode: 1,
+                deductionCode: 1,
+                productName: 1,
+                productDescription: 1,
+                minTenure: 1,
+                maxTenure: 1,
+                interestRate: 1,
+                processingFee: 1,
+                insurance: 1,
+                minAmount: 1,
+                maxAmount: 1,
+                repaymentType: 1,
+                insuranceType: 1,
+                forExecutive: 1,
+                shariaFacility: 1,
+                termsConditions: 1,
+                mifosProductId: 1,
+                createdAt: 1
+            })
+            .sort({ createdAt: -1 })
+            .lean();
+        
+        // Map to frontend expected format
+        const formattedProducts = products.map(p => ({
+            id: p._id,
+            productCode: p.productCode,
+            deductionCode: p.deductionCode,
+            name: p.productName,
+            productName: p.productName,
+            description: p.productDescription,
+            productDescription: p.productDescription,
+            minTenure: p.minTenure,
+            maxTenure: p.maxTenure,
+            rate: p.interestRate,
+            interestRate: p.interestRate,
+            processingFee: p.processingFee,
+            insurance: p.insurance,
+            minAmount: p.minAmount,
+            maxAmount: p.maxAmount,
+            repaymentType: p.repaymentType,
+            insuranceType: p.insuranceType,
+            forExecutive: p.forExecutive,
+            shariaFacility: p.shariaFacility,
+            termsConditions: p.termsConditions || [],
+            mifosProductId: p.mifosProductId
+        }));
+        
         res.json({
             success: true,
             data: {
-                products: [
-                    { id: 1, name: 'Personal Loan', rate: 12.5, maxAmount: 1000000 },
-                    { id: 2, name: 'Business Loan', rate: 15.0, maxAmount: 5000000 }
-                ]
+                products: formattedProducts
             }
         });
     } catch (error) {
+        logger.error('Error fetching products:', error);
         res.status(500).json({ success: false, message: error.message });
     }
 });

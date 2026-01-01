@@ -250,6 +250,10 @@ app.use('/api/v1/audit', auditRoutes);
 // Admin compatibility routes for MiraAdmin frontend
 app.use('/api/v1', adminCompatRoutes);
 
+// Product management routes
+const productRoutes = require('./src/routes/products');
+app.use('/api/v1/products', productRoutes);
+
 // Loan action routes for manual notifications (protected)
 app.use('/api/v1/loan-actions', loanActionsRoutes);
 
