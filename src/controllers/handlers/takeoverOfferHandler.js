@@ -17,64 +17,7 @@ const handleLoanTakeoverOfferRequest = async (parsedData, res) => {
         const header = parsedData.Document.Data.Header;
         const messageDetails = parsedData.Document.Data.MessageDetails;
 
-        // Store client and loan data similar to LOAN_OFFER_REQUEST
-        try {
-            const clientData = {
-                firstName: messageDetails.FirstName,
-                middleName: messageDetails.MiddleName,
-                lastName: messageDetails.LastName,
-                sex: messageDetails.Sex,
-                nin: messageDetails.NIN,
-                mobileNo: messageDetails.MobileNumber,
-                dateOfBirth: messageDetails.DateOfBirth,
-                maritalStatus: messageDetails.MaritalStatus,
-                bankAccountNumber: messageDetails.BankAccountNumber,
-                swiftCode: messageDetails.SwiftCode,
-                emailAddress: messageDetails.EmailAddress
-            };
-
-            const loanData = {
-                productCode: messageDetails.ProductCode || '17',
-                requestedAmount: messageDetails.RequestedAmount,
-                tenure: messageDetails.Tenure,
-                existingLoanNumber: messageDetails.ExistingLoanNumber,
-                loanPurpose: messageDetails.LoanPurpose,
-                takeOverAmount: parseFloat(messageDetails.TakeOverAmount || 0),
-                fsp1LoanNumber: messageDetails.FSP1LoanNumber,
-                fsp1BankAccount: messageDetails.FSP1BankAccount,
-                fsp1BankAccountName: messageDetails.FSP1BankAccountName,
-                fsp1SwiftCode: messageDetails.FSP1SWIFTCode
-            };
-
-            const employmentData = {
-                employmentDate: messageDetails.EmploymentDate,
-                retirementDate: messageDetails.RetirementDate,
-                termsOfEmployment: messageDetails.TermsOfEmployment,
-                voteCode: messageDetails.VoteCode,
-                voteName: messageDetails.VoteName,
-                designationCode: messageDetails.DesignationCode,
-                designationName: messageDetails.DesignationName,
-                basicSalary: messageDetails.BasicSalary,
-                netSalary: messageDetails.NetSalary,
-                oneThirdAmount: messageDetails.OneThirdAmount,
-                totalEmployeeDeduction: messageDetails.TotalEmployeeDeduction
-            };
-
-            await LoanMappingService.createOrUpdateWithClientData(
-                messageDetails.ApplicationNumber,
-                messageDetails.CheckNumber,
-                clientData,
-                loanData,
-                employmentData,
-                'LOAN_TAKEOVER_OFFER_REQUEST' // Set original message type
-            );
-            logger.info('✅ Takeover client data stored successfully');
-        } catch (storageError) {
-            logger.error('❌ Error storing takeover client data:', storageError);
-            // Continue with response even if storage fails
-        }
-        
-        // Step 1: Send immediate ACK response with fixed MsgId
+        // Step 1: Send immediate ACK response FIRST (before any processing)
         const ackResponseData = {
             Data: {
                 Header: {
@@ -96,7 +39,64 @@ const handleLoanTakeoverOfferRequest = async (parsedData, res) => {
         res.status(200).send(signedResponse);
         logger.info('✅ Sent immediate ACK response for LOAN_TAKEOVER_OFFER_REQUEST');
 
-        // Step 2 & 3: Wait 10 seconds then send LOAN_INITIAL_APPROVAL_NOTIFICATION callback
+        // Step 2: Store client and loan data (after ACK is sent)
+        const clientData = {
+            firstName: messageDetails.FirstName,
+            middleName: messageDetails.MiddleName,
+            lastName: messageDetails.LastName,
+            sex: messageDetails.Sex,
+            nin: messageDetails.NIN,
+            mobileNo: messageDetails.MobileNumber,
+            dateOfBirth: messageDetails.DateOfBirth,
+            maritalStatus: messageDetails.MaritalStatus,
+            bankAccountNumber: messageDetails.BankAccountNumber,
+            swiftCode: messageDetails.SwiftCode,
+            emailAddress: messageDetails.EmailAddress
+        };
+
+        const loanData = {
+            productCode: messageDetails.ProductCode || '17',
+            requestedAmount: messageDetails.RequestedAmount,
+            tenure: messageDetails.Tenure,
+            existingLoanNumber: messageDetails.ExistingLoanNumber,
+            loanPurpose: messageDetails.LoanPurpose,
+            takeOverAmount: parseFloat(messageDetails.TakeOverAmount || 0),
+            fsp1LoanNumber: messageDetails.FSP1LoanNumber,
+            fsp1BankAccount: messageDetails.FSP1BankAccount,
+            fsp1BankAccountName: messageDetails.FSP1BankAccountName,
+            fsp1SwiftCode: messageDetails.FSP1SWIFTCode
+        };
+
+        const employmentData = {
+            employmentDate: messageDetails.EmploymentDate,
+            retirementDate: messageDetails.RetirementDate,
+            termsOfEmployment: messageDetails.TermsOfEmployment,
+            voteCode: messageDetails.VoteCode,
+            voteName: messageDetails.VoteName,
+            designationCode: messageDetails.DesignationCode,
+            designationName: messageDetails.DesignationName,
+            basicSalary: messageDetails.BasicSalary,
+            netSalary: messageDetails.NetSalary,
+            oneThirdAmount: messageDetails.OneThirdAmount,
+            totalEmployeeDeduction: messageDetails.TotalEmployeeDeduction
+        };
+
+        try {
+            await LoanMappingService.createOrUpdateWithClientData(
+                messageDetails.ApplicationNumber,
+                messageDetails.CheckNumber,
+                clientData,
+                loanData,
+                employmentData,
+                'LOAN_TAKEOVER_OFFER_REQUEST' // Set original message type
+            );
+            logger.info('✅ Takeover client data stored successfully');
+        } catch (storageError) {
+            logger.error('❌ Error storing takeover client data:', storageError);
+            // Continue with callback even if storage fails
+        }
+
+        // Step 3: Wait 10 seconds then send LOAN_INITIAL_APPROVAL_NOTIFICATION callback
         setTimeout(async () => {
             try {
                 logger.info('⏰ Sending delayed LOAN_INITIAL_APPROVAL_NOTIFICATION for takeover...');
@@ -144,25 +144,47 @@ const handleLoanTakeoverOfferRequest = async (parsedData, res) => {
                     source: messageDetails.InterestRate ? 'UTUMISHI' : 'Calculated'
                 });
 
-                // Create/update loan mapping with approval details
+                // Update existing loan mapping with approval details (mapping was created in Step 2)
                 try {
-                    await LoanMappingService.createInitialMapping(
-                        messageDetails.ApplicationNumber,
-                        messageDetails.CheckNumber,
-                        fspReferenceNumber,
-                        {
+                    const existingMapping = await LoanMappingService.getByEssApplicationNumber(messageDetails.ApplicationNumber);
+                    if (existingMapping) {
+                        await LoanMappingService.updateStatus(messageDetails.ApplicationNumber, 'OFFER_SUBMITTED', {
+                            fspReferenceNumber: fspReferenceNumber,
                             essLoanNumberAlias: loanNumber,
-                            requestedAmount: requestedAmount,
                             totalAmountToPay: totalAmountToPay,
-                            interestRate: 28.0, // 28% per annum as used in calculation
-                            tenure: parseFloat(messageDetails.Tenure) || 12,
                             otherCharges: otherCharges,
-                            status: 'INITIAL_APPROVAL_SENT'
-                        }
-                    );
-                    logger.info('✅ Created loan mapping for takeover offer');
+                            metadata: {
+                                ...(existingMapping.metadata || {}),
+                                approvalDetails: {
+                                    loanNumber,
+                                    fspReferenceNumber,
+                                    totalAmountToPay,
+                                    otherCharges,
+                                    approvedAt: new Date().toISOString()
+                                }
+                            }
+                        });
+                        logger.info('✅ Updated loan mapping with approval details for takeover offer');
+                    } else {
+                        // Fallback: Create new mapping if not found (shouldn't happen normally)
+                        await LoanMappingService.createInitialMapping(
+                            messageDetails.ApplicationNumber,
+                            messageDetails.CheckNumber,
+                            fspReferenceNumber,
+                            {
+                                essLoanNumberAlias: loanNumber,
+                                requestedAmount: requestedAmount,
+                                totalAmountToPay: totalAmountToPay,
+                                interestRate: 28.0,
+                                tenure: parseFloat(messageDetails.Tenure) || 12,
+                                otherCharges: otherCharges,
+                                status: 'OFFER_SUBMITTED'
+                            }
+                        );
+                        logger.info('✅ Created new loan mapping for takeover offer (fallback)');
+                    }
                 } catch (mappingError) {
-                    logger.error('❌ Error creating loan mapping for takeover:', mappingError);
+                    logger.error('❌ Error updating loan mapping for takeover:', mappingError);
                 }
 
                 const approvalResponseData = {
