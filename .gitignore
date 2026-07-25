@@ -1,0 +1,13 @@
+node_modules/
+.env
+.env.*
+!.env.example
+keys/
+*.pem
+*.pid
+logs/
+generated-documents/
+archive/
+temp_test_key.pem
+.claude/settings.local.json
+.claude/
